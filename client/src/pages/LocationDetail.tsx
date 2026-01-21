@@ -23,8 +23,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Warehouse, Package, ArrowRightLeft, Leaf, Building2, Pencil } from "lucide-react";
-import { useUpdateLocation } from "@/hooks/use-inventory";
+import { ArrowLeft, MapPin, Warehouse, Package, ArrowRightLeft, Leaf, Building2, Pencil, Trash2 } from "lucide-react";
+import { useUpdateLocation, useDeleteLocation } from "@/hooks/use-inventory";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useLocation as useWouterLocation } from "wouter";
 import type { Location, Batch, StockMovement } from "@shared/schema";
 import { format } from "date-fns";
 
@@ -35,7 +46,10 @@ export default function LocationDetail() {
   const locationId = params?.id ? parseInt(params.id) : null;
   const [activeTab, setActiveTab] = useState<TabType>("details");
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [, navigate] = useWouterLocation();
   const { mutate: updateLocation, isPending: isUpdating } = useUpdateLocation();
+  const { mutate: deleteLocation, isPending: isDeleting } = useDeleteLocation();
 
   const form = useForm<z.infer<typeof insertLocationSchema>>({
     resolver: zodResolver(insertLocationSchema),
@@ -85,12 +99,19 @@ export default function LocationDetail() {
     });
   };
 
+  const handleDelete = () => {
+    if (!locationId) return;
+    deleteLocation(locationId, {
+      onSuccess: () => navigate("/locations")
+    });
+  };
+
   if (locationLoading) {
     return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
   }
 
   if (!location) {
-    return <div className="p-8 text-center text-muted-foreground">Location not found</div>;
+    return <div className="p-8 text-center text-muted-foreground">Warehouse not found</div>;
   }
 
   const getLocationIcon = (type: string) => {
@@ -125,25 +146,52 @@ export default function LocationDetail() {
             </div>
           </div>
         </div>
-        <Button onClick={() => setEditOpen(true)} data-testid="button-edit-location">
-          <Pencil className="w-4 h-4 mr-2" />
-          Edit Location
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setEditOpen(true)} data-testid="button-edit-warehouse">
+            <Pencil className="w-4 h-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="destructive" onClick={() => setDeleteOpen(true)} data-testid="button-delete-warehouse">
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete
+          </Button>
+        </div>
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Warehouse</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{location.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-delete-warehouse"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Location</DialogTitle>
+            <DialogTitle>Edit Warehouse</DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Location Name</label>
-              <Input {...form.register("name")} placeholder="e.g., Warehouse A" data-testid="input-location-name" />
+              <label className="text-sm font-medium">Warehouse Name</label>
+              <Input {...form.register("name")} placeholder="e.g., Warehouse A" data-testid="input-warehouse-name" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Type</label>
-              <Input {...form.register("type")} placeholder="storage, processing, etc." data-testid="input-location-type" />
+              <Input {...form.register("type")} placeholder="storage, processing, etc." data-testid="input-warehouse-type" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Capacity (optional)</label>

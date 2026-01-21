@@ -221,10 +221,23 @@ export async function registerRoutes(
       const id = Number(req.params.id);
       const updates = req.body;
       const updated = await storage.updateLocation(id, updates);
-      if (!updated) return res.status(404).json({ message: "Location not found" });
+      if (!updated) return res.status(404).json({ message: "Warehouse not found" });
       res.json(updated);
     } catch (e) {
       res.status(400).json({ message: "Update failed" });
+    }
+  });
+
+  app.delete("/api/locations/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      await storage.deleteLocation(id);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to delete warehouse" });
     }
   });
 

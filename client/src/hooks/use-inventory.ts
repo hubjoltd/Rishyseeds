@@ -55,7 +55,29 @@ export function useUpdateLocation() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.locations.list.path] });
       queryClient.invalidateQueries({ queryKey: ["/api/locations", variables.id] });
-      toast({ title: "Success", description: "Location updated successfully" });
+      toast({ title: "Success", description: "Warehouse updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+export function useDeleteLocation() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/locations/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete warehouse");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.locations.list.path] });
+      toast({ title: "Success", description: "Warehouse deleted successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });

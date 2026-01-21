@@ -30,6 +30,7 @@ export interface IStorage {
   getLocation(id: number): Promise<Location | undefined>;
   createLocation(location: InsertLocation): Promise<Location>;
   updateLocation(id: number, updates: Partial<InsertLocation>): Promise<Location | undefined>;
+  deleteLocation(id: number): Promise<boolean>;
 
   // Batches
   getBatches(): Promise<Batch[]>;
@@ -124,6 +125,11 @@ export class DatabaseStorage implements IStorage {
   async updateLocation(id: number, updates: Partial<InsertLocation>): Promise<Location | undefined> {
     const [updated] = await db.update(locations).set(updates).where(eq(locations.id, id)).returning();
     return updated;
+  }
+
+  async deleteLocation(id: number): Promise<boolean> {
+    await db.delete(locations).where(eq(locations.id, id));
+    return true;
   }
 
   // Batches

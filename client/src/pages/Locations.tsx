@@ -40,25 +40,25 @@ export default function Locations() {
     <div className="space-y-8 animate-in fade-in">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold font-display text-primary">Locations</h2>
-          <p className="text-muted-foreground">Warehouses and processing units</p>
+          <h2 className="text-3xl font-bold font-display text-primary">Warehouses</h2>
+          <p className="text-muted-foreground">Storage and processing facilities</p>
         </div>
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-white">
+            <Button data-testid="button-add-warehouse">
               <Plus className="mr-2 h-4 w-4" />
-              Add Location
+              Add Warehouse
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New Location</DialogTitle>
+              <DialogTitle>Add New Warehouse</DialogTitle>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Location Name</label>
-                <Input {...form.register("name")} placeholder="e.g., Warehouse A" />
+                <label className="text-sm font-medium">Warehouse Name</label>
+                <Input {...form.register("name")} placeholder="e.g., Warehouse A" data-testid="input-warehouse-name" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Type</label>
@@ -72,8 +72,8 @@ export default function Locations() {
                 <label className="text-sm font-medium">Address</label>
                 <Input {...form.register("address")} />
               </div>
-              <Button type="submit" className="w-full" disabled={isPending}>
-                {isPending ? "Adding..." : "Add Location"}
+              <Button type="submit" className="w-full" disabled={isPending} data-testid="button-submit-warehouse">
+                {isPending ? "Adding..." : "Add Warehouse"}
               </Button>
             </form>
           </DialogContent>

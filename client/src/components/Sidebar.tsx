@@ -44,7 +44,7 @@ const allMenuItems: MenuItem[] = [
     children: [
       { icon: Leaf, label: "Products", href: "/products", roles: ["admin", "manager"] },
       { icon: Package, label: "Batches", href: "/batches", roles: ["admin", "manager"] },
-      { icon: MapPin, label: "Locations", href: "/locations", roles: ["admin", "manager"] },
+      { icon: MapPin, label: "Warehouses", href: "/locations", roles: ["admin", "manager"] },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager"] },
       { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager"] },
     ]
