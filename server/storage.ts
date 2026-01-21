@@ -29,6 +29,8 @@ export interface IStorage {
   getBatches(): Promise<Batch[]>;
   getBatch(id: number): Promise<Batch | undefined>;
   createBatch(batch: InsertBatch): Promise<Batch>;
+  updateBatch(id: number, updates: Partial<InsertBatch>): Promise<Batch | undefined>;
+  deleteBatch(id: number): Promise<boolean>;
   updateBatchQuantity(id: number, quantityChange: number): Promise<void>;
 
   // Stock
@@ -118,7 +120,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteBatch(id: number): Promise<boolean> {
-    const result = await db.delete(batches).where(eq(batches.id, id));
+    const batch = await this.getBatch(id);
+    if (!batch) return false;
+    await db.delete(batches).where(eq(batches.id, id));
     return true;
   }
 

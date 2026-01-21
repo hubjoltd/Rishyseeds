@@ -80,7 +80,7 @@ export default function Batches() {
       productionDate: batch.productionDate,
       crop: batch.crop,
       variety: batch.variety,
-      lotSize: Number(batch.lotSize),
+      lotSize: batch.lotSize,
     });
   };
 
@@ -146,7 +146,7 @@ export default function Batches() {
                 <Input
                   type="number"
                   step="0.01"
-                  {...form.register("lotSize", { valueAsNumber: true })}
+                  {...form.register("lotSize")}
                   data-testid="input-lot-size"
                 />
               </div>
@@ -194,7 +194,7 @@ export default function Batches() {
               <Input
                 type="number"
                 step="0.01"
-                {...editForm.register("lotSize", { valueAsNumber: true })}
+                {...editForm.register("lotSize")}
                 data-testid="input-edit-lot-size"
               />
             </div>

@@ -56,13 +56,19 @@ export function useCreateBatch() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create batch");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create batch");
+      }
       return api.batches.create.responses[201].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.dashboard.stats.path] });
       toast({ title: "Success", description: "Batch created successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -77,12 +83,18 @@ export function useUpdateBatch() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update batch");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update batch");
+      }
       return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
       toast({ title: "Success", description: "Batch updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -93,12 +105,18 @@ export function useDeleteBatch() {
   return useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/batches/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete batch");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete batch");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.dashboard.stats.path] });
       toast({ title: "Success", description: "Batch deleted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -125,13 +143,19 @@ export function useCreateStockMovement() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to move stock");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to move stock");
+      }
       return api.stock.move.responses[201].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.stock.history.path] });
-      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] }); // Quantities change
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
       toast({ title: "Success", description: "Stock moved successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
