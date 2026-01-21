@@ -31,14 +31,20 @@ export async function registerRoutes(
 ): Promise<Server> {
   
   // === SESSION SETUP ===
+  app.set('trust proxy', 1);
   app.use(session({
-    secret: 'rishi-seeds-secret-key', // In prod use env var
+    secret: process.env.SESSION_SECRET || 'rishi-seeds-secret-key',
     resave: false,
     saveUninitialized: false,
     store: new SessionStore({
       checkPeriod: 86400000 // prune expired entries every 24h
     }),
-    cookie: { secure: false } // Set to true if using https
+    cookie: { 
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
   }));
 
   // === AUTH ROUTES ===
