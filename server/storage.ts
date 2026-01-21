@@ -2,7 +2,7 @@
 import { db } from "./db";
 import { 
   users, batches, locations, stockEntries, stockMovements, 
-  packagingOutputs, employees, attendance, payrolls,
+  packagingOutputs, employees, attendance, payrolls, products,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -11,7 +11,8 @@ import {
   type InsertPackagingOutputSchema,
   type Employee, type InsertEmployee,
   type InsertAttendanceSchema,
-  type Payroll, type InsertPayroll
+  type Payroll, type InsertPayroll,
+  type Product, type InsertProduct
 } from "@shared/schema";
 import { eq, desc, sql } from "drizzle-orm";
 
@@ -55,6 +56,10 @@ export interface IStorage {
   createPayroll(payroll: InsertPayroll): Promise<Payroll>;
   getPayrolls(): Promise<Payroll[]>;
   
+  // Products
+  getProducts(): Promise<Product[]>;
+  createProduct(product: InsertProduct): Promise<Product>;
+
   // Stats
   getDashboardStats(): Promise<{
     totalStock: number;
@@ -212,6 +217,16 @@ export class DatabaseStorage implements IStorage {
 
   async getPayrolls(): Promise<Payroll[]> {
     return await db.select().from(payrolls).orderBy(desc(payrolls.generatedDate));
+  }
+
+  // Products
+  async getProducts(): Promise<Product[]> {
+    return await db.select().from(products);
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    const [newProduct] = await db.insert(products).values(product).returning();
+    return newProduct;
   }
 
   // Stats

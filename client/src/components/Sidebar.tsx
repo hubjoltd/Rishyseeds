@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -5,23 +6,38 @@ import {
   Sprout,
   Users,
   CreditCard,
-  Settings,
   LogOut,
   Package,
   MapPin,
-  ClipboardCheck,
   ArrowRightLeft,
-  Boxes
+  Boxes,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Leaf,
+  UserCircle,
+  CalendarCheck,
+  Building2
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
+import { Button } from "@/components/ui/button";
 
-const menuItems = [
+interface MenuItem {
+  icon: React.ElementType;
+  label: string;
+  href?: string;
+  children?: { icon: React.ElementType; label: string; href: string }[];
+}
+
+const menuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
   {
     label: "Seed Operations",
     icon: Sprout,
     children: [
+      { icon: Leaf, label: "Products", href: "/products" },
       { icon: Package, label: "Batches", href: "/batches" },
       { icon: MapPin, label: "Locations", href: "/locations" },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock" },
@@ -32,74 +48,169 @@ const menuItems = [
     label: "HRMS",
     icon: Users,
     children: [
-      { icon: Users, label: "Employees", href: "/employees" },
-      { icon: ClipboardCheck, label: "Attendance", href: "/attendance" },
+      { icon: UserCircle, label: "Employees", href: "/employees" },
+      { icon: CalendarCheck, label: "Attendance", href: "/attendance" },
     ]
   },
-  { icon: CreditCard, label: "Payroll", href: "/payroll" },
+  {
+    label: "Finance",
+    icon: CreditCard,
+    children: [
+      { icon: CreditCard, label: "Payroll", href: "/payroll" },
+    ]
+  },
+  { icon: FileText, label: "Reports", href: "/reports" },
 ];
 
-export function Sidebar() {
+export default function Sidebar() {
   const [location] = useLocation();
   const { logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<string[]>(["Seed Operations", "HRMS", "Finance"]);
+
+  const toggleSection = (label: string) => {
+    setExpandedSections(prev => 
+      prev.includes(label) ? prev.filter(s => s !== label) : [...prev, label]
+    );
+  };
+
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    return location.startsWith(href);
+  };
 
   return (
-    <div className="h-screen w-64 bg-card border-r flex flex-col fixed left-0 top-0 z-20 shadow-xl">
-      <div className="p-6 border-b flex items-center justify-center">
-        {/* Static logo import */}
-        <img src={logo} alt="Rishi Seeds" className="h-12 w-auto object-contain" />
+    <aside 
+      className={cn(
+        "h-screen bg-card flex flex-col transition-all duration-300 ease-in-out border-r border-border/40",
+        collapsed ? "w-[72px]" : "w-[260px]"
+      )}
+    >
+      {/* Logo Section */}
+      <div className={cn(
+        "flex items-center gap-3 p-4 border-b border-border/40",
+        collapsed ? "justify-center" : "justify-between"
+      )}>
+        {!collapsed && (
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="Rishi Seeds" className="w-10 h-10 object-contain" />
+            <div>
+              <h1 className="text-lg font-bold text-primary font-display">Rishi Seeds</h1>
+              <p className="text-[10px] text-muted-foreground">Admin Panel</p>
+            </div>
+          </div>
+        )}
+        {collapsed && (
+          <img src={logo} alt="Rishi Seeds" className="w-9 h-9 object-contain" />
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("h-8 w-8 shrink-0", collapsed && "absolute -right-4 bg-card border shadow-sm z-10")}
+          onClick={() => setCollapsed(!collapsed)}
+          data-testid="button-toggle-sidebar"
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2">
-        {menuItems.map((item, index) => {
-          if (item.children) {
-            return (
-              <div key={index} className="space-y-1">
-                <div className="px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  {item.label}
-                </div>
-                {item.children.map((child) => (
-                  <Link key={child.href} href={child.href}>
-                    <div className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium",
-                      location === child.href
-                        ? "bg-primary/10 text-primary border border-primary/20 shadow-sm"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}>
-                      <child.icon className="w-4 h-4" />
-                      {child.label}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            );
-          }
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-4 px-2">
+        <ul className="space-y-1">
+          {menuItems.map((item) => (
+            <li key={item.label}>
+              {item.href ? (
+                <Link href={item.href}>
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200",
+                      isActive(item.href) 
+                        ? "bg-primary/10 text-primary" 
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      collapsed && "justify-center px-2"
+                    )}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s/g, '-')}`}
+                  >
+                    <item.icon className={cn("w-5 h-5 shrink-0", isActive(item.href) && "text-primary")} />
+                    {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+                  </div>
+                </Link>
+              ) : (
+                <>
+                  <button
+                    onClick={() => toggleSection(item.label)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-muted-foreground hover:bg-muted hover:text-foreground",
+                      collapsed && "justify-center px-2"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5 shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+                        <ChevronDown className={cn(
+                          "w-4 h-4 transition-transform duration-200",
+                          expandedSections.includes(item.label) && "rotate-180"
+                        )} />
+                      </>
+                    )}
+                  </button>
+                  {!collapsed && expandedSections.includes(item.label) && item.children && (
+                    <ul className="mt-1 ml-4 space-y-1 border-l border-border/40 pl-3">
+                      {item.children.map((child) => (
+                        <li key={child.href}>
+                          <Link href={child.href}>
+                            <div
+                              className={cn(
+                                "flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 text-sm",
+                                isActive(child.href)
+                                  ? "bg-primary/10 text-primary font-medium"
+                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                              )}
+                              data-testid={`nav-${child.label.toLowerCase().replace(/\s/g, '-')}`}
+                            >
+                              <child.icon className="w-4 h-4 shrink-0" />
+                              <span>{child.label}</span>
+                            </div>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </nav>
 
-          return (
-            <Link key={item.href} href={item.href}>
-              <div className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium",
-                location === item.href
-                  ? "bg-primary/10 text-primary border border-primary/20 shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}>
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </div>
-            </Link>
-          );
-        })}
-      </div>
-
-      <div className="p-4 border-t bg-muted/20">
+      {/* Footer */}
+      <div className={cn(
+        "p-3 border-t border-border/40",
+        collapsed ? "flex justify-center" : ""
+      )}>
         <button
           onClick={() => logout()}
-          className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg w-full transition-all duration-200 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20",
+            collapsed && "justify-center px-2"
+          )}
+          data-testid="button-logout"
         >
-          <LogOut className="w-4 h-4" />
-          Sign Out
+          <LogOut className="w-5 h-5 shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Sign Out</span>}
         </button>
       </div>
-    </div>
+
+      {/* Real-time indicator */}
+      {!collapsed && (
+        <div className="px-4 pb-4">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="pulse-dot" />
+            <span>Real-time connected</span>
+          </div>
+        </div>
+      )}
+    </aside>
   );
 }

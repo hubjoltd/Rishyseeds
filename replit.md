@@ -87,11 +87,15 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 2026
+- **Products Page**: Complete product/crop management with 67 varieties (notified + private research) from license document
+- **Reports Page**: Comprehensive reporting with Stock, Movements, Locations, and Batch Summary reports with CSV export and print functionality
+- **Collapsible Sidebar**: Modern sidebar with nested navigation (Seed Operations, HRMS, Finance) that collapses from 260px to 72px
+- **Modern UI Design**: Borderless cards with subtle shadows, gradient stat cards, glassmorphism for modals
 - **Batch Management**: Full CRUD operations (Create, Read, Update, Delete) with confirmation dialogs
 - **Stock Movement Validation**: Server-side validation prevents moving more stock than available in a batch
 - **Packaging Output**: New page for recording packaging production with waste tracking
 - **Error Handling**: Improved error propagation from server to UI with toast notifications
-- **IStorage Interface**: Added updateBatch and deleteBatch methods for batch operations
+- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct methods
 
 ## Default Admin Credentials
 - Username: `admin`

@@ -252,6 +252,21 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  // === PRODUCTS ROUTES ===
+  app.get("/api/products", async (req, res) => {
+    const products = await storage.getProducts();
+    res.json(products);
+  });
+
+  app.post("/api/products", async (req, res) => {
+    try {
+      const product = await storage.createProduct(req.body);
+      res.status(201).json(product);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to create product" });
+    }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 
@@ -269,6 +284,8 @@ async function seedDatabase() {
     });
     console.log("Seeded admin user");
   }
+
+  // Products already seeded via SQL, no need to seed here
 
   const existingLocations = await storage.getLocations();
   if (existingLocations.length === 0) {

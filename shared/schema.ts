@@ -159,6 +159,21 @@ export type InsertPayroll = z.infer<typeof insertPayrollSchema>;
 export type CreateStockMovementRequest = InsertStockMovement;
 export type CreatePackagingOutputRequest = z.infer<typeof insertPackagingOutputSchema>;
 
+// === PRODUCTS / CROPS MASTER ===
+export const products = pgTable("products", {
+  id: serial("id").primaryKey(),
+  crop: text("crop").notNull(),
+  variety: text("variety").notNull(),
+  type: text("type").notNull().default("notified"), // notified, private_research
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true });
+
+export type Product = typeof products.$inferSelect;
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;
