@@ -12,7 +12,58 @@ import { createUserSchema, updateUserSchema } from "@shared/schema";
 const SessionStore = MemoryStore(session);
 
 type UserRole = 'admin' | 'manager' | 'hr';
+type Action = 'view' | 'create' | 'edit' | 'delete';
+type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard';
 
+// Granular role-based permissions system
+const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
+  admin: {
+    batches: ['view', 'create', 'edit', 'delete'],
+    locations: ['view', 'create', 'edit', 'delete'],
+    stock: ['view', 'create', 'edit', 'delete'],
+    packaging: ['view', 'create', 'edit', 'delete'],
+    products: ['view', 'create', 'edit', 'delete'],
+    employees: ['view', 'create', 'edit', 'delete'],
+    attendance: ['view', 'create', 'edit', 'delete'],
+    payroll: ['view', 'create', 'edit', 'delete'],
+    users: ['view', 'create', 'edit', 'delete'],
+    reports: ['view'],
+    dashboard: ['view'],
+  },
+  manager: {
+    batches: ['view', 'create', 'edit'],
+    locations: ['view', 'create', 'edit'],
+    stock: ['view', 'create', 'edit'],
+    packaging: ['view', 'create', 'edit'],
+    products: ['view', 'create'],
+    employees: ['view'],
+    attendance: ['view'],
+    payroll: [],
+    users: [],
+    reports: ['view'],
+    dashboard: ['view'],
+  },
+  hr: {
+    batches: ['view'],
+    locations: ['view'],
+    stock: ['view'],
+    packaging: ['view'],
+    products: ['view'],
+    employees: ['view', 'create', 'edit', 'delete'],
+    attendance: ['view', 'create', 'edit', 'delete'],
+    payroll: ['view', 'create', 'edit', 'delete'],
+    users: [],
+    reports: ['view'],
+    dashboard: ['view'],
+  },
+};
+
+// Check if a role has permission for a specific action on a resource
+function hasPermission(role: UserRole, resource: Resource, action: Action): boolean {
+  return rolePrivileges[role]?.[resource]?.includes(action) || false;
+}
+
+// Legacy path-based permissions for backwards compatibility
 const rolePermissions: Record<string, UserRole[]> = {
   '/api/batches': ['admin', 'manager'],
   '/api/locations': ['admin', 'manager'],
@@ -82,6 +133,23 @@ export async function registerRoutes(
     res.json(user);
   });
 
+  // Get current user's permissions
+  app.get("/api/auth/permissions", async (req, res) => {
+    const userId = (req.session as any).userId;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(401).json({ message: "User not found" });
+    
+    const userRole = user.role as UserRole;
+    const permissions = rolePrivileges[userRole] || {};
+    
+    res.json({
+      role: userRole,
+      permissions,
+    });
+  });
+
   // === ROLE-BASED AUTHORIZATION MIDDLEWARE ===
   const checkRoleForPath = (routePath: string) => {
     return async (req: any, res: any, next: any) => {
@@ -102,6 +170,32 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Access denied. Insufficient permissions." });
       }
       
+      next();
+    };
+  };
+
+  // Granular permission check middleware
+  const checkPermission = (resource: Resource, action: Action) => {
+    return async (req: any, res: any, next: any) => {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      const userRole = user.role as UserRole;
+      
+      if (!hasPermission(userRole, resource, action)) {
+        return res.status(403).json({ 
+          message: `Access denied. You don't have permission to ${action} ${resource}.` 
+        });
+      }
+      
+      (req as any).user = user;
       next();
     };
   };
@@ -228,7 +322,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/locations/:id", async (req, res) => {
+  app.delete("/api/locations/:id", checkPermission('locations', 'delete'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -275,7 +369,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.batches.delete.path, async (req, res) => {
+  app.delete(api.batches.delete.path, checkPermission('batches', 'delete'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const batch = await storage.getBatch(id);
@@ -313,6 +407,29 @@ export async function registerRoutes(
     res.json(history);
   });
 
+  app.patch("/api/stock/movements/:id", checkPermission('stock', 'edit'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updateStockMovement(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Movement not found" });
+      }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Update failed" });
+    }
+  });
+
+  app.delete("/api/stock/movements/:id", checkPermission('stock', 'delete'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteStockMovement(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Delete failed" });
+    }
+  });
+
   // === PACKAGING ROUTES ===
   app.post(api.packaging.create.path, async (req, res) => {
     try {
@@ -327,6 +444,29 @@ export async function registerRoutes(
   app.get(api.packaging.list.path, async (req, res) => {
     const list = await storage.getPackagingOutputs();
     res.json(list);
+  });
+
+  app.patch("/api/packaging/:id", checkPermission('packaging', 'edit'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updatePackagingOutput(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Packaging output not found" });
+      }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Update failed" });
+    }
+  });
+
+  app.delete("/api/packaging/:id", checkPermission('packaging', 'delete'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePackagingOutput(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Delete failed" });
+    }
   });
 
   // === EMPLOYEES ROUTES ===

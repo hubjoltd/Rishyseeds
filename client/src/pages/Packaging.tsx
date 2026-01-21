@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useBatches, useCreatePackagingOutput, usePackagingOutputs } from "@/hooks/use-inventory";
+import { useBatches, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput } from "@/hooks/use-inventory";
+import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPackagingOutputSchema } from "@shared/schema";
@@ -14,6 +15,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -30,14 +41,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Plus, Boxes } from "lucide-react";
+import { Package, Plus, Boxes, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Packaging() {
   const { data: packagingOutputs, isLoading } = usePackagingOutputs();
   const { data: batches } = useBatches();
   const { mutate: createPackaging, isPending } = useCreatePackagingOutput();
+  const { mutate: deletePackaging, isPending: isDeleting } = useDeletePackagingOutput();
+  const { canDelete } = useAuth();
   const [open, setOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  
+  const canDeletePackaging = canDelete('packaging');
+
+  const handleDeletePackaging = () => {
+    if (deleteId !== null) {
+      deletePackaging(deleteId, {
+        onSuccess: () => setDeleteId(null)
+      });
+    }
+  };
 
   const packagingFormSchema = insertPackagingOutputSchema.extend({
     batchId: z.coerce.number(),
@@ -234,13 +258,14 @@ export default function Packaging() {
                 <TableHead className="text-right">Packets</TableHead>
                 <TableHead className="text-right">Est. Output (KG)</TableHead>
                 <TableHead className="text-right">Waste (KG)</TableHead>
+                {canDeletePackaging && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canDeletePackaging ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
               ) : packagingOutputs?.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canDeletePackaging ? 7 : 6} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
               ) : (
                 packagingOutputs?.map((p) => (
                   <TableRow key={p.id}>
@@ -258,11 +283,44 @@ export default function Packaging() {
                     <TableCell className="text-right text-orange-600">
                       {Number(p.wasteQuantity || 0).toFixed(2)} kg
                     </TableCell>
+                    {canDeletePackaging && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteId(p.id)}
+                          data-testid={`button-delete-packaging-${p.id}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+
+          <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Packaging Record</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this packaging record? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeletePackaging}
+                  className="bg-destructive hover:bg-destructive/90"
+                  data-testid="button-confirm-delete-packaging"
+                >
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>

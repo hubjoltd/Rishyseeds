@@ -87,6 +87,15 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 2026
+- **Granular Role Privileges**: Implemented resource-based permission system (view, create, edit, delete) per role:
+  - Admin: Full access to all resources
+  - Manager: Full access to seed operations (batches, locations, stock, packaging, products); view-only for HRMS
+  - HR: Full access to HRMS (employees, attendance, payroll); view-only for seed operations
+- **Permissions API**: New `/api/auth/permissions` endpoint returns user's role and permissions matrix
+- **Permission-Based UI**: Delete buttons conditionally shown based on user's delete permission for each resource
+- **Warehouse Rename**: "Locations" renamed to "Warehouses" throughout the UI for better business context
+- **Stock Movement Delete**: Added ability to delete stock movements with confirmation dialog
+- **Packaging Delete**: Added ability to delete packaging records with confirmation dialog
 - **User Management**: Admin-only Users & Roles page with CRUD operations for managing system users and role assignments (admin/manager/hr)
 - **Products Page**: Complete product/crop management with 67 varieties (notified + private research) from license document
 - **Reports Page**: Comprehensive reporting with Stock, Movements, Locations, and Batch Summary reports with CSV export and print functionality
@@ -96,7 +105,7 @@ Preferred communication style: Simple, everyday language.
 - **Stock Movement Validation**: Server-side validation prevents moving more stock than available in a batch
 - **Packaging Output**: New page for recording packaging production with waste tracking
 - **Error Handling**: Improved error propagation from server to UI with toast notifications
-- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct, getUsers, updateUser, deleteUser methods
+- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct, getUsers, updateUser, deleteUser, deleteLocation, updateStockMovement, deleteStockMovement, updatePackagingOutput, deletePackagingOutput methods
 - **Zod Validation**: User creation and update routes use Zod schemas for input validation and role enum enforcement
 
 ## Default Admin Credentials

@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
-import { useBatches, useCreateStockMovement, useStockMovements, useLocations } from "@/hooks/use-inventory";
+import { useBatches, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement } from "@/hooks/use-inventory";
+import { useAuth } from "@/hooks/use-auth";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertStockMovementSchema } from "@shared/schema";
+import { insertStockMovementSchema, type StockMovement } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -30,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRightLeft, History, AlertCircle } from "lucide-react";
+import { ArrowRightLeft, History, AlertCircle, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -39,8 +50,21 @@ export default function Stock() {
   const { data: batches } = useBatches();
   const { data: locations } = useLocations();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
+  const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
+  const { canDelete } = useAuth();
   const [open, setOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
   const { toast } = useToast();
+  
+  const canDeleteStock = canDelete('stock');
+
+  const handleDeleteMovement = () => {
+    if (deleteId !== null) {
+      deleteMovement(deleteId, {
+        onSuccess: () => setDeleteId(null)
+      });
+    }
+  };
 
   // Extend the schema because zod expects numbers but form returns strings initially
   const movementFormSchema = insertStockMovementSchema.extend({
@@ -211,27 +235,61 @@ export default function Stock() {
                 <TableHead>To</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Person</TableHead>
+                {canDeleteStock && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canDeleteStock ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canDeleteStock ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
                 movements?.map((m) => (
                   <TableRow key={m.id}>
                     <TableCell>{m.movementDate ? format(new Date(m.movementDate), 'MMM dd, yyyy') : '-'}</TableCell>
                     <TableCell>{m.batchId}</TableCell>
-                    <TableCell>{m.fromLocationId}</TableCell>
-                    <TableCell>{m.toLocationId}</TableCell>
+                    <TableCell>{locations?.find(l => l.id === m.fromLocationId)?.name || m.fromLocationId}</TableCell>
+                    <TableCell>{locations?.find(l => l.id === m.toLocationId)?.name || m.toLocationId}</TableCell>
                     <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
                     <TableCell>{m.responsiblePerson}</TableCell>
+                    {canDeleteStock && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteId(m.id)}
+                          data-testid={`button-delete-movement-${m.id}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+
+          <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Movement</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this stock movement? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteMovement}
+                  className="bg-destructive hover:bg-destructive/90"
+                  data-testid="button-confirm-delete-movement"
+                >
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>

@@ -44,10 +44,14 @@ export interface IStorage {
   createStockEntry(entry: typeof stockEntries.$inferInsert): Promise<typeof stockEntries.$inferSelect>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
   getStockMovements(): Promise<StockMovement[]>;
+  updateStockMovement(id: number, updates: Partial<InsertStockMovement>): Promise<StockMovement | undefined>;
+  deleteStockMovement(id: number): Promise<boolean>;
 
   // Packaging
   createPackagingOutput(output: typeof packagingOutputs.$inferInsert): Promise<typeof packagingOutputs.$inferSelect>;
   getPackagingOutputs(): Promise<typeof packagingOutputs.$inferSelect[]>;
+  updatePackagingOutput(id: number, updates: Partial<typeof packagingOutputs.$inferInsert>): Promise<typeof packagingOutputs.$inferSelect | undefined>;
+  deletePackagingOutput(id: number): Promise<boolean>;
 
   // Employees
   getEmployees(): Promise<Employee[]>;
@@ -205,6 +209,16 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(stockMovements).orderBy(desc(stockMovements.movementDate));
   }
 
+  async updateStockMovement(id: number, updates: Partial<InsertStockMovement>): Promise<StockMovement | undefined> {
+    const [updated] = await db.update(stockMovements).set(updates).where(eq(stockMovements.id, id)).returning();
+    return updated;
+  }
+
+  async deleteStockMovement(id: number): Promise<boolean> {
+    await db.delete(stockMovements).where(eq(stockMovements.id, id));
+    return true;
+  }
+
   // Packaging
   async createPackagingOutput(output: typeof packagingOutputs.$inferInsert): Promise<typeof packagingOutputs.$inferSelect> {
     // Finished stock auto-calculated (maybe handled in frontend or separate table?)
@@ -215,6 +229,16 @@ export class DatabaseStorage implements IStorage {
 
   async getPackagingOutputs(): Promise<typeof packagingOutputs.$inferSelect[]> {
     return await db.select().from(packagingOutputs).orderBy(desc(packagingOutputs.productionDate));
+  }
+
+  async updatePackagingOutput(id: number, updates: Partial<typeof packagingOutputs.$inferInsert>): Promise<typeof packagingOutputs.$inferSelect | undefined> {
+    const [updated] = await db.update(packagingOutputs).set(updates).where(eq(packagingOutputs.id, id)).returning();
+    return updated;
+  }
+
+  async deletePackagingOutput(id: number): Promise<boolean> {
+    await db.delete(packagingOutputs).where(eq(packagingOutputs.id, id));
+    return true;
   }
 
   // Employees
