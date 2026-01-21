@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useLots, useProducts, usePackagingSizes, useStockBalances, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
+import { useLots, useProducts, usePackagingSizes, useStockBalances, useLocations, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPackagingOutputSchema, type PackagingOutput, type Lot, type Product, type PackagingSize, type StockBalance } from "@shared/schema";
+import { insertPackagingOutputSchema, type PackagingOutput, type Lot, type Product, type PackagingSize, type StockBalance, type Location } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,7 @@ export default function Packaging() {
   const { data: products } = useProducts();
   const { data: packagingSizes } = usePackagingSizes();
   const { data: stockBalances } = useStockBalances();
+  const { data: locations } = useLocations();
   const { mutate: createPackaging, isPending } = useCreatePackagingOutput();
   const { mutate: deletePackaging, isPending: isDeleting } = useDeletePackagingOutput();
   const { mutate: updatePackaging, isPending: isUpdating } = useUpdatePackagingOutput();
@@ -59,6 +60,7 @@ export default function Packaging() {
   const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
   
   const canDeletePackaging = canDelete('packaging');
   const canEditPackaging = canEdit('packaging');
@@ -72,14 +74,19 @@ export default function Packaging() {
     return `${lot.lotNumber} (${product?.crop || 'Unknown'})`;
   };
 
-  const getLooseStockForLot = (lotId: number) => {
+  const getLooseStockForLotAndLocation = (lotId: number, locationId: number | null) => {
     const balances = (stockBalances as StockBalance[] || []).filter(
-      (b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose'
+      (b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose' && (locationId ? b.locationId === locationId : true)
     );
     return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
   };
 
-  const selectedLotLooseStock = selectedLotId ? getLooseStockForLot(selectedLotId) : 0;
+  const getLocationName = (locationId: number) => {
+    const loc = (locations as Location[] || []).find((l: Location) => l.id === locationId);
+    return loc?.name || "Unknown";
+  };
+
+  const selectedLotLooseStock = selectedLotId ? getLooseStockForLotAndLocation(selectedLotId, selectedLocationId) : 0;
 
   const handleDeletePackaging = () => {
     if (deleteId !== null) {
@@ -137,6 +144,7 @@ export default function Packaging() {
 
   const packagingFormSchema = insertPackagingOutputSchema.extend({
     lotId: z.coerce.number().min(1, "Please select a lot"),
+    locationId: z.coerce.number().min(1, "Please select a warehouse"),
     packagingSizeId: z.coerce.number().min(1, "Please select a package size"),
     numberOfPackets: z.coerce.number().positive("Must be at least 1"),
     wasteQuantity: z.coerce.number().optional(),
@@ -173,6 +181,7 @@ export default function Packaging() {
     
     const submitData = {
       lotId: data.lotId,
+      locationId: data.locationId,
       packagingSizeId: data.packagingSizeId,
       packetSize: size?.label || data.packetSize,
       numberOfPackets: data.numberOfPackets,
@@ -187,6 +196,7 @@ export default function Packaging() {
         setOpen(false);
         form.reset();
         setSelectedLotId(null);
+        setSelectedLocationId(null);
       },
     });
   };
@@ -242,9 +252,30 @@ export default function Packaging() {
                   </SelectContent>
                 </Select>
                 {form.formState.errors.lotId && <p className="text-xs text-red-500">Required</p>}
-                {selectedLotId && (
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Warehouse</label>
+                <Select onValueChange={(val) => {
+                  const locationId = parseInt(val);
+                  form.setValue("locationId", locationId);
+                  setSelectedLocationId(locationId);
+                }}>
+                  <SelectTrigger data-testid="select-location">
+                    <SelectValue placeholder="Select Warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(locations as Location[] || []).map((loc: Location) => (
+                      <SelectItem key={loc.id} value={loc.id.toString()}>
+                        {loc.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.locationId && <p className="text-xs text-red-500">Required</p>}
+                {selectedLotId && selectedLocationId && (
                   <p className="text-xs text-muted-foreground">
-                    Available loose stock: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} kg</span>
+                    Available loose stock at {getLocationName(selectedLocationId)}: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} kg</span>
                   </p>
                 )}
               </div>
@@ -392,6 +423,7 @@ export default function Packaging() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Lot</TableHead>
+                <TableHead>Warehouse</TableHead>
                 <TableHead>Packet Size</TableHead>
                 <TableHead className="text-right">Bags</TableHead>
                 <TableHead className="text-right">Total (KG)</TableHead>
@@ -401,9 +433,9 @@ export default function Packaging() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
               ) : packagingOutputs?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 7 : 6} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 8 : 7} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
               ) : (
                 packagingOutputs?.map((p) => (
                   <TableRow key={p.id}>
@@ -411,6 +443,7 @@ export default function Packaging() {
                     <TableCell className="font-medium font-mono text-sm">
                       {p.lotId ? getLotDetails(p.lotId) : (p.batchId ? `Batch #${p.batchId}` : '-')}
                     </TableCell>
+                    <TableCell>{p.locationId ? getLocationName(p.locationId) : '-'}</TableCell>
                     <TableCell>
                       <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
                         {p.packetSize}

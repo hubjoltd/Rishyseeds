@@ -103,6 +103,7 @@ export const packagingOutputs = pgTable("packaging_outputs", {
   id: serial("id").primaryKey(),
   batchId: integer("batch_id"), // Legacy field - deprecated
   lotId: integer("lot_id"), // Reference to lots table
+  locationId: integer("location_id"), // Where packaging takes place
   packagingSizeId: integer("packaging_size_id"), // Reference to packaging_sizes table
   packetSize: text("packet_size").notNull(), // e.g., "1kg", "500g"
   numberOfPackets: integer("number_of_packets").notNull(),

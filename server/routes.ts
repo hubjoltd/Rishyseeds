@@ -497,7 +497,50 @@ export async function registerRoutes(
   app.post(api.packaging.create.path, checkPermission('packaging', 'create'), async (req, res) => {
     try {
       const input = api.packaging.create.input.parse(req.body);
+      
+      // Validate required fields for stock adjustment
+      if (!input.lotId || !input.locationId) {
+        return res.status(400).json({ message: "Lot and Location are required" });
+      }
+      
+      const totalQuantityKg = Number(input.totalQuantityKg) || 0;
+      const wasteQuantity = Number(input.wasteQuantity) || 0;
+      const looseUsed = totalQuantityKg + wasteQuantity;
+      
+      // Check loose stock availability
+      const looseBalance = await storage.getStockBalanceByLotAndLocation(
+        input.lotId, 
+        input.locationId, 
+        'loose'
+      );
+      const availableLoose = looseBalance ? Number(looseBalance.quantity) : 0;
+      
+      if (looseUsed > availableLoose) {
+        return res.status(400).json({ 
+          message: `Insufficient loose stock. Available: ${availableLoose.toFixed(2)} KG, Required: ${looseUsed.toFixed(2)} KG` 
+        });
+      }
+      
+      // Create packaging record
       const output = await storage.createPackagingOutput(input);
+      
+      // Decrease loose stock by total used (packed + waste)
+      await storage.adjustStockBalance(
+        input.lotId,
+        input.locationId,
+        'loose',
+        -looseUsed
+      );
+      
+      // Increase packed stock by number of packets
+      await storage.adjustStockBalance(
+        input.lotId,
+        input.locationId,
+        'packed',
+        input.numberOfPackets,
+        input.packetSize
+      );
+      
       res.status(201).json(output);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Validation failed" });
