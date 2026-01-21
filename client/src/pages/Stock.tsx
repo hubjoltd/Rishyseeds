@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { useBatches, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement } from "@/hooks/use-inventory";
+import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertStockMovementSchema, type StockMovement } from "@shared/schema";
+import type { StockMovement, Lot, Product, StockBalance } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,14 +41,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRightLeft, History, AlertCircle, Trash2, Pencil } from "lucide-react";
+import { ArrowRightLeft, History, AlertCircle, Trash2, Pencil, Package } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
+const movementFormSchema = z.object({
+  lotId: z.coerce.number().min(1, "Please select a lot"),
+  fromLocationId: z.coerce.number().min(1, "Please select source location"),
+  toLocationId: z.coerce.number().min(1, "Please select destination"),
+  quantity: z.coerce.number().positive("Quantity must be positive"),
+  responsiblePerson: z.string().optional(),
+  remarks: z.string().optional(),
+});
+
 export default function Stock() {
   const { data: movements, isLoading } = useStockMovements();
-  const { data: batches } = useBatches();
+  const { data: lots } = useLots();
+  const { data: products } = useProducts();
   const { data: locations } = useLocations();
+  const { data: stockBalances } = useStockBalances();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
   const { mutate: updateMovement, isPending: isUpdating } = useUpdateStockMovement();
@@ -62,6 +73,30 @@ export default function Stock() {
   const canDeleteStock = canDelete('stock');
   const canEditStock = canEdit('stock');
 
+  const getProductName = (productId: number) => {
+    const product = (products as Product[] || []).find(p => p.id === productId);
+    return product ? `${product.crop} - ${product.variety}` : `Product #${productId}`;
+  };
+
+  const getLotDetails = (lotId: number | null | undefined) => {
+    if (!lotId) return '-';
+    const lot = (lots as Lot[] || []).find(l => l.id === lotId);
+    if (!lot) return `Lot #${lotId}`;
+    return lot.lotNumber;
+  };
+
+  const getLocationName = (locationId: number) => {
+    const location = (locations || []).find(l => l.id === locationId);
+    return location?.name || `Location #${locationId}`;
+  };
+
+  const getLooseStockForLot = (lotId: number) => {
+    const balances = (stockBalances as StockBalance[] || []).filter(
+      sb => sb.lotId === lotId && sb.stockForm === 'loose'
+    );
+    return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
+  };
+
   const handleDeleteMovement = () => {
     if (deleteId !== null) {
       deleteMovement(deleteId, {
@@ -73,7 +108,7 @@ export default function Stock() {
   const handleEditMovement = (movement: StockMovement) => {
     setEditingMovement(movement);
     editForm.reset({
-      batchId: movement.batchId,
+      lotId: movement.lotId || 0,
       fromLocationId: movement.fromLocationId,
       toLocationId: movement.toLocationId,
       quantity: Number(movement.quantity),
@@ -86,17 +121,14 @@ export default function Stock() {
   const onEditSubmit = (data: z.infer<typeof movementFormSchema>) => {
     if (!editingMovement) return;
     
-    // Validate quantity for the selected batch
-    const batch = batches?.find(b => b.id === data.batchId);
-    const batchAvailable = batch ? Number(batch.currentQuantity) : 0;
-    // When editing, add back the original quantity to available
-    const originalQty = editingMovement.batchId === data.batchId ? Number(editingMovement.quantity) : 0;
-    const effectiveAvailable = batchAvailable + originalQty;
+    const availableStock = getLooseStockForLot(data.lotId);
+    const originalQty = editingMovement.lotId === data.lotId ? Number(editingMovement.quantity) : 0;
+    const effectiveAvailable = availableStock + originalQty;
     
     if (data.quantity > effectiveAvailable) {
       toast({
         title: "Invalid Quantity",
-        description: `Cannot move ${data.quantity}kg. Only ${effectiveAvailable}kg available in this batch.`,
+        description: `Cannot move ${data.quantity}kg. Only ${effectiveAvailable.toFixed(2)}kg available.`,
         variant: "destructive",
       });
       return;
@@ -105,8 +137,12 @@ export default function Stock() {
     updateMovement({
       id: editingMovement.id,
       data: {
-        ...data,
+        lotId: data.lotId,
+        fromLocationId: data.fromLocationId,
+        toLocationId: data.toLocationId,
         quantity: String(data.quantity),
+        responsiblePerson: data.responsiblePerson || null,
+        remarks: data.remarks || null,
       }
     }, {
       onSuccess: () => {
@@ -117,57 +153,53 @@ export default function Stock() {
     });
   };
 
-  // Extend the schema because zod expects numbers but form returns strings initially
-  const movementFormSchema = insertStockMovementSchema.extend({
-    batchId: z.coerce.number(),
-    fromLocationId: z.coerce.number(),
-    toLocationId: z.coerce.number(),
-    quantity: z.coerce.number().positive("Quantity must be positive"),
-  });
-
   const form = useForm<z.infer<typeof movementFormSchema>>({
     resolver: zodResolver(movementFormSchema),
+    defaultValues: {
+      quantity: 0,
+    }
   });
 
   const editForm = useForm<z.infer<typeof movementFormSchema>>({
     resolver: zodResolver(movementFormSchema),
   });
 
-  // Watch selected batch to validate quantity
-  const selectedBatchId = form.watch("batchId");
+  const selectedLotId = form.watch("lotId");
   const enteredQuantity = form.watch("quantity");
 
-  const selectedBatch = useMemo(() => {
-    return batches?.find(b => b.id === selectedBatchId);
-  }, [batches, selectedBatchId]);
+  const selectedLot = useMemo(() => {
+    return (lots as Lot[] || []).find(l => l.id === selectedLotId);
+  }, [lots, selectedLotId]);
 
-  const availableStock = selectedBatch ? Number(selectedBatch.currentQuantity) : 0;
+  const availableStock = selectedLot ? getLooseStockForLot(selectedLot.id) : 0;
   const quantityExceedsAvailable = enteredQuantity > availableStock;
 
   const onSubmit = (data: z.infer<typeof movementFormSchema>) => {
-    // Validation: Cannot move more than available
     if (data.quantity > availableStock) {
       toast({
         title: "Invalid Quantity",
-        description: `Cannot move ${data.quantity}kg. Only ${availableStock}kg available in this batch.`,
+        description: `Cannot move ${data.quantity}kg. Only ${availableStock.toFixed(2)}kg available in stock.`,
         variant: "destructive",
       });
       return;
     }
 
-    // Convert quantity to string for API (decimal type in database)
-    const submitData = {
-      ...data,
+    moveStock({
+      lotId: data.lotId,
+      fromLocationId: data.fromLocationId,
+      toLocationId: data.toLocationId,
       quantity: String(data.quantity),
-    };
-
-    moveStock(submitData, {
+      responsiblePerson: data.responsiblePerson || null,
+      remarks: data.remarks || null,
+    }, {
       onSuccess: () => {
         setOpen(false);
         form.reset();
       },
     });
   };
+
+  const activeLots = (lots as Lot[] || []).filter(l => l.status === 'active');
 
   return (
     <div className="space-y-8 animate-in fade-in">
@@ -184,38 +216,61 @@ export default function Stock() {
               New Movement
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Move Stock</DialogTitle>
               <DialogDescription>
-                Transfer inventory between storage and packaging locations
+                Transfer inventory between warehouse locations
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Batch</label>
-                <Select onValueChange={(val) => form.setValue("batchId", parseInt(val))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Batch" />
+                <label className="text-sm font-medium">Lot Number</label>
+                <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
+                  <SelectTrigger data-testid="select-lot">
+                    <SelectValue placeholder="Select Lot" />
                   </SelectTrigger>
                   <SelectContent>
-                    {batches?.map((b) => (
-                      <SelectItem key={b.id} value={b.id.toString()}>
-                        {b.batchNumber} - {b.crop} ({b.currentQuantity}kg avail)
+                    {activeLots.map((lot) => (
+                      <SelectItem key={lot.id} value={lot.id.toString()}>
+                        {lot.lotNumber}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {form.formState.errors.batchId && <p className="text-xs text-red-500">Required</p>}
+                {form.formState.errors.lotId && <p className="text-xs text-red-500">Required</p>}
               </div>
+
+              {selectedLot && (
+                <div className="p-3 rounded-lg bg-muted/50 border space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Package className="w-4 h-4 text-primary" />
+                    <span className="font-medium">Lot Details</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Product:</span>
+                      <p className="font-medium">{getProductName(selectedLot.productId)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Received Qty:</span>
+                      <p className="font-medium">{Number(selectedLot.initialQuantity).toFixed(2)} KG</p>
+                    </div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Available Stock:</span>
+                    <p className="font-bold text-primary">{availableStock.toFixed(2)} KG</p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">From Location</label>
                   <Select onValueChange={(val) => form.setValue("fromLocationId", parseInt(val))}>
-                    <SelectTrigger><SelectValue placeholder="Source" /></SelectTrigger>
+                    <SelectTrigger data-testid="select-from-location"><SelectValue placeholder="Source" /></SelectTrigger>
                     <SelectContent>
-                      {locations?.map((l) => (
+                      {(locations || []).map((l) => (
                         <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -224,9 +279,9 @@ export default function Stock() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">To Location</label>
                   <Select onValueChange={(val) => form.setValue("toLocationId", parseInt(val))}>
-                    <SelectTrigger><SelectValue placeholder="Destination" /></SelectTrigger>
+                    <SelectTrigger data-testid="select-to-location"><SelectValue placeholder="Destination" /></SelectTrigger>
                     <SelectContent>
-                      {locations?.map((l) => (
+                      {(locations || []).map((l) => (
                         <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -240,24 +295,24 @@ export default function Stock() {
                   type="number" 
                   {...form.register("quantity")} 
                   className={quantityExceedsAvailable ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  data-testid="input-quantity"
                 />
-                {selectedBatch && (
-                  <p className={`text-xs ${quantityExceedsAvailable ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
-                    {quantityExceedsAvailable ? (
-                      <span className="flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        Exceeds available stock! Max: {availableStock}kg
-                      </span>
-                    ) : (
-                      `Available: ${availableStock}kg`
-                    )}
+                {selectedLot && quantityExceedsAvailable && (
+                  <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    Exceeds available stock! Max: {availableStock.toFixed(2)}kg
                   </p>
                 )}
               </div>
               
               <div className="space-y-2">
                 <label className="text-sm font-medium">Responsible Person</label>
-                <Input {...form.register("responsiblePerson")} placeholder="Name" />
+                <Input {...form.register("responsiblePerson")} placeholder="Name" data-testid="input-responsible-person" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Remarks</label>
+                <Input {...form.register("remarks")} placeholder="Optional notes" data-testid="input-remarks" />
               </div>
 
               <Button 
@@ -285,7 +340,8 @@ export default function Stock() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Batch ID</TableHead>
+                <TableHead>Lot Number</TableHead>
+                <TableHead>Product</TableHead>
                 <TableHead>From</TableHead>
                 <TableHead>To</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
@@ -295,46 +351,50 @@ export default function Stock() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
-                movements?.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>{m.movementDate ? format(new Date(m.movementDate), 'MMM dd, yyyy') : '-'}</TableCell>
-                    <TableCell>{m.batchId}</TableCell>
-                    <TableCell>{locations?.find(l => l.id === m.fromLocationId)?.name || m.fromLocationId}</TableCell>
-                    <TableCell>{locations?.find(l => l.id === m.toLocationId)?.name || m.toLocationId}</TableCell>
-                    <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
-                    <TableCell>{m.responsiblePerson}</TableCell>
-                    {(canEditStock || canDeleteStock) && (
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {canEditStock && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditMovement(m)}
-                              data-testid={`button-edit-movement-${m.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                          )}
-                          {canDeleteStock && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => setDeleteId(m.id)}
-                              data-testid={`button-delete-movement-${m.id}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))
+                movements?.map((m) => {
+                  const lot = (lots as Lot[] || []).find(l => l.id === m.lotId);
+                  return (
+                    <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
+                      <TableCell>{m.movementDate ? format(new Date(m.movementDate), 'MMM dd, yyyy') : '-'}</TableCell>
+                      <TableCell className="font-mono">{getLotDetails(m.lotId)}</TableCell>
+                      <TableCell>{lot ? getProductName(lot.productId) : '-'}</TableCell>
+                      <TableCell>{getLocationName(m.fromLocationId)}</TableCell>
+                      <TableCell>{getLocationName(m.toLocationId)}</TableCell>
+                      <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
+                      <TableCell>{m.responsiblePerson || '-'}</TableCell>
+                      {(canEditStock || canDeleteStock) && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {canEditStock && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditMovement(m)}
+                                data-testid={`button-edit-movement-${m.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canDeleteStock && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => setDeleteId(m.id)}
+                                data-testid={`button-delete-movement-${m.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -361,7 +421,7 @@ export default function Stock() {
           </AlertDialog>
 
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Edit Stock Movement</DialogTitle>
                 <DialogDescription>
@@ -370,18 +430,18 @@ export default function Stock() {
               </DialogHeader>
               <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Batch</label>
+                  <label className="text-sm font-medium">Lot Number</label>
                   <Select 
-                    value={editForm.watch("batchId")?.toString()} 
-                    onValueChange={(val) => editForm.setValue("batchId", parseInt(val))}
+                    value={editForm.watch("lotId")?.toString()} 
+                    onValueChange={(val) => editForm.setValue("lotId", parseInt(val))}
                   >
-                    <SelectTrigger data-testid="select-edit-batch">
-                      <SelectValue placeholder="Select Batch" />
+                    <SelectTrigger data-testid="select-edit-lot">
+                      <SelectValue placeholder="Select Lot" />
                     </SelectTrigger>
                     <SelectContent>
-                      {batches?.map((b) => (
-                        <SelectItem key={b.id} value={b.id.toString()}>
-                          {b.batchNumber} - {b.crop} ({b.currentQuantity}kg avail)
+                      {activeLots.map((lot) => (
+                        <SelectItem key={lot.id} value={lot.id.toString()}>
+                          {lot.lotNumber}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -397,7 +457,7 @@ export default function Stock() {
                     >
                       <SelectTrigger data-testid="select-edit-from-location"><SelectValue placeholder="Source" /></SelectTrigger>
                       <SelectContent>
-                        {locations?.map((l) => (
+                        {(locations || []).map((l) => (
                           <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -411,7 +471,7 @@ export default function Stock() {
                     >
                       <SelectTrigger data-testid="select-edit-to-location"><SelectValue placeholder="Destination" /></SelectTrigger>
                       <SelectContent>
-                        {locations?.map((l) => (
+                        {(locations || []).map((l) => (
                           <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -431,6 +491,11 @@ export default function Stock() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Responsible Person</label>
                   <Input {...editForm.register("responsiblePerson")} placeholder="Name" data-testid="input-edit-responsible-person" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Remarks</label>
+                  <Input {...editForm.register("remarks")} placeholder="Optional notes" data-testid="input-edit-remarks" />
                 </div>
 
                 <Button 

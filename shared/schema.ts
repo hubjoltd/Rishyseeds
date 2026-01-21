@@ -85,7 +85,8 @@ export const insertStockEntrySchema = createInsertSchema(stockEntries).omit({ id
 // === STOCK MOVEMENTS (STORAGE -> PACKAGING) ===
 export const stockMovements = pgTable("stock_movements", {
   id: serial("id").primaryKey(),
-  batchId: integer("batch_id").notNull(),
+  batchId: integer("batch_id"), // Legacy - deprecated
+  lotId: integer("lot_id"), // Reference to lots table
   fromLocationId: integer("from_location_id").notNull(),
   toLocationId: integer("to_location_id").notNull(),
   quantity: decimal("quantity").notNull(),

@@ -86,11 +86,22 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### January 2026 (Latest)
+- **Stock Movement uses Lots**: Stock Movement page now uses Lot Numbers instead of Batches, with auto-display of product name and received quantity when a lot is selected
+- **Comprehensive Stock Reports**: Updated Reports page with 5 report types - Lot Stock, Variety-wise, Location-wise, Outward Log, and Processing reports with CSV export
+- **Stock Validation on Outward**: Server-side validation prevents dispatching more stock than available
+- **New Operator Roles**: Added Godown Operator, Production Operator, and Dispatch Operator roles with specific permissions
+- **Packaging Size Master**: New master data screen for managing standard package sizes (1kg, 5kg, 25kg, etc.)
+- **Plant Operations**: Renamed "Seed Operations" to "Plant Operations" in sidebar navigation
+- **Inward Enhancements**: Added Source/Supplier name field and Tons/KG quantity conversion (stored in KG)
+- **Processing Workflow**: Complete processing with input lot, output quantity, waste tracking, and auto-generation of output lot
+- **Packaging Improvements**: Uses Lots, integrates with Packaging Sizes master, shows remaining loose stock
+
 ### January 2026
 - **Granular Role Privileges**: Implemented resource-based permission system (view, create, edit, delete) per role:
   - Admin: Full access to all resources
-  - Manager: Full access to seed operations (batches, locations, stock, packaging, products); view-only for HRMS
-  - HR: Full access to HRMS (employees, attendance, payroll); view-only for seed operations
+  - Manager: Full access to plant operations (lots, locations, stock, packaging, products); view-only for HRMS
+  - HR: Full access to HRMS (employees, attendance, payroll); view-only for plant operations
 - **Permissions API**: New `/api/auth/permissions` endpoint returns user's role and permissions matrix
 - **Permission-Based UI**: Delete buttons conditionally shown based on user's delete permission for each resource
 - **Warehouse Rename**: "Locations" renamed to "Warehouses" throughout the UI for better business context
