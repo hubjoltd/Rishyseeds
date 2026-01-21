@@ -82,3 +82,17 @@ Preferred communication style: Simple, everyday language.
 
 ### Required Environment Variables
 - `DATABASE_URL`: PostgreSQL connection string (required)
+- `SESSION_SECRET`: Session encryption secret (required)
+
+## Recent Changes
+
+### January 2026
+- **Batch Management**: Full CRUD operations (Create, Read, Update, Delete) with confirmation dialogs
+- **Stock Movement Validation**: Server-side validation prevents moving more stock than available in a batch
+- **Packaging Output**: New page for recording packaging production with waste tracking
+- **Error Handling**: Improved error propagation from server to UI with toast notifications
+- **IStorage Interface**: Added updateBatch and deleteBatch methods for batch operations
+
+## Default Admin Credentials
+- Username: `admin`
+- Password: `admin123`
