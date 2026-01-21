@@ -19,6 +19,7 @@ import Payroll from "@/pages/Payroll";
 import Attendance from "@/pages/Attendance";
 import Products from "@/pages/Products";
 import Reports from "@/pages/Reports";
+import LocationDetail from "@/pages/LocationDetail";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -62,6 +63,9 @@ function Router() {
       </Route>
       <Route path="/locations">
         <ProtectedRoute component={Locations} />
+      </Route>
+      <Route path="/locations/:id">
+        <ProtectedRoute component={LocationDetail} />
       </Route>
       <Route path="/stock">
         <ProtectedRoute component={Stock} />

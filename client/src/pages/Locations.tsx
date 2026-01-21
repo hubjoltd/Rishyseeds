@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useLocations, useCreateLocation } from "@/hooks/use-inventory";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
-import { MapPin, Plus, Warehouse } from "lucide-react";
+import { MapPin, Plus, Warehouse, ChevronRight } from "lucide-react";
 
 export default function Locations() {
   const { data: locations, isLoading } = useLocations();
@@ -84,30 +85,35 @@ export default function Locations() {
           <p>Loading...</p>
         ) : (
           locations?.map((loc) => (
-            <Card key={loc.id} className="card-hover border-t-4 border-t-primary/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="p-3 bg-primary/10 rounded-full text-primary">
-                    <Warehouse className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg">{loc.name}</h3>
-                    <p className="text-sm text-muted-foreground uppercase tracking-wider text-xs font-semibold">{loc.type}</p>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    {loc.address || "No address provided"}
-                  </div>
-                  {loc.capacity && (
-                    <div className="font-medium text-foreground">
-                      Capacity: {loc.capacity} Units
+            <Link key={loc.id} href={`/locations/${loc.id}`}>
+              <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 group" data-testid={`card-location-${loc.id}`}>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-primary/10 rounded-full text-primary">
+                        <Warehouse className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg">{loc.name}</h3>
+                        <p className="text-sm text-muted-foreground uppercase tracking-wider text-xs font-semibold">{loc.type}</p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      {loc.address || "No address provided"}
+                    </div>
+                    {loc.capacity && (
+                      <div className="font-medium text-foreground">
+                        Capacity: {loc.capacity} Units
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           ))
         )}
       </div>

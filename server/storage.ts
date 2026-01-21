@@ -24,6 +24,7 @@ export interface IStorage {
 
   // Locations
   getLocations(): Promise<Location[]>;
+  getLocation(id: number): Promise<Location | undefined>;
   createLocation(location: InsertLocation): Promise<Location>;
 
   // Batches
@@ -89,6 +90,11 @@ export class DatabaseStorage implements IStorage {
   // Locations
   async getLocations(): Promise<Location[]> {
     return await db.select().from(locations);
+  }
+
+  async getLocation(id: number): Promise<Location | undefined> {
+    const [location] = await db.select().from(locations).where(eq(locations.id, id));
+    return location;
   }
 
   async createLocation(location: InsertLocation): Promise<Location> {

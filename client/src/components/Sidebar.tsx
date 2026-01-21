@@ -82,13 +82,13 @@ export default function Sidebar() {
   return (
     <aside 
       className={cn(
-        "h-screen bg-card flex flex-col transition-all duration-300 ease-in-out border-r border-border/40",
+        "h-screen bg-card flex flex-col transition-all duration-300 ease-in-out shadow-green",
         collapsed ? "w-[72px]" : "w-[260px]"
       )}
     >
       {/* Logo Section */}
       <div className={cn(
-        "flex items-center gap-3 p-4 border-b border-border/40",
+        "flex items-center gap-3 p-4 border-b border-primary/10",
         collapsed ? "justify-center" : "justify-between"
       )}>
         {!collapsed && (
@@ -156,7 +156,7 @@ export default function Sidebar() {
                     )}
                   </button>
                   {!collapsed && expandedSections.includes(item.label) && item.children && (
-                    <ul className="mt-1 ml-4 space-y-1 border-l border-border/40 pl-3">
+                    <ul className="mt-1 ml-4 space-y-1 border-l border-primary/20 pl-3">
                       {item.children.map((child) => (
                         <li key={child.href}>
                           <Link href={child.href}>
@@ -186,7 +186,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className={cn(
-        "p-3 border-t border-border/40",
+        "p-3 border-t border-primary/10",
         collapsed ? "flex justify-center" : ""
       )}>
         <button

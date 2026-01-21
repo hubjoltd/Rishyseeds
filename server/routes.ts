@@ -85,6 +85,12 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/locations/:id", async (req, res) => {
+    const location = await storage.getLocation(Number(req.params.id));
+    if (!location) return res.status(404).json({ message: "Location not found" });
+    res.json(location);
+  });
+
   // === BATCHES ROUTES ===
   app.get(api.batches.list.path, async (req, res) => {
     const batches = await storage.getBatches();
