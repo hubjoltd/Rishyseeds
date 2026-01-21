@@ -7,7 +7,7 @@ export function useLocations() {
   return useQuery({
     queryKey: [api.locations.list.path],
     queryFn: async () => {
-      const res = await fetch(api.locations.list.path);
+      const res = await fetch(api.locations.list.path, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch locations");
       return api.locations.list.responses[200].parse(await res.json());
     },
@@ -22,6 +22,7 @@ export function useCreateLocation() {
       const res = await fetch(api.locations.create.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create location");
@@ -42,6 +43,7 @@ export function useUpdateLocation() {
       const res = await fetch(`/api/locations/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -66,7 +68,7 @@ export function useBatches() {
   return useQuery({
     queryKey: [api.batches.list.path],
     queryFn: async () => {
-      const res = await fetch(api.batches.list.path);
+      const res = await fetch(api.batches.list.path, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch batches");
       return api.batches.list.responses[200].parse(await res.json());
     },
@@ -81,6 +83,7 @@ export function useCreateBatch() {
       const res = await fetch(api.batches.create.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -108,6 +111,7 @@ export function useUpdateBatch() {
       const res = await fetch(`/api/batches/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -131,7 +135,7 @@ export function useDeleteBatch() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/batches/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/batches/${id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete batch");
@@ -153,7 +157,7 @@ export function useStockMovements() {
   return useQuery({
     queryKey: [api.stock.history.path],
     queryFn: async () => {
-      const res = await fetch(api.stock.history.path);
+      const res = await fetch(api.stock.history.path, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch movements");
       return api.stock.history.responses[200].parse(await res.json());
     },
@@ -168,6 +172,7 @@ export function useCreateStockMovement() {
       const res = await fetch(api.stock.move.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -195,15 +200,22 @@ export function useCreatePackagingOutput() {
       const res = await fetch(api.packaging.create.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create packaging record");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create packaging record");
+      }
       return api.packaging.create.responses[201].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.packaging.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
       toast({ title: "Success", description: "Packaging recorded successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 }
@@ -212,7 +224,7 @@ export function usePackagingOutputs() {
   return useQuery({
     queryKey: [api.packaging.list.path],
     queryFn: async () => {
-      const res = await fetch(api.packaging.list.path);
+      const res = await fetch(api.packaging.list.path, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch packaging history");
       return api.packaging.list.responses[200].parse(await res.json());
     },

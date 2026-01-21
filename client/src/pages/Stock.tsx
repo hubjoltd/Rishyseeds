@@ -76,7 +76,13 @@ export default function Stock() {
       return;
     }
 
-    moveStock(data, {
+    // Convert quantity to string for API (decimal type in database)
+    const submitData = {
+      ...data,
+      quantity: String(data.quantity),
+    };
+
+    moveStock(submitData, {
       onSuccess: () => {
         setOpen(false);
         form.reset();
@@ -94,7 +100,7 @@ export default function Stock() {
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-white">
+            <Button data-testid="button-new-movement">
               <ArrowRightLeft className="mr-2 h-4 w-4" />
               New Movement
             </Button>

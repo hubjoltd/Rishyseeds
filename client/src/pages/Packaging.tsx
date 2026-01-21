@@ -55,7 +55,13 @@ export default function Packaging() {
   });
 
   const onSubmit = (data: z.infer<typeof packagingFormSchema>) => {
-    createPackaging(data, {
+    // Convert wasteQuantity to string for API (decimal type in database)
+    const submitData = {
+      ...data,
+      wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : undefined,
+    };
+    
+    createPackaging(submitData, {
       onSuccess: () => {
         setOpen(false);
         form.reset();
@@ -82,7 +88,7 @@ export default function Packaging() {
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-white" data-testid="button-new-packaging">
+            <Button data-testid="button-new-packaging">
               <Plus className="mr-2 h-4 w-4" />
               Record Output
             </Button>
