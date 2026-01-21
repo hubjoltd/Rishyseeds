@@ -10,6 +10,21 @@ import MemoryStore from "memorystore";
 
 const SessionStore = MemoryStore(session);
 
+type UserRole = 'admin' | 'manager' | 'hr';
+
+const rolePermissions: Record<string, UserRole[]> = {
+  '/api/batches': ['admin', 'manager'],
+  '/api/locations': ['admin', 'manager'],
+  '/api/stock': ['admin', 'manager'],
+  '/api/packaging': ['admin', 'manager'],
+  '/api/products': ['admin', 'manager'],
+  '/api/employees': ['admin', 'hr'],
+  '/api/attendance': ['admin', 'hr'],
+  '/api/payroll': ['admin', 'hr'],
+  '/api/dashboard': ['admin', 'manager', 'hr'],
+  '/api/reports': ['admin', 'manager', 'hr'],
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -58,6 +73,41 @@ export async function registerRoutes(
     
     res.json(user);
   });
+
+  // === ROLE-BASED AUTHORIZATION MIDDLEWARE ===
+  const checkRoleForPath = (routePath: string) => {
+    return async (req: any, res: any, next: any) => {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      const userRole = user.role as UserRole;
+      const allowedRoles = rolePermissions[routePath];
+      
+      if (allowedRoles && !allowedRoles.includes(userRole)) {
+        return res.status(403).json({ message: "Access denied. Insufficient permissions." });
+      }
+      
+      next();
+    };
+  };
+  
+  app.use('/api/batches', checkRoleForPath('/api/batches'));
+  app.use('/api/locations', checkRoleForPath('/api/locations'));
+  app.use('/api/stock', checkRoleForPath('/api/stock'));
+  app.use('/api/packaging', checkRoleForPath('/api/packaging'));
+  app.use('/api/products', checkRoleForPath('/api/products'));
+  app.use('/api/employees', checkRoleForPath('/api/employees'));
+  app.use('/api/attendance', checkRoleForPath('/api/attendance'));
+  app.use('/api/payroll', checkRoleForPath('/api/payroll'));
+  app.use('/api/dashboard', checkRoleForPath('/api/dashboard'));
+  app.use('/api/reports', checkRoleForPath('/api/reports'));
 
   // === DASHBOARD ROUTES ===
   app.get(api.dashboard.stats.path, async (req, res) => {
@@ -221,7 +271,6 @@ export async function registerRoutes(
   // === PAYROLL ROUTES ===
   app.post(api.payroll.generate.path, async (req, res) => {
     try {
-      // Mock generation logic
       const { month, employeeId } = api.payroll.generate.input.parse(req.body);
       
       const employees = await storage.getEmployees();
@@ -230,18 +279,36 @@ export async function registerRoutes(
       for (const emp of employees) {
         if (employeeId && emp.id !== employeeId) continue;
         
-        // Simple calculation logic
-        const basic = Number(emp.basicSalary);
+        // Calculate salary using employee's configured allowances and deductions
+        const basic = Number(emp.basicSalary || 0);
+        const hra = Number(emp.hra || 0);
+        const da = Number(emp.da || 0);
+        const travelAllowance = Number(emp.travelAllowance || 0);
+        const medicalAllowance = Number(emp.medicalAllowance || 0);
+        const otherAllowances = Number(emp.otherAllowances || 0);
+        
+        const totalAllowances = hra + da + travelAllowance + medicalAllowance + otherAllowances;
+        
+        const pfDeduction = Number(emp.pfDeduction || 0);
+        const esiDeduction = Number(emp.esiDeduction || 0);
+        const tdsDeduction = Number(emp.tdsDeduction || 0);
+        const otherDeductions = Number(emp.otherDeductions || 0);
+        
+        const totalDeductions = pfDeduction + esiDeduction + tdsDeduction + otherDeductions;
+        
+        const grossSalary = basic + totalAllowances;
+        const netSalary = grossSalary - totalDeductions;
+        
         const payroll = await storage.createPayroll({
           employeeId: emp.id,
           month,
           totalDays: 30,
-          presentDays: "28", // Mock
+          presentDays: "30", // Default full attendance, can be modified based on actual attendance
           basicPay: basic.toString(),
-          allowances: "1000",
+          allowances: totalAllowances.toString(),
           overtimeAmount: "0",
-          deductions: "500",
-          netSalary: (basic + 1000 - 500).toString(),
+          deductions: totalDeductions.toString(),
+          netSalary: netSalary.toString(),
           status: "generated"
         });
         generatedPayrolls.push(payroll);

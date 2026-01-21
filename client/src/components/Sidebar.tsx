@@ -24,49 +24,72 @@ import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
 import { Button } from "@/components/ui/button";
 
+import { Badge } from "@/components/ui/badge";
+
 interface MenuItem {
   icon: React.ElementType;
   label: string;
   href?: string;
-  children?: { icon: React.ElementType; label: string; href: string }[];
+  roles?: string[];
+  children?: { icon: React.ElementType; label: string; href: string; roles?: string[] }[];
 }
 
-const menuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
+const allMenuItems: MenuItem[] = [
+  { icon: LayoutDashboard, label: "Dashboard", href: "/", roles: ["admin", "manager", "hr"] },
   {
     label: "Seed Operations",
     icon: Sprout,
+    roles: ["admin", "manager"],
     children: [
-      { icon: Leaf, label: "Products", href: "/products" },
-      { icon: Package, label: "Batches", href: "/batches" },
-      { icon: MapPin, label: "Locations", href: "/locations" },
-      { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock" },
-      { icon: Boxes, label: "Packaging", href: "/packaging" },
+      { icon: Leaf, label: "Products", href: "/products", roles: ["admin", "manager"] },
+      { icon: Package, label: "Batches", href: "/batches", roles: ["admin", "manager"] },
+      { icon: MapPin, label: "Locations", href: "/locations", roles: ["admin", "manager"] },
+      { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager"] },
+      { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager"] },
     ]
   },
   {
     label: "HRMS",
     icon: Users,
+    roles: ["admin", "hr"],
     children: [
-      { icon: UserCircle, label: "Employees", href: "/employees" },
-      { icon: CalendarCheck, label: "Attendance", href: "/attendance" },
+      { icon: UserCircle, label: "Employees", href: "/employees", roles: ["admin", "hr"] },
+      { icon: CalendarCheck, label: "Attendance", href: "/attendance", roles: ["admin", "hr"] },
     ]
   },
   {
     label: "Finance",
     icon: CreditCard,
+    roles: ["admin", "hr"],
     children: [
-      { icon: CreditCard, label: "Payroll", href: "/payroll" },
+      { icon: CreditCard, label: "Payroll", href: "/payroll", roles: ["admin", "hr"] },
     ]
   },
-  { icon: FileText, label: "Reports", href: "/reports" },
+  { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr"] },
 ];
+
+const roleLabels: Record<string, string> = {
+  admin: "Administrator",
+  manager: "Operations Manager",
+  hr: "HR Manager",
+};
 
 export default function Sidebar() {
   const [location] = useLocation();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(["Seed Operations", "HRMS", "Finance"]);
+  
+  const userRole = user?.role || "admin";
+  
+  const menuItems = allMenuItems.filter(item => 
+    !item.roles || item.roles.includes(userRole)
+  ).map(item => ({
+    ...item,
+    children: item.children?.filter(child => 
+      !child.roles || child.roles.includes(userRole)
+    )
+  }));
 
   const toggleSection = (label: string) => {
     setExpandedSections(prev => 
@@ -183,6 +206,23 @@ export default function Sidebar() {
           ))}
         </ul>
       </nav>
+
+      {/* User Info */}
+      {user && !collapsed && (
+        <div className="p-3 border-t border-primary/10">
+          <div className="flex items-center gap-3 px-2">
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+              <UserCircle className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{user.fullName || user.username}</p>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 mt-0.5">
+                {roleLabels[userRole] || userRole}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className={cn(

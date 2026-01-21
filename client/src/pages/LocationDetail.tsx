@@ -25,6 +25,11 @@ export default function LocationDetail() {
 
   const { data: location, isLoading: locationLoading } = useQuery<Location>({
     queryKey: ["/api/locations", locationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/locations/${locationId}`);
+      if (!res.ok) throw new Error("Failed to fetch location");
+      return res.json();
+    },
     enabled: !!locationId,
   });
 

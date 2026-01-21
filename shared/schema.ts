@@ -94,6 +94,22 @@ export const employees = pgTable("employees", {
   workLocation: text("work_location"),
   salaryType: text("salary_type").notNull(), // monthly, daily
   basicSalary: decimal("basic_salary").notNull(),
+  hra: decimal("hra").default("0"), // House Rent Allowance
+  da: decimal("da").default("0"), // Dearness Allowance
+  travelAllowance: decimal("travel_allowance").default("0"),
+  medicalAllowance: decimal("medical_allowance").default("0"),
+  otherAllowances: decimal("other_allowances").default("0"),
+  pfDeduction: decimal("pf_deduction").default("0"), // Provident Fund
+  esiDeduction: decimal("esi_deduction").default("0"), // ESI
+  tdsDeduction: decimal("tds_deduction").default("0"), // TDS
+  otherDeductions: decimal("other_deductions").default("0"),
+  bankName: text("bank_name"),
+  bankAccountNumber: text("bank_account_number"),
+  ifscCode: text("ifsc_code"),
+  panNumber: text("pan_number"),
+  phone: text("phone"),
+  email: text("email"),
+  address: text("address"),
   status: text("status").default("active"),
   joinDate: date("join_date"),
   createdAt: timestamp("created_at").defaultNow(),
