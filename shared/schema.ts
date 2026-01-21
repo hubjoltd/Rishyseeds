@@ -15,6 +15,18 @@ export const users = pgTable("users", {
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const userRoleEnum = z.enum(["admin", "manager", "hr"]);
+export const createUserSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  role: userRoleEnum,
+  fullName: z.string().optional(),
+});
+export const updateUserSchema = z.object({
+  password: z.string().min(6).optional(),
+  role: userRoleEnum.optional(),
+  fullName: z.string().optional(),
+});
 
 // === LOCATIONS ===
 export const locations = pgTable("locations", {

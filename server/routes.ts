@@ -7,6 +7,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import { createUserSchema, updateUserSchema } from "@shared/schema";
 
 const SessionStore = MemoryStore(session);
 
@@ -23,6 +24,7 @@ const rolePermissions: Record<string, UserRole[]> = {
   '/api/payroll': ['admin', 'hr'],
   '/api/dashboard': ['admin', 'manager', 'hr'],
   '/api/reports': ['admin', 'manager', 'hr'],
+  '/api/users': ['admin'],
 };
 
 export async function registerRoutes(
@@ -114,6 +116,73 @@ export async function registerRoutes(
   app.use('/api/payroll', checkRoleForPath('/api/payroll'));
   app.use('/api/dashboard', checkRoleForPath('/api/dashboard'));
   app.use('/api/reports', checkRoleForPath('/api/reports'));
+  app.use('/api/users', checkRoleForPath('/api/users'));
+
+  // === USER MANAGEMENT ROUTES (Admin only) ===
+  app.get("/api/users", async (req, res) => {
+    const users = await storage.getUsers();
+    res.json(users);
+  });
+
+  app.post("/api/users", async (req, res) => {
+    try {
+      const result = createUserSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
+      }
+      const { username, password, role, fullName } = result.data;
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+      const user = await storage.createUser({ username, password, role, fullName });
+      res.status(201).json(user);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to create user" });
+    }
+  });
+
+  app.put("/api/users/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      const result = updateUserSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
+      }
+      const existingUser = await storage.getUser(id);
+      if (!existingUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const updated = await storage.updateUser(id, result.data);
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      const currentUserId = (req.session as any)?.userId;
+      if (id === currentUserId) {
+        return res.status(400).json({ message: "Cannot delete your own account" });
+      }
+      const existingUser = await storage.getUser(id);
+      if (!existingUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      await storage.deleteUser(id);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to delete user" });
+    }
+  });
 
   // === DASHBOARD ROUTES ===
   app.get(api.dashboard.stats.path, async (req, res) => {

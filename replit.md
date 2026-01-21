@@ -87,6 +87,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 2026
+- **User Management**: Admin-only Users & Roles page with CRUD operations for managing system users and role assignments (admin/manager/hr)
 - **Products Page**: Complete product/crop management with 67 varieties (notified + private research) from license document
 - **Reports Page**: Comprehensive reporting with Stock, Movements, Locations, and Batch Summary reports with CSV export and print functionality
 - **Collapsible Sidebar**: Modern sidebar with nested navigation (Seed Operations, HRMS, Finance) that collapses from 260px to 72px
@@ -95,7 +96,8 @@ Preferred communication style: Simple, everyday language.
 - **Stock Movement Validation**: Server-side validation prevents moving more stock than available in a batch
 - **Packaging Output**: New page for recording packaging production with waste tracking
 - **Error Handling**: Improved error propagation from server to UI with toast notifications
-- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct methods
+- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct, getUsers, updateUser, deleteUser methods
+- **Zod Validation**: User creation and update routes use Zod schemas for input validation and role enum enforcement
 
 ## Default Admin Credentials
 - Username: `admin`

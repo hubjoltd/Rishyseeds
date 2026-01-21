@@ -18,7 +18,8 @@ import {
   Leaf,
   UserCircle,
   CalendarCheck,
-  Building2
+  Building2,
+  Shield
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -66,6 +67,7 @@ const allMenuItems: MenuItem[] = [
     ]
   },
   { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr"] },
+  { icon: Shield, label: "Users & Roles", href: "/users", roles: ["admin"] },
 ];
 
 const roleLabels: Record<string, string> = {
