@@ -201,11 +201,13 @@ export default function Outward() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Quantity</label>
+                  <label className="text-sm font-medium">
+                    {form.watch("stockForm") === 'packed' ? 'No. of Packets/Bags' : 'Quantity (KG)'}
+                  </label>
                   <Input 
                     type="number" 
                     {...form.register("quantity")}
-                    placeholder="KG or packets"
+                    placeholder={form.watch("stockForm") === 'packed' ? 'Number of bags' : 'Quantity in KG'}
                     data-testid="input-quantity"
                   />
                 </div>
@@ -302,8 +304,8 @@ export default function Outward() {
                 <TableRow>
                   <TableHead>Lot</TableHead>
                   <TableHead>From</TableHead>
-                  <TableHead>Qty</TableHead>
                   <TableHead>Form</TableHead>
+                  <TableHead className="text-right">Packets/Bags</TableHead>
                   <TableHead>Destination</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Date</TableHead>
@@ -322,11 +324,17 @@ export default function Outward() {
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
                       <TableCell className="font-mono text-sm">{getLotDetails(record.lotId)}</TableCell>
                       <TableCell>{getLocationName(record.locationId)}</TableCell>
-                      <TableCell>{record.quantity}</TableCell>
                       <TableCell>
                         <Badge variant={record.stockForm === 'packed' ? 'default' : 'secondary'}>
                           {record.stockForm}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {record.stockForm === 'packed' ? (
+                          <span>{record.quantity} <span className="text-muted-foreground text-xs">bags</span></span>
+                        ) : (
+                          <span>{record.quantity} <span className="text-muted-foreground text-xs">KG</span></span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
