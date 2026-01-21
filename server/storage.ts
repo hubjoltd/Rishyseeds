@@ -3,7 +3,7 @@ import { db } from "./db";
 import { 
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
-  lots, stockBalances, processingRecords, outwardRecords,
+  lots, stockBalances, processingRecords, outwardRecords, packagingSizes,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -14,7 +14,8 @@ import {
   type Lot, type InsertLot,
   type StockBalance, type InsertStockBalance,
   type ProcessingRecord, type InsertProcessingRecord,
-  type OutwardRecord, type InsertOutwardRecord
+  type OutwardRecord, type InsertOutwardRecord,
+  type PackagingSize, type InsertPackagingSize
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -71,6 +72,7 @@ export interface IStorage {
   
   // Products
   getProducts(): Promise<Product[]>;
+  getProduct(id: number): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
 
   // Lots
@@ -102,6 +104,13 @@ export interface IStorage {
   createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord>;
   updateOutwardRecord(id: number, updates: Partial<InsertOutwardRecord>): Promise<OutwardRecord | undefined>;
   deleteOutwardRecord(id: number): Promise<boolean>;
+
+  // Packaging Sizes Master
+  getPackagingSizes(): Promise<PackagingSize[]>;
+  getPackagingSize(id: number): Promise<PackagingSize | undefined>;
+  createPackagingSize(size: InsertPackagingSize): Promise<PackagingSize>;
+  updatePackagingSize(id: number, updates: Partial<InsertPackagingSize>): Promise<PackagingSize | undefined>;
+  deletePackagingSize(id: number): Promise<boolean>;
 
   // Stats
   getDashboardStats(): Promise<{
@@ -321,6 +330,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(products);
   }
 
+  async getProduct(id: number): Promise<Product | undefined> {
+    const [product] = await db.select().from(products).where(eq(products.id, id));
+    return product;
+  }
+
   async createProduct(product: InsertProduct): Promise<Product> {
     const [newProduct] = await db.insert(products).values(product).returning();
     return newProduct;
@@ -490,6 +504,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOutwardRecord(id: number): Promise<boolean> {
     await db.delete(outwardRecords).where(eq(outwardRecords.id, id));
+    return true;
+  }
+
+  // Packaging Sizes Master
+  async getPackagingSizes(): Promise<PackagingSize[]> {
+    return await db.select().from(packagingSizes).orderBy(packagingSizes.size);
+  }
+
+  async getPackagingSize(id: number): Promise<PackagingSize | undefined> {
+    const [size] = await db.select().from(packagingSizes).where(eq(packagingSizes.id, id));
+    return size;
+  }
+
+  async createPackagingSize(size: InsertPackagingSize): Promise<PackagingSize> {
+    const [newSize] = await db.insert(packagingSizes).values(size).returning();
+    return newSize;
+  }
+
+  async updatePackagingSize(id: number, updates: Partial<InsertPackagingSize>): Promise<PackagingSize | undefined> {
+    const [updated] = await db.update(packagingSizes).set(updates).where(eq(packagingSizes.id, id)).returning();
+    return updated;
+  }
+
+  async deletePackagingSize(id: number): Promise<boolean> {
+    await db.delete(packagingSizes).where(eq(packagingSizes.id, id));
     return true;
   }
 

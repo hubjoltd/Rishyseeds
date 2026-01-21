@@ -39,20 +39,27 @@ interface MenuItem {
 }
 
 const allMenuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/", roles: ["admin", "manager", "hr"] },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
   {
-    label: "Seed Operations",
-    icon: Sprout,
+    label: "Master Data",
+    icon: Building2,
     roles: ["admin", "manager"],
     children: [
-      { icon: Leaf, label: "Products", href: "/products", roles: ["admin", "manager"] },
-      { icon: Package, label: "Batches", href: "/batches", roles: ["admin", "manager"] },
+      { icon: Leaf, label: "Varieties", href: "/products", roles: ["admin", "manager"] },
       { icon: MapPin, label: "Warehouses", href: "/locations", roles: ["admin", "manager"] },
-      { icon: PackagePlus, label: "Inward / Lots", href: "/inward", roles: ["admin", "manager"] },
-      { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager"] },
-      { icon: Cog, label: "Processing", href: "/processing", roles: ["admin", "manager"] },
-      { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager"] },
-      { icon: Truck, label: "Outward", href: "/outward", roles: ["admin", "manager"] },
+      { icon: Package, label: "Packaging Sizes", href: "/packaging-sizes", roles: ["admin", "manager"] },
+    ]
+  },
+  {
+    label: "Plant Operations",
+    icon: Sprout,
+    roles: ["admin", "manager", "godown_operator", "production_operator", "dispatch_operator"],
+    children: [
+      { icon: PackagePlus, label: "Inward", href: "/inward", roles: ["admin", "manager", "godown_operator"] },
+      { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager", "godown_operator"] },
+      { icon: Cog, label: "Processing", href: "/processing", roles: ["admin", "manager", "production_operator"] },
+      { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager", "production_operator"] },
+      { icon: Truck, label: "Outward", href: "/outward", roles: ["admin", "manager", "dispatch_operator"] },
     ]
   },
   {
@@ -72,21 +79,24 @@ const allMenuItems: MenuItem[] = [
       { icon: CreditCard, label: "Payroll", href: "/payroll", roles: ["admin", "hr"] },
     ]
   },
-  { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr"] },
+  { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
   { icon: Shield, label: "Users & Roles", href: "/users", roles: ["admin"] },
 ];
 
 const roleLabels: Record<string, string> = {
   admin: "Administrator",
-  manager: "Operations Manager",
+  manager: "Plant Manager",
   hr: "HR Manager",
+  godown_operator: "Godown Operator",
+  production_operator: "Production Operator",
+  dispatch_operator: "Dispatch Operator",
 };
 
 export default function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<string[]>(["Seed Operations", "HRMS", "Finance"]);
+  const [expandedSections, setExpandedSections] = useState<string[]>(["Master Data", "Plant Operations", "HRMS", "Finance"]);
   
   const userRole = user?.role || "admin";
   

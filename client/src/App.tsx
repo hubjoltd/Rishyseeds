@@ -24,6 +24,7 @@ import Users from "@/pages/Users";
 import Inward from "@/pages/Inward";
 import Processing from "@/pages/Processing";
 import Outward from "@/pages/Outward";
+import PackagingSizes from "@/pages/PackagingSizes";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -100,6 +101,9 @@ function Router() {
       </Route>
       <Route path="/outward">
         <ProtectedRoute component={Outward} />
+      </Route>
+      <Route path="/packaging-sizes">
+        <ProtectedRoute component={PackagingSizes} />
       </Route>
 
       <Route component={NotFound} />

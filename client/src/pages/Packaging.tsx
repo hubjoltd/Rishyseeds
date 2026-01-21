@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useBatches, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
+import { useLots, useProducts, usePackagingSizes, useStockBalances, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPackagingOutputSchema, type PackagingOutput } from "@shared/schema";
+import { insertPackagingOutputSchema, type PackagingOutput, type Lot, type Product, type PackagingSize, type StockBalance } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,10 @@ import { format } from "date-fns";
 
 export default function Packaging() {
   const { data: packagingOutputs, isLoading } = usePackagingOutputs();
-  const { data: batches } = useBatches();
+  const { data: lots } = useLots();
+  const { data: products } = useProducts();
+  const { data: packagingSizes } = usePackagingSizes();
+  const { data: stockBalances } = useStockBalances();
   const { mutate: createPackaging, isPending } = useCreatePackagingOutput();
   const { mutate: deletePackaging, isPending: isDeleting } = useDeletePackagingOutput();
   const { mutate: updatePackaging, isPending: isUpdating } = useUpdatePackagingOutput();
@@ -55,9 +58,28 @@ export default function Packaging() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
   
   const canDeletePackaging = canDelete('packaging');
   const canEditPackaging = canEdit('packaging');
+
+  const activeSizes = (packagingSizes as PackagingSize[] || []).filter((s: PackagingSize) => s.isActive);
+  
+  const getLotDetails = (lotId: number) => {
+    const lot = (lots as Lot[] || []).find((l: Lot) => l.id === lotId);
+    if (!lot) return "Unknown";
+    const product = (products as Product[] || []).find((p: Product) => p.id === lot.productId);
+    return `${lot.lotNumber} (${product?.crop || 'Unknown'})`;
+  };
+
+  const getLooseStockForLot = (lotId: number) => {
+    const balances = (stockBalances as StockBalance[] || []).filter(
+      (b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose'
+    );
+    return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
+  };
+
+  const selectedLotLooseStock = selectedLotId ? getLooseStockForLot(selectedLotId) : 0;
 
   const handleDeletePackaging = () => {
     if (deleteId !== null) {
@@ -70,22 +92,39 @@ export default function Packaging() {
   const handleEditPackaging = (pkg: PackagingOutput) => {
     setEditingPackaging(pkg);
     editForm.reset({
-      batchId: pkg.batchId,
+      lotId: pkg.lotId || undefined,
+      packagingSizeId: pkg.packagingSizeId || undefined,
       packetSize: pkg.packetSize,
       numberOfPackets: pkg.numberOfPackets,
       wasteQuantity: Number(pkg.wasteQuantity || 0),
+      packedBy: pkg.packedBy || "",
+      remarks: pkg.remarks || "",
     });
     setEditOpen(true);
+  };
+
+  const getSizeWeightKg = (size: PackagingSize) => {
+    const numericSize = Number(size.size);
+    return size.unit.toLowerCase() === 'g' ? numericSize / 1000 : numericSize;
   };
 
   const onEditSubmit = (data: z.infer<typeof packagingFormSchema>) => {
     if (!editingPackaging) return;
     
+    const size = activeSizes.find((s: PackagingSize) => s.id === data.packagingSizeId);
+    const totalKg = size ? getSizeWeightKg(size) * data.numberOfPackets : 0;
+    
     updatePackaging({
       id: editingPackaging.id,
       data: {
-        ...data,
-        wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : undefined,
+        lotId: data.lotId,
+        packagingSizeId: data.packagingSizeId,
+        packetSize: size?.label || data.packetSize,
+        numberOfPackets: data.numberOfPackets,
+        totalQuantityKg: String(totalKg),
+        wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : "0",
+        packedBy: data.packedBy || null,
+        remarks: data.remarks || null,
       }
     }, {
       onSuccess: () => {
@@ -97,9 +136,12 @@ export default function Packaging() {
   };
 
   const packagingFormSchema = insertPackagingOutputSchema.extend({
-    batchId: z.coerce.number(),
+    lotId: z.coerce.number().min(1, "Please select a lot"),
+    packagingSizeId: z.coerce.number().min(1, "Please select a package size"),
     numberOfPackets: z.coerce.number().positive("Must be at least 1"),
     wasteQuantity: z.coerce.number().optional(),
+    packedBy: z.string().optional(),
+    remarks: z.string().optional(),
   });
 
   const form = useForm<z.infer<typeof packagingFormSchema>>({
@@ -108,6 +150,8 @@ export default function Packaging() {
       packetSize: "",
       numberOfPackets: 0,
       wasteQuantity: 0,
+      packedBy: "",
+      remarks: "",
     }
   });
 
@@ -115,17 +159,34 @@ export default function Packaging() {
     resolver: zodResolver(packagingFormSchema),
   });
 
+  const watchedSizeId = form.watch("packagingSizeId");
+  const watchedPackets = form.watch("numberOfPackets");
+  
+  const selectedSize = activeSizes.find((s: PackagingSize) => s.id === watchedSizeId);
+  const estimatedQuantity = selectedSize && watchedPackets 
+    ? (getSizeWeightKg(selectedSize) * watchedPackets).toFixed(2) 
+    : "0";
+
   const onSubmit = (data: z.infer<typeof packagingFormSchema>) => {
-    // Convert wasteQuantity to string for API (decimal type in database)
+    const size = activeSizes.find((s: PackagingSize) => s.id === data.packagingSizeId);
+    const totalKg = size ? getSizeWeightKg(size) * data.numberOfPackets : 0;
+    
     const submitData = {
-      ...data,
-      wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : undefined,
+      lotId: data.lotId,
+      packagingSizeId: data.packagingSizeId,
+      packetSize: size?.label || data.packetSize,
+      numberOfPackets: data.numberOfPackets,
+      totalQuantityKg: String(totalKg),
+      wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : "0",
+      packedBy: data.packedBy || null,
+      remarks: data.remarks || null,
     };
     
     createPackaging(submitData, {
       onSuccess: () => {
         setOpen(false);
         form.reset();
+        setSelectedLotId(null);
       },
     });
   };
@@ -163,42 +224,55 @@ export default function Packaging() {
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Batch</label>
-                <Select onValueChange={(val) => form.setValue("batchId", parseInt(val))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Batch" />
+                <label className="text-sm font-medium">Lot</label>
+                <Select onValueChange={(val) => {
+                  const lotId = parseInt(val);
+                  form.setValue("lotId", lotId);
+                  setSelectedLotId(lotId);
+                }}>
+                  <SelectTrigger data-testid="select-lot">
+                    <SelectValue placeholder="Select Lot" />
                   </SelectTrigger>
                   <SelectContent>
-                    {batches?.map((b) => (
-                      <SelectItem key={b.id} value={b.id.toString()}>
-                        {b.batchNumber} - {b.crop} / {b.variety}
+                    {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active').map((lot: Lot) => (
+                      <SelectItem key={lot.id} value={lot.id.toString()}>
+                        {getLotDetails(lot.id)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {form.formState.errors.batchId && <p className="text-xs text-red-500">Required</p>}
+                {form.formState.errors.lotId && <p className="text-xs text-red-500">Required</p>}
+                {selectedLotId && (
+                  <p className="text-xs text-muted-foreground">
+                    Available loose stock: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} kg</span>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Packet Size</label>
-                  <Select onValueChange={(val) => form.setValue("packetSize", val)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Size" />
+                  <label className="text-sm font-medium">Package Size</label>
+                  <Select onValueChange={(val) => {
+                    const sizeId = parseInt(val);
+                    form.setValue("packagingSizeId", sizeId);
+                    const size = activeSizes.find((s: PackagingSize) => s.id === sizeId);
+                    if (size) form.setValue("packetSize", size.label);
+                  }}>
+                    <SelectTrigger data-testid="select-package-size">
+                      <SelectValue placeholder="Select size" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="100g">100g</SelectItem>
-                      <SelectItem value="250g">250g</SelectItem>
-                      <SelectItem value="500g">500g</SelectItem>
-                      <SelectItem value="1kg">1kg</SelectItem>
-                      <SelectItem value="5kg">5kg</SelectItem>
-                      <SelectItem value="10kg">10kg</SelectItem>
-                      <SelectItem value="25kg">25kg</SelectItem>
+                      {activeSizes.map((size: PackagingSize) => (
+                        <SelectItem key={size.id} value={size.id.toString()}>
+                          {size.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {form.formState.errors.packagingSizeId && <p className="text-xs text-red-500">Required</p>}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Number of Packets</label>
+                  <label className="text-sm font-medium">Number of Bags</label>
                   <Input 
                     type="number" 
                     {...form.register("numberOfPackets")}
@@ -207,15 +281,42 @@ export default function Packaging() {
                 </div>
               </div>
 
+              {parseFloat(estimatedQuantity) > 0 && (
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm">
+                    Estimated quantity: <span className="font-bold text-primary">{estimatedQuantity} kg</span>
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Packed By</label>
+                  <Input 
+                    {...form.register("packedBy")}
+                    placeholder="Person name"
+                    data-testid="input-packed-by"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Waste/Loss (KG)</label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    {...form.register("wasteQuantity")} 
+                    placeholder="0"
+                    data-testid="input-waste-quantity"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">Waste/Loss (KG)</label>
+                <label className="text-sm font-medium">Remarks</label>
                 <Input 
-                  type="number" 
-                  step="0.01"
-                  {...form.register("wasteQuantity")} 
-                  placeholder="0"
+                  {...form.register("remarks")}
+                  placeholder="Optional notes"
+                  data-testid="input-remarks"
                 />
-                <p className="text-xs text-muted-foreground">Optional - record any material loss</p>
               </div>
 
               <Button 
@@ -290,10 +391,10 @@ export default function Packaging() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Batch ID</TableHead>
+                <TableHead>Lot</TableHead>
                 <TableHead>Packet Size</TableHead>
-                <TableHead className="text-right">Packets</TableHead>
-                <TableHead className="text-right">Est. Output (KG)</TableHead>
+                <TableHead className="text-right">Bags</TableHead>
+                <TableHead className="text-right">Total (KG)</TableHead>
                 <TableHead className="text-right">Waste (KG)</TableHead>
                 {(canEditPackaging || canDeletePackaging) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
@@ -307,7 +408,9 @@ export default function Packaging() {
                 packagingOutputs?.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>{p.productionDate ? format(new Date(p.productionDate), 'MMM dd, yyyy') : '-'}</TableCell>
-                    <TableCell className="font-medium">{p.batchId}</TableCell>
+                    <TableCell className="font-medium font-mono text-sm">
+                      {p.lotId ? getLotDetails(p.lotId) : (p.batchId ? `Batch #${p.batchId}` : '-')}
+                    </TableCell>
                     <TableCell>
                       <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
                         {p.packetSize}
@@ -315,7 +418,7 @@ export default function Packaging() {
                     </TableCell>
                     <TableCell className="text-right font-bold">{p.numberOfPackets}</TableCell>
                     <TableCell className="text-right text-green-600 font-medium">
-                      {calculateOutput(p.packetSize, p.numberOfPackets)} kg
+                      {p.totalQuantityKg ? Number(p.totalQuantityKg).toFixed(2) : calculateOutput(p.packetSize, p.numberOfPackets)} kg
                     </TableCell>
                     <TableCell className="text-right text-orange-600">
                       {Number(p.wasteQuantity || 0).toFixed(2)} kg
@@ -383,18 +486,18 @@ export default function Packaging() {
               </DialogHeader>
               <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Batch</label>
+                  <label className="text-sm font-medium">Lot</label>
                   <Select 
-                    value={editForm.watch("batchId")?.toString()} 
-                    onValueChange={(val) => editForm.setValue("batchId", parseInt(val))}
+                    value={editForm.watch("lotId")?.toString()} 
+                    onValueChange={(val) => editForm.setValue("lotId", parseInt(val))}
                   >
-                    <SelectTrigger data-testid="select-edit-batch">
-                      <SelectValue placeholder="Select Batch" />
+                    <SelectTrigger data-testid="select-edit-lot">
+                      <SelectValue placeholder="Select Lot" />
                     </SelectTrigger>
                     <SelectContent>
-                      {batches?.map((b) => (
-                        <SelectItem key={b.id} value={b.id.toString()}>
-                          {b.batchNumber} - {b.crop} / {b.variety}
+                      {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active').map((lot: Lot) => (
+                        <SelectItem key={lot.id} value={lot.id.toString()}>
+                          {getLotDetails(lot.id)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -403,27 +506,30 @@ export default function Packaging() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Packet Size</label>
+                    <label className="text-sm font-medium">Package Size</label>
                     <Select 
-                      value={editForm.watch("packetSize")}
-                      onValueChange={(val) => editForm.setValue("packetSize", val)}
+                      value={editForm.watch("packagingSizeId")?.toString()}
+                      onValueChange={(val) => {
+                        const sizeId = parseInt(val);
+                        editForm.setValue("packagingSizeId", sizeId);
+                        const size = activeSizes.find((s: PackagingSize) => s.id === sizeId);
+                        if (size) editForm.setValue("packetSize", size.label);
+                      }}
                     >
                       <SelectTrigger data-testid="select-edit-packet-size">
                         <SelectValue placeholder="Size" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="100g">100g</SelectItem>
-                        <SelectItem value="250g">250g</SelectItem>
-                        <SelectItem value="500g">500g</SelectItem>
-                        <SelectItem value="1kg">1kg</SelectItem>
-                        <SelectItem value="5kg">5kg</SelectItem>
-                        <SelectItem value="10kg">10kg</SelectItem>
-                        <SelectItem value="25kg">25kg</SelectItem>
+                        {activeSizes.map((size: PackagingSize) => (
+                          <SelectItem key={size.id} value={size.id.toString()}>
+                            {size.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Number of Packets</label>
+                    <label className="text-sm font-medium">Number of Bags</label>
                     <Input 
                       type="number" 
                       {...editForm.register("numberOfPackets")}
@@ -432,15 +538,25 @@ export default function Packaging() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Waste/Loss (KG)</label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    {...editForm.register("wasteQuantity")} 
-                    placeholder="0"
-                    data-testid="input-edit-waste-quantity"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Packed By</label>
+                    <Input 
+                      {...editForm.register("packedBy")}
+                      placeholder="Person name"
+                      data-testid="input-edit-packed-by"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Waste/Loss (KG)</label>
+                    <Input 
+                      type="number" 
+                      step="0.01"
+                      {...editForm.register("wasteQuantity")} 
+                      placeholder="0"
+                      data-testid="input-edit-waste-quantity"
+                    />
+                  </div>
                 </div>
 
                 <Button 

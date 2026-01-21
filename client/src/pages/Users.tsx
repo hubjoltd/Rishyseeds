@@ -177,6 +177,9 @@ export default function Users() {
       case "admin": return "badge-danger";
       case "manager": return "badge-info";
       case "hr": return "badge-success";
+      case "godown_operator": return "badge-warning";
+      case "production_operator": return "badge-purple";
+      case "dispatch_operator": return "badge-orange";
       default: return "";
     }
   };
@@ -184,8 +187,11 @@ export default function Users() {
   const getRoleLabel = (role: string) => {
     switch (role) {
       case "admin": return "Administrator";
-      case "manager": return "Operations Manager";
+      case "manager": return "Plant Manager";
       case "hr": return "HR Manager";
+      case "godown_operator": return "Godown Operator";
+      case "production_operator": return "Production Operator";
+      case "dispatch_operator": return "Dispatch Operator";
       default: return role;
     }
   };
@@ -230,8 +236,11 @@ export default function Users() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Administrator - Full Access</SelectItem>
-                    <SelectItem value="manager">Operations Manager - Seed Operations</SelectItem>
+                    <SelectItem value="manager">Plant Manager - All Operations</SelectItem>
                     <SelectItem value="hr">HR Manager - HRMS & Payroll</SelectItem>
+                    <SelectItem value="godown_operator">Godown Operator - Inward & Stock Movement</SelectItem>
+                    <SelectItem value="production_operator">Production Operator - Processing & Packaging</SelectItem>
+                    <SelectItem value="dispatch_operator">Dispatch Operator - Outward Only</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -364,8 +373,11 @@ export default function Users() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Administrator - Full Access</SelectItem>
-                  <SelectItem value="manager">Operations Manager - Seed Operations</SelectItem>
+                  <SelectItem value="manager">Plant Manager - All Operations</SelectItem>
                   <SelectItem value="hr">HR Manager - HRMS & Payroll</SelectItem>
+                  <SelectItem value="godown_operator">Godown Operator - Inward & Stock Movement</SelectItem>
+                  <SelectItem value="production_operator">Production Operator - Processing & Packaging</SelectItem>
+                  <SelectItem value="dispatch_operator">Dispatch Operator - Outward Only</SelectItem>
                 </SelectContent>
               </Select>
             </div>

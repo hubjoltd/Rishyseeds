@@ -558,6 +558,35 @@ export function useUpdateProcessingRecord() {
   });
 }
 
+export function useCompleteProcessing() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, outputQuantity, wasteQuantity }: { id: number; outputQuantity: number; wasteQuantity: number }) => {
+      const res = await fetch(`/api/processing/${id}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ outputQuantity, wasteQuantity }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to complete processing");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
+      toast({ title: "Success", description: "Processing completed and output lot created" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
 export function useDeleteProcessingRecord() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -667,6 +696,94 @@ export function useDeleteOutwardRecord() {
       queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Outward record deleted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+// === PACKAGING SIZES MASTER ===
+export function usePackagingSizes() {
+  return useQuery({
+    queryKey: ["/api/packaging-sizes"],
+    queryFn: async () => {
+      const res = await fetch("/api/packaging-sizes", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch packaging sizes");
+      return res.json();
+    },
+  });
+}
+
+export function useCreatePackagingSize() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (data: { size: string; unit: string; label: string }) => {
+      const res = await fetch("/api/packaging-sizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create packaging size");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging-sizes"] });
+      toast({ title: "Success", description: "Packaging size created successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+export function useUpdatePackagingSize() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/packaging-sizes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update packaging size");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging-sizes"] });
+      toast({ title: "Success", description: "Packaging size updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+export function useDeletePackagingSize() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/packaging-sizes/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete packaging size");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging-sizes"] });
+      toast({ title: "Success", description: "Packaging size deleted successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });

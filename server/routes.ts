@@ -7,13 +7,13 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
-import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema } from "@shared/schema";
+import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
 
 const SessionStore = MemoryStore(session);
 
-type UserRole = 'admin' | 'manager' | 'hr';
+type UserRole = 'admin' | 'manager' | 'hr' | 'godown_operator' | 'production_operator' | 'dispatch_operator';
 type Action = 'view' | 'create' | 'edit' | 'delete';
-type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard' | 'lots' | 'processing' | 'outward';
+type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard' | 'lots' | 'processing' | 'outward' | 'packagingSizes';
 
 // Granular role-based permissions system
 const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
@@ -32,6 +32,7 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     lots: ['view', 'create', 'edit', 'delete'],
     processing: ['view', 'create', 'edit', 'delete'],
     outward: ['view', 'create', 'edit', 'delete'],
+    packagingSizes: ['view', 'create', 'edit', 'delete'],
   },
   manager: {
     batches: ['view', 'create', 'edit'],
@@ -48,6 +49,7 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     lots: ['view', 'create', 'edit'],
     processing: ['view', 'create', 'edit'],
     outward: ['view', 'create', 'edit'],
+    packagingSizes: ['view', 'create', 'edit'],
   },
   hr: {
     batches: ['view'],
@@ -64,6 +66,58 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     lots: ['view'],
     processing: ['view'],
     outward: ['view'],
+    packagingSizes: ['view'],
+  },
+  godown_operator: {
+    batches: ['view'],
+    locations: ['view'],
+    stock: ['view', 'create', 'edit'],
+    packaging: ['view'],
+    products: ['view'],
+    employees: [],
+    attendance: [],
+    payroll: [],
+    users: [],
+    reports: ['view'],
+    dashboard: ['view'],
+    lots: ['view', 'create', 'edit'],
+    processing: ['view'],
+    outward: ['view'],
+    packagingSizes: ['view'],
+  },
+  production_operator: {
+    batches: ['view'],
+    locations: ['view'],
+    stock: ['view'],
+    packaging: ['view', 'create', 'edit'],
+    products: ['view'],
+    employees: [],
+    attendance: [],
+    payroll: [],
+    users: [],
+    reports: ['view'],
+    dashboard: ['view'],
+    lots: ['view'],
+    processing: ['view', 'create', 'edit'],
+    outward: ['view'],
+    packagingSizes: ['view'],
+  },
+  dispatch_operator: {
+    batches: ['view'],
+    locations: ['view'],
+    stock: ['view'],
+    packaging: ['view'],
+    products: ['view'],
+    employees: [],
+    attendance: [],
+    payroll: [],
+    users: [],
+    reports: ['view'],
+    dashboard: ['view'],
+    lots: ['view'],
+    processing: ['view'],
+    outward: ['view', 'create', 'edit'],
+    packagingSizes: ['view'],
   },
 };
 
@@ -725,6 +779,64 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/processing/:id/complete", checkPermission('processing', 'edit'), async (req, res) => {
+    try {
+      const { outputQuantity, wasteQuantity } = req.body;
+      
+      if (!outputQuantity || outputQuantity <= 0) {
+        return res.status(400).json({ message: "Output quantity must be positive" });
+      }
+      
+      const processingId = parseInt(req.params.id);
+      const record = await storage.getProcessingRecord(processingId);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Processing record not found" });
+      }
+      
+      if (record.status === 'completed') {
+        return res.status(400).json({ message: "Processing record already completed" });
+      }
+      
+      const inputLot = await storage.getLot(record.inputLotId);
+      if (!inputLot) {
+        return res.status(404).json({ message: "Input lot not found" });
+      }
+      
+      const product = await storage.getProduct(inputLot.productId);
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+      
+      const outputLotNumber = await storage.generateLotNumber(inputLot.productId);
+      
+      const outputLot = await storage.createLot({
+        lotNumber: outputLotNumber,
+        productId: inputLot.productId,
+        sourceType: "processing_output",
+        sourceReferenceId: processingId,
+        sourceName: `Processing #${processingId}`,
+        initialQuantity: String(outputQuantity),
+        quantityUnit: "kg",
+        stockForm: "loose",
+        status: "active",
+        inwardDate: new Date().toISOString().slice(0, 10),
+        remarks: `Output from processing ${record.processingType} of lot ${inputLot.lotNumber}`,
+      });
+      
+      const updatedRecord = await storage.updateProcessingRecord(processingId, {
+        outputQuantity: String(outputQuantity),
+        wasteQuantity: String(wasteQuantity || 0),
+        outputLotId: outputLot.id,
+        status: "completed",
+      });
+      
+      res.json({ record: updatedRecord, outputLot });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to complete processing" });
+    }
+  });
+
   // === OUTWARD RECORDS ROUTES ===
   app.get("/api/outward", checkPermission('outward', 'view'), async (req, res) => {
     const records = await storage.getOutwardRecords();
@@ -774,6 +886,58 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to delete outward record" });
+    }
+  });
+
+  // === PACKAGING SIZES MASTER ROUTES ===
+  app.get("/api/packaging-sizes", checkPermission('packagingSizes', 'view'), async (req, res) => {
+    const sizes = await storage.getPackagingSizes();
+    res.json(sizes);
+  });
+
+  app.get("/api/packaging-sizes/:id", checkPermission('packagingSizes', 'view'), async (req, res) => {
+    const size = await storage.getPackagingSize(parseInt(req.params.id));
+    if (!size) {
+      return res.status(404).json({ message: "Packaging size not found" });
+    }
+    res.json(size);
+  });
+
+  app.post("/api/packaging-sizes", checkPermission('packagingSizes', 'create'), async (req, res) => {
+    try {
+      const validatedData = insertPackagingSizeSchema.parse(req.body);
+      const size = await storage.createPackagingSize(validatedData);
+      res.status(201).json(size);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to create packaging size" });
+    }
+  });
+
+  app.patch("/api/packaging-sizes/:id", checkPermission('packagingSizes', 'edit'), async (req, res) => {
+    try {
+      const validatedData = insertPackagingSizeSchema.partial().parse(req.body);
+      const size = await storage.updatePackagingSize(parseInt(req.params.id), validatedData);
+      if (!size) {
+        return res.status(404).json({ message: "Packaging size not found" });
+      }
+      res.json(size);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to update packaging size" });
+    }
+  });
+
+  app.delete("/api/packaging-sizes/:id", checkPermission('packagingSizes', 'delete'), async (req, res) => {
+    try {
+      await storage.deletePackagingSize(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete packaging size" });
     }
   });
 

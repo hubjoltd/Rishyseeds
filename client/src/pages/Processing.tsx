@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useProcessingRecords, useCreateProcessingRecord, useDeleteProcessingRecord, useLots, useProducts, useLocations } from "@/hooks/use-inventory";
+import { useProcessingRecords, useCreateProcessingRecord, useDeleteProcessingRecord, useCompleteProcessing, useLots, useProducts, useLocations } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Cog, Trash2 } from "lucide-react";
+import { Plus, Search, Cog, Trash2, CheckCircle } from "lucide-react";
 import { format } from "date-fns";
 
 const processingFormSchema = z.object({
@@ -53,19 +53,27 @@ const processingFormSchema = z.object({
   remarks: z.string().optional(),
 });
 
+const completeProcessingSchema = z.object({
+  outputQuantity: z.coerce.number().positive("Output quantity must be positive"),
+  wasteQuantity: z.coerce.number().min(0, "Waste cannot be negative"),
+});
+
 export default function Processing() {
   const { data: records, isLoading } = useProcessingRecords();
   const { data: lots } = useLots();
   const { data: products } = useProducts();
   const { mutate: createRecord, isPending } = useCreateProcessingRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteProcessingRecord();
-  const { canDelete } = useAuth();
+  const { mutate: completeProcessing, isPending: isCompleting } = useCompleteProcessing();
+  const { canDelete, canEdit } = useAuth();
   
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+  const [completeRecordId, setCompleteRecordId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
   const canDeleteProcessing = canDelete('processing');
+  const canEditProcessing = canEdit('processing');
 
   const form = useForm<z.infer<typeof processingFormSchema>>({
     resolver: zodResolver(processingFormSchema),
@@ -73,6 +81,18 @@ export default function Processing() {
       inputQuantity: 0,
     }
   });
+
+  const completeForm = useForm<z.infer<typeof completeProcessingSchema>>({
+    resolver: zodResolver(completeProcessingSchema),
+    defaultValues: {
+      outputQuantity: 0,
+      wasteQuantity: 0,
+    }
+  });
+
+  const selectedRecordForComplete = completeRecordId 
+    ? (records as ProcessingRecord[] || []).find((r: ProcessingRecord) => r.id === completeRecordId)
+    : null;
 
   const onSubmit = (data: z.infer<typeof processingFormSchema>) => {
     createRecord({
@@ -94,6 +114,21 @@ export default function Processing() {
     if (deleteRecordId) {
       deleteRecord(deleteRecordId, {
         onSuccess: () => setDeleteRecordId(null),
+      });
+    }
+  };
+
+  const handleComplete = (data: z.infer<typeof completeProcessingSchema>) => {
+    if (completeRecordId) {
+      completeProcessing({
+        id: completeRecordId,
+        outputQuantity: data.outputQuantity,
+        wasteQuantity: data.wasteQuantity,
+      }, {
+        onSuccess: () => {
+          setCompleteRecordId(null);
+          completeForm.reset();
+        },
       });
     }
   };
@@ -262,7 +297,17 @@ export default function Processing() {
                         </Badge>
                       </TableCell>
                       <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right flex gap-1 justify-end">
+                        {record.status === 'pending' && canEditProcessing && (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setCompleteRecordId(record.id)}
+                            data-testid={`button-complete-processing-${record.id}`}
+                          >
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          </Button>
+                        )}
                         {canDeleteProcessing && (
                           <Button
                             variant="ghost"
@@ -304,6 +349,54 @@ export default function Processing() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!completeRecordId} onOpenChange={() => setCompleteRecordId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Processing</DialogTitle>
+            <DialogDescription>
+              Enter the output quantity and waste. A new output lot will be created automatically.
+              {selectedRecordForComplete && (
+                <span className="block mt-2 text-sm">
+                  Input: {selectedRecordForComplete.inputQuantity} kg
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={completeForm.handleSubmit(handleComplete)} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Output Quantity (KG)</label>
+              <Input 
+                type="number" 
+                {...completeForm.register("outputQuantity")}
+                placeholder="Processed output quantity"
+                data-testid="input-output-quantity"
+              />
+              <p className="text-xs text-muted-foreground">Quantity of usable processed seeds</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Waste Quantity (KG)</label>
+              <Input 
+                type="number" 
+                {...completeForm.register("wasteQuantity")}
+                placeholder="Waste/loss quantity"
+                data-testid="input-waste-quantity"
+              />
+              <p className="text-xs text-muted-foreground">Processing loss (dust, debris, damaged seeds)</p>
+            </div>
+
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isCompleting}
+              data-testid="button-submit-complete"
+            >
+              {isCompleting ? "Completing..." : "Complete & Create Output Lot"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

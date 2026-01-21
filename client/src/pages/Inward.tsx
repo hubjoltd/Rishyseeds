@@ -49,7 +49,9 @@ const inwardFormSchema = z.object({
   productId: z.coerce.number().min(1, "Please select a product"),
   locationId: z.coerce.number().min(1, "Please select a warehouse"),
   initialQuantity: z.coerce.number().positive("Quantity must be positive"),
+  quantityUnit: z.string().default("kg"),
   stockForm: z.string().default("loose"),
+  sourceName: z.string().optional(),
   inwardDate: z.string().optional(),
   expiryDate: z.string().optional(),
   remarks: z.string().optional(),
@@ -76,7 +78,9 @@ export default function Inward() {
     resolver: zodResolver(inwardFormSchema),
     defaultValues: {
       stockForm: "loose",
+      quantityUnit: "kg",
       initialQuantity: 0,
+      sourceName: "",
     }
   });
 
@@ -100,11 +104,17 @@ export default function Inward() {
       lotNumber = result.lotNumber;
     }
     
+    const quantityInKg = data.quantityUnit === "tons" 
+      ? data.initialQuantity * 1000 
+      : data.initialQuantity;
+    
     createLot({
       lotNumber,
       productId: data.productId,
       sourceType: "inward",
-      initialQuantity: String(data.initialQuantity),
+      sourceName: data.sourceName || null,
+      initialQuantity: String(quantityInKg),
+      quantityUnit: data.quantityUnit,
       stockForm: data.stockForm,
       inwardDate: data.inwardDate || new Date().toISOString().slice(0, 10),
       expiryDate: data.expiryDate || null,
@@ -207,6 +217,15 @@ export default function Inward() {
               </div>
 
               <div className="space-y-2">
+                <label className="text-sm font-medium">Source / Supplier (Optional)</label>
+                <Input 
+                  {...form.register("sourceName")}
+                  placeholder="Enter supplier or source name"
+                  data-testid="input-source-name"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Warehouse (Location)</label>
                 <Select onValueChange={(val) => form.setValue("locationId", parseInt(val))}>
                   <SelectTrigger data-testid="select-location">
@@ -222,15 +241,30 @@ export default function Inward() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Quantity (KG)</label>
+                  <label className="text-sm font-medium">Quantity</label>
                   <Input 
                     type="number" 
                     {...form.register("initialQuantity")}
                     placeholder="Enter quantity"
                     data-testid="input-quantity"
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Unit</label>
+                  <Select 
+                    defaultValue="kg"
+                    onValueChange={(val) => form.setValue("quantityUnit", val)}
+                  >
+                    <SelectTrigger data-testid="select-quantity-unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="kg">KG</SelectItem>
+                      <SelectItem value="tons">Tons</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Stock Form</label>

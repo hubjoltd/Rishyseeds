@@ -15,7 +15,7 @@ export const users = pgTable("users", {
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-export const userRoleEnum = z.enum(["admin", "manager", "hr"]);
+export const userRoleEnum = z.enum(["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"]);
 export const createUserSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -39,6 +39,20 @@ export const locations = pgTable("locations", {
 });
 
 export const insertLocationSchema = createInsertSchema(locations).omit({ id: true });
+
+// === PACKAGING SIZES MASTER ===
+export const packagingSizes = pgTable("packaging_sizes", {
+  id: serial("id").primaryKey(),
+  size: decimal("size").notNull(), // e.g., 10, 25, 50
+  unit: text("unit").notNull().default("Kg"), // Kg, g
+  label: text("label").notNull(), // e.g., "10 Kg", "500 g"
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPackagingSizeSchema = createInsertSchema(packagingSizes).omit({ id: true, createdAt: true });
+export type PackagingSize = typeof packagingSizes.$inferSelect;
+export type InsertPackagingSize = typeof packagingSizes.$inferInsert;
 
 // === BATCHES (SEED STOCK) ===
 export const batches = pgTable("batches", {
@@ -86,11 +100,17 @@ export const insertStockMovementSchema = createInsertSchema(stockMovements).omit
 // === PACKAGING OUTPUTS ===
 export const packagingOutputs = pgTable("packaging_outputs", {
   id: serial("id").primaryKey(),
-  batchId: integer("batch_id").notNull(),
+  batchId: integer("batch_id"), // Legacy field - deprecated
+  lotId: integer("lot_id"), // Reference to lots table
+  packagingSizeId: integer("packaging_size_id"), // Reference to packaging_sizes table
   packetSize: text("packet_size").notNull(), // e.g., "1kg", "500g"
   numberOfPackets: integer("number_of_packets").notNull(),
+  totalQuantityKg: decimal("total_quantity_kg"), // Total packed quantity in KG
   wasteQuantity: decimal("waste_quantity").default("0"),
   productionDate: date("production_date").defaultNow(),
+  packedBy: text("packed_by"),
+  remarks: text("remarks"),
+  createdBy: integer("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -212,7 +232,9 @@ export const lots = pgTable("lots", {
   productId: integer("product_id").notNull(), // Reference to products table
   sourceType: text("source_type").notNull(), // inward, processing_output
   sourceReferenceId: integer("source_reference_id"), // Optional link to processing record
+  sourceName: text("source_name"), // Supplier/Party name (optional)
   initialQuantity: decimal("initial_quantity").notNull(), // Quantity in KG
+  quantityUnit: text("quantity_unit").notNull().default("kg"), // kg, tons
   stockForm: text("stock_form").notNull().default("loose"), // loose, packed
   status: text("status").notNull().default("active"), // active, exhausted, expired
   inwardDate: date("inward_date").defaultNow(),
