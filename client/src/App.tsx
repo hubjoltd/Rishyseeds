@@ -1,16 +1,77 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Sidebar } from "@/components/Sidebar";
+import { useAuth } from "@/hooks/use-auth";
+import { Loader2 } from "lucide-react";
+
+// Pages
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+import Batches from "@/pages/Batches";
+import Employees from "@/pages/Employees";
 import NotFound from "@/pages/not-found";
+import Locations from "@/pages/Locations";
+import Stock from "@/pages/Stock";
+import Payroll from "@/pages/Payroll";
+import Attendance from "@/pages/Attendance";
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user, isLoading } = useAuth();
+  const [_, setLocation] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    setLocation("/login");
+    return null;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-muted/10">
+      <Sidebar />
+      <main className="flex-1 ml-64 p-8 overflow-y-auto">
+        <Component />
+      </main>
+    </div>
+  );
+}
 
 function Router() {
   return (
     <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
-      {/* Fallback to 404 */}
+      <Route path="/login" component={Login} />
+      
+      {/* Protected Routes */}
+      <Route path="/">
+        <ProtectedRoute component={Dashboard} />
+      </Route>
+      <Route path="/batches">
+        <ProtectedRoute component={Batches} />
+      </Route>
+      <Route path="/employees">
+        <ProtectedRoute component={Employees} />
+      </Route>
+      <Route path="/locations">
+        <ProtectedRoute component={Locations} />
+      </Route>
+      <Route path="/stock">
+        <ProtectedRoute component={Stock} />
+      </Route>
+      <Route path="/payroll">
+        <ProtectedRoute component={Payroll} />
+      </Route>
+      <Route path="/attendance">
+        <ProtectedRoute component={Attendance} />
+      </Route>
+
       <Route component={NotFound} />
     </Switch>
   );
@@ -19,10 +80,8 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <Router />
+      <Toaster />
     </QueryClientProvider>
   );
 }
