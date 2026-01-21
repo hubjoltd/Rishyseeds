@@ -18,20 +18,38 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Download, TrendingUp, Package, ArrowRightLeft, MapPin, Printer } from "lucide-react";
+import { FileText, Download, TrendingUp, Package, ArrowRightLeft, MapPin, Printer, Layers } from "lucide-react";
 import { format } from "date-fns";
-import type { Batch, StockMovement, Location } from "@shared/schema";
+import type { Lot, Product, Location, StockBalance, OutwardRecord, ProcessingRecord } from "@shared/schema";
 
-type ReportType = "stock" | "movements" | "locations" | "batches";
+type ReportType = "lots" | "variety" | "location" | "outward" | "processing";
 
 export default function Reports() {
-  const [reportType, setReportType] = useState<ReportType>("stock");
+  const [reportType, setReportType] = useState<ReportType>("lots");
 
-  const { data: batches, isLoading: batchesLoading } = useQuery<Batch[]>({ queryKey: ["/api/batches"] });
-  const { data: movements, isLoading: movementsLoading } = useQuery<StockMovement[]>({ queryKey: ["/api/stock/history"] });
+  const { data: lots, isLoading: lotsLoading } = useQuery<Lot[]>({ queryKey: ["/api/lots"] });
+  const { data: products, isLoading: productsLoading } = useQuery<Product[]>({ queryKey: ["/api/products"] });
   const { data: locations, isLoading: locationsLoading } = useQuery<Location[]>({ queryKey: ["/api/locations"] });
+  const { data: stockBalances, isLoading: stockLoading } = useQuery<StockBalance[]>({ queryKey: ["/api/stock-balances"] });
+  const { data: outwardRecords, isLoading: outwardLoading } = useQuery<OutwardRecord[]>({ queryKey: ["/api/outward"] });
+  const { data: processingRecords, isLoading: processingLoading } = useQuery<ProcessingRecord[]>({ queryKey: ["/api/processing"] });
   
-  const isLoading = batchesLoading || movementsLoading || locationsLoading;
+  const isLoading = lotsLoading || productsLoading || locationsLoading || stockLoading || outwardLoading || processingLoading;
+
+  const getProductName = (productId: number) => {
+    const product = (products as Product[] || []).find(p => p.id === productId);
+    return product ? `${product.crop} - ${product.variety}` : `Product #${productId}`;
+  };
+
+  const getLocationName = (locationId: number) => {
+    const location = (locations as Location[] || []).find(l => l.id === locationId);
+    return location?.name || `Location #${locationId}`;
+  };
+
+  const getLotNumber = (lotId: number) => {
+    const lot = (lots as Lot[] || []).find(l => l.id === lotId);
+    return lot?.lotNumber || `Lot #${lotId}`;
+  };
 
   const handlePrint = () => {
     window.print();
@@ -41,37 +59,64 @@ export default function Reports() {
     let data: string = "";
     let filename = "";
 
-    if (reportType === "stock") {
-      const headers = ["Batch No", "Crop", "Variety", "Initial Stock", "Current Stock", "Status"];
-      const rows = batches?.map(b => [b.batchNumber, b.crop, b.variety, b.lotSize, b.currentQuantity, b.status]) || [];
-      data = [headers, ...rows].map(row => row.join(",")).join("\n");
-      filename = "stock_report.csv";
-    } else if (reportType === "movements") {
-      const headers = ["Date", "Batch ID", "Quantity", "From Location", "To Location"];
-      const rows = movements?.map(m => [
-        m.movementDate ? format(new Date(m.movementDate), "yyyy-MM-dd") : "",
-        m.batchId,
-        m.quantity,
-        m.fromLocationId,
-        m.toLocationId
+    if (reportType === "lots") {
+      const headers = ["Lot Number", "Product", "Quantity (KG)", "Source", "Status", "Date"];
+      const rows = lots?.map(l => [
+        l.lotNumber, 
+        getProductName(l.productId), 
+        l.initialQuantity, 
+        l.sourceName || '-',
+        l.status, 
+        l.inwardDate ? format(new Date(l.inwardDate), "yyyy-MM-dd") : ""
       ]) || [];
       data = [headers, ...rows].map(row => row.join(",")).join("\n");
-      filename = "movements_report.csv";
-    } else if (reportType === "locations") {
-      const headers = ["Name", "Type", "Address", "Status"];
-      const rows = locations?.map(l => [l.name, l.type, l.address || "", l.isActive ? "Active" : "Inactive"]) || [];
-      data = [headers, ...rows].map(row => row.join(",")).join("\n");
-      filename = "locations_report.csv";
-    } else if (reportType === "batches") {
-      const headers = ["Crop", "Batch Count", "Total Stock (KG)"];
-      const cropGroups = Array.from(new Set(batches?.map(b => b.crop) || []));
-      const rows = cropGroups.map(crop => {
-        const cropBatches = batches?.filter(b => b.crop === crop) || [];
-        const totalStock = cropBatches.reduce((sum, b) => sum + Number(b.currentQuantity), 0);
-        return [crop, cropBatches.length, totalStock.toFixed(2)];
+      filename = "lot_stock_report.csv";
+    } else if (reportType === "variety") {
+      const headers = ["Variety", "Lot Count", "Total Stock (KG)"];
+      const productGroups = Array.from(new Set(lots?.map(l => l.productId) || []));
+      const rows = productGroups.map(productId => {
+        const productLots = lots?.filter(l => l.productId === productId) || [];
+        const totalStock = productLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+        return [getProductName(productId), productLots.length, totalStock.toFixed(2)];
       });
       data = [headers, ...rows].map(row => row.join(",")).join("\n");
-      filename = "batch_summary_report.csv";
+      filename = "variety_summary_report.csv";
+    } else if (reportType === "location") {
+      const headers = ["Location", "Lot", "Stock Form", "Quantity"];
+      const rows = stockBalances?.map(sb => [
+        getLocationName(sb.locationId),
+        getLotNumber(sb.lotId),
+        sb.stockForm,
+        sb.quantity
+      ]) || [];
+      data = [headers, ...rows].map(row => row.join(",")).join("\n");
+      filename = "location_stock_report.csv";
+    } else if (reportType === "outward") {
+      const headers = ["Date", "Lot", "From", "Quantity", "Destination Type", "Destination Name", "Invoice"];
+      const rows = outwardRecords?.map(o => [
+        o.dispatchDate ? format(new Date(o.dispatchDate), "yyyy-MM-dd") : "",
+        getLotNumber(o.lotId),
+        getLocationName(o.locationId),
+        o.quantity,
+        o.destinationType,
+        o.destinationName || '-',
+        o.invoiceNumber || '-'
+      ]) || [];
+      data = [headers, ...rows].map(row => row.join(",")).join("\n");
+      filename = "outward_report.csv";
+    } else if (reportType === "processing") {
+      const headers = ["Date", "Input Lot", "Input Qty", "Output Qty", "Waste", "Type", "Status"];
+      const rows = processingRecords?.map(p => [
+        p.processingDate ? format(new Date(p.processingDate), "yyyy-MM-dd") : "",
+        getLotNumber(p.inputLotId),
+        p.inputQuantity,
+        p.outputQuantity || '-',
+        p.wasteQuantity || '-',
+        p.processingType,
+        p.status
+      ]) || [];
+      data = [headers, ...rows].map(row => row.join(",")).join("\n");
+      filename = "processing_report.csv";
     }
 
     if (!data) return;
@@ -85,72 +130,107 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
+  const activeLots = lots?.filter(l => l.status === 'active') || [];
+  const totalStock = activeLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+  const completedProcessing = processingRecords?.filter(p => p.status === 'completed') || [];
+  const totalOutward = outwardRecords?.reduce((sum, o) => sum + Number(o.quantity), 0) || 0;
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold font-display">Reports</h2>
-          <p className="text-sm text-muted-foreground">Generate and export compliance reports</p>
+          <p className="text-sm text-muted-foreground">Generate and export stock reports</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrint}>
+          <Button variant="outline" onClick={handlePrint} data-testid="button-print">
             <Printer className="mr-2 h-4 w-4" />
             Print
           </Button>
-          <Button onClick={handleExport}>
+          <Button onClick={handleExport} data-testid="button-export">
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
         </div>
       </div>
 
-      {/* Report Type Selector */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+          <p className="text-3xl font-bold text-green-600">{activeLots.length}</p>
+          <p className="text-sm text-muted-foreground">Active Lots</p>
+        </div>
+        <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+          <p className="text-3xl font-bold text-blue-600">{totalStock.toFixed(0)} KG</p>
+          <p className="text-sm text-muted-foreground">Total Stock</p>
+        </div>
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <p className="text-3xl font-bold text-amber-600">{completedProcessing.length}</p>
+          <p className="text-sm text-muted-foreground">Processing Done</p>
+        </div>
+        <div className="p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+          <p className="text-3xl font-bold text-purple-600">{totalOutward.toFixed(0)} KG</p>
+          <p className="text-sm text-muted-foreground">Total Dispatched</p>
+        </div>
+      </div>
+
       <div className="flex gap-3 flex-wrap">
         <Button
-          variant={reportType === "stock" ? "default" : "outline"}
-          onClick={() => setReportType("stock")}
+          variant={reportType === "lots" ? "default" : "outline"}
+          onClick={() => setReportType("lots")}
           className="gap-2"
+          data-testid="button-lots-report"
         >
           <Package className="w-4 h-4" />
-          Stock Report
+          Lot Stock
         </Button>
         <Button
-          variant={reportType === "movements" ? "default" : "outline"}
-          onClick={() => setReportType("movements")}
+          variant={reportType === "variety" ? "default" : "outline"}
+          onClick={() => setReportType("variety")}
           className="gap-2"
+          data-testid="button-variety-report"
         >
-          <ArrowRightLeft className="w-4 h-4" />
-          Movement Log
+          <Layers className="w-4 h-4" />
+          Variety-wise
         </Button>
         <Button
-          variant={reportType === "locations" ? "default" : "outline"}
-          onClick={() => setReportType("locations")}
+          variant={reportType === "location" ? "default" : "outline"}
+          onClick={() => setReportType("location")}
           className="gap-2"
+          data-testid="button-location-report"
         >
           <MapPin className="w-4 h-4" />
-          Locations
+          Location-wise
         </Button>
         <Button
-          variant={reportType === "batches" ? "default" : "outline"}
-          onClick={() => setReportType("batches")}
+          variant={reportType === "outward" ? "default" : "outline"}
+          onClick={() => setReportType("outward")}
           className="gap-2"
+          data-testid="button-outward-report"
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+          Outward Log
+        </Button>
+        <Button
+          variant={reportType === "processing" ? "default" : "outline"}
+          onClick={() => setReportType("processing")}
+          className="gap-2"
+          data-testid="button-processing-report"
         >
           <TrendingUp className="w-4 h-4" />
-          Batch Summary
+          Processing
         </Button>
       </div>
 
-      {/* Report Content */}
       <Card className="card-modern overflow-hidden print:shadow-none">
         <CardHeader className="bg-muted/30 print:bg-white">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              {reportType === "stock" && "Stock Report"}
-              {reportType === "movements" && "Movement Register"}
-              {reportType === "locations" && "Locations Report"}
-              {reportType === "batches" && "Batch Summary"}
+              {reportType === "lots" && "Lot Stock Report"}
+              {reportType === "variety" && "Variety-wise Summary"}
+              {reportType === "location" && "Location-wise Stock"}
+              {reportType === "outward" && "Outward/Dispatch Log"}
+              {reportType === "processing" && "Processing Report"}
             </CardTitle>
             <span className="text-sm text-muted-foreground">
               Generated: {format(new Date(), "dd MMM yyyy, hh:mm a")}
@@ -158,35 +238,107 @@ export default function Reports() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {reportType === "stock" && (
+          {reportType === "lots" && (
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/20">
-                  <TableHead>Batch No</TableHead>
-                  <TableHead>Crop</TableHead>
-                  <TableHead>Variety</TableHead>
-                  <TableHead className="text-right">Initial (KG)</TableHead>
-                  <TableHead className="text-right">Current (KG)</TableHead>
+                  <TableHead>Lot Number</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead className="text-right">Quantity (KG)</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batchesLoading ? (
+                {lotsLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
-                ) : batches?.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8">No data</TableCell></TableRow>
+                ) : lots?.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8">No lots found</TableCell></TableRow>
                 ) : (
-                  batches?.map((batch) => (
-                    <TableRow key={batch.id}>
-                      <TableCell className="font-medium">{batch.batchNumber}</TableCell>
-                      <TableCell>{batch.crop}</TableCell>
-                      <TableCell>{batch.variety}</TableCell>
-                      <TableCell className="text-right">{batch.lotSize}</TableCell>
-                      <TableCell className="text-right font-bold text-primary">{batch.currentQuantity}</TableCell>
+                  lots?.map((lot) => (
+                    <TableRow key={lot.id} data-testid={`row-lot-${lot.id}`}>
+                      <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
+                      <TableCell>{getProductName(lot.productId)}</TableCell>
+                      <TableCell>{lot.sourceName || '-'}</TableCell>
+                      <TableCell className="text-right font-bold text-primary">{Number(lot.initialQuantity).toFixed(2)}</TableCell>
                       <TableCell>
-                        <Badge className={batch.status === "active" ? "badge-success" : "badge-warning"}>
-                          {batch.status}
+                        <Badge className={lot.status === "active" ? "badge-success" : "badge-warning"}>
+                          {lot.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "dd/MM/yyyy") : "-"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
+
+          {reportType === "variety" && (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/20">
+                  <TableHead>Variety</TableHead>
+                  <TableHead className="text-right">Lot Count</TableHead>
+                  <TableHead className="text-right">Total Stock (KG)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productsLoading || lotsLoading ? (
+                  <TableRow><TableCell colSpan={3} className="text-center py-8">Loading...</TableCell></TableRow>
+                ) : (
+                  (() => {
+                    const productIds = Array.from(new Set(lots?.map(l => l.productId) || []));
+                    if (productIds.length === 0) {
+                      return <TableRow><TableCell colSpan={3} className="text-center py-8">No data</TableCell></TableRow>;
+                    }
+                    return productIds.map(productId => {
+                      const productLots = lots?.filter(l => l.productId === productId && l.status === 'active') || [];
+                      const totalStock = productLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+                      return (
+                        <TableRow key={productId} data-testid={`row-variety-${productId}`}>
+                          <TableCell className="font-medium">{getProductName(productId)}</TableCell>
+                          <TableCell className="text-right">{productLots.length}</TableCell>
+                          <TableCell className="text-right font-bold text-primary">{totalStock.toFixed(2)}</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()
+                )}
+              </TableBody>
+            </Table>
+          )}
+
+          {reportType === "location" && (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/20">
+                  <TableHead>Location</TableHead>
+                  <TableHead>Lot</TableHead>
+                  <TableHead>Stock Form</TableHead>
+                  <TableHead>Packet Size</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stockLoading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
+                ) : stockBalances?.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8">No stock balances found</TableCell></TableRow>
+                ) : (
+                  stockBalances?.map((sb) => (
+                    <TableRow key={sb.id} data-testid={`row-stock-${sb.id}`}>
+                      <TableCell className="font-medium">{getLocationName(sb.locationId)}</TableCell>
+                      <TableCell className="font-mono">{getLotNumber(sb.lotId)}</TableCell>
+                      <TableCell>
+                        <Badge variant={sb.stockForm === 'packed' ? 'default' : 'secondary'}>
+                          {sb.stockForm}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{sb.packetSize || '-'}</TableCell>
+                      <TableCell className="text-right font-bold text-primary">
+                        {Number(sb.quantity).toFixed(2)} {sb.stockForm === 'packed' ? 'pcs' : 'KG'}
                       </TableCell>
                     </TableRow>
                   ))
@@ -195,32 +347,39 @@ export default function Reports() {
             </Table>
           )}
 
-          {reportType === "movements" && (
+          {reportType === "outward" && (
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/20">
                   <TableHead>Date</TableHead>
-                  <TableHead>Batch ID</TableHead>
-                  <TableHead className="text-right">Quantity (KG)</TableHead>
-                  <TableHead>From Location</TableHead>
-                  <TableHead>To Location</TableHead>
-                  <TableHead>Responsible</TableHead>
+                  <TableHead>Lot</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Destination</TableHead>
+                  <TableHead>Invoice</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {movementsLoading ? (
+                {outwardLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
-                ) : movements?.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8">No movements recorded</TableCell></TableRow>
+                ) : outwardRecords?.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8">No outward records</TableCell></TableRow>
                 ) : (
-                  movements?.map((mov) => (
-                    <TableRow key={mov.id}>
-                      <TableCell>{mov.movementDate ? format(new Date(mov.movementDate), "dd/MM/yyyy") : "-"}</TableCell>
-                      <TableCell className="font-medium">{mov.batchId}</TableCell>
-                      <TableCell className="text-right font-bold">{mov.quantity}</TableCell>
-                      <TableCell>{mov.fromLocationId}</TableCell>
-                      <TableCell>{mov.toLocationId}</TableCell>
-                      <TableCell>{mov.responsiblePerson || "-"}</TableCell>
+                  outwardRecords?.map((record) => (
+                    <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
+                      <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "dd/MM/yyyy") : "-"}</TableCell>
+                      <TableCell className="font-mono">{getLotNumber(record.lotId)}</TableCell>
+                      <TableCell>{getLocationName(record.locationId)}</TableCell>
+                      <TableCell className="text-right font-bold">
+                        {Number(record.quantity).toFixed(2)} {record.stockForm === 'packed' ? 'pcs' : 'KG'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <Badge variant="outline" className="w-fit capitalize">{record.destinationType.replace('_', ' ')}</Badge>
+                          {record.destinationName && <span className="text-xs text-muted-foreground mt-1">{record.destinationName}</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -228,32 +387,42 @@ export default function Reports() {
             </Table>
           )}
 
-          {reportType === "locations" && (
+          {reportType === "processing" && (
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/20">
-                  <TableHead>Name</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Input Lot</TableHead>
+                  <TableHead className="text-right">Input (KG)</TableHead>
+                  <TableHead className="text-right">Output (KG)</TableHead>
+                  <TableHead className="text-right">Waste (KG)</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Address</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {locationsLoading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8">Loading...</TableCell></TableRow>
-                ) : locations?.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8">No locations</TableCell></TableRow>
+                {processingLoading ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
+                ) : processingRecords?.length === 0 ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-8">No processing records</TableCell></TableRow>
                 ) : (
-                  locations?.map((loc) => (
-                    <TableRow key={loc.id}>
-                      <TableCell className="font-medium">{loc.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="badge-info capitalize">{loc.type}</Badge>
+                  processingRecords?.map((record) => (
+                    <TableRow key={record.id} data-testid={`row-processing-${record.id}`}>
+                      <TableCell>{record.processingDate ? format(new Date(record.processingDate), "dd/MM/yyyy") : "-"}</TableCell>
+                      <TableCell className="font-mono">{getLotNumber(record.inputLotId)}</TableCell>
+                      <TableCell className="text-right">{Number(record.inputQuantity).toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-bold text-primary">
+                        {record.outputQuantity ? Number(record.outputQuantity).toFixed(2) : '-'}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate">{loc.address || "-"}</TableCell>
+                      <TableCell className="text-right text-destructive">
+                        {record.wasteQuantity ? Number(record.wasteQuantity).toFixed(2) : '-'}
+                      </TableCell>
                       <TableCell>
-                        <Badge className={loc.isActive ? "badge-success" : "badge-danger"}>
-                          {loc.isActive ? "Active" : "Inactive"}
+                        <Badge variant="secondary" className="capitalize">{record.processingType}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={record.status === "completed" ? "badge-success" : "badge-warning"}>
+                          {record.status}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -261,60 +430,6 @@ export default function Reports() {
                 )}
               </TableBody>
             </Table>
-          )}
-
-          {reportType === "batches" && (
-            <div className="p-6">
-              {batchesLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading...</div>
-              ) : (
-              <><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20">
-                  <p className="text-3xl font-bold text-green-600">{batches?.length || 0}</p>
-                  <p className="text-sm text-muted-foreground">Total Batches</p>
-                </div>
-                <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20">
-                  <p className="text-3xl font-bold text-blue-600">
-                    {batches?.reduce((sum, b) => sum + Number(b.currentQuantity), 0).toFixed(0) || 0} KG
-                  </p>
-                  <p className="text-sm text-muted-foreground">Total Stock</p>
-                </div>
-                <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20">
-                  <p className="text-3xl font-bold text-amber-600">
-                    {batches?.filter(b => b.status === "active").length || 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Active Batches</p>
-                </div>
-                <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20">
-                  <p className="text-3xl font-bold text-rose-600">{movements?.length || 0}</p>
-                  <p className="text-sm text-muted-foreground">Movements</p>
-                </div>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/20">
-                    <TableHead>Crop</TableHead>
-                    <TableHead className="text-right">Batches</TableHead>
-                    <TableHead className="text-right">Total Stock (KG)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Array.from(new Set(batches?.map(b => b.crop) || [])).map(crop => {
-                    const cropBatches = batches?.filter(b => b.crop === crop) || [];
-                    const totalStock = cropBatches.reduce((sum, b) => sum + Number(b.currentQuantity), 0);
-                    return (
-                      <TableRow key={crop}>
-                        <TableCell className="font-medium">{crop}</TableCell>
-                        <TableCell className="text-right">{cropBatches.length}</TableCell>
-                        <TableCell className="text-right font-bold text-primary">{totalStock.toFixed(2)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              </>
-              )}
-            </div>
           )}
         </CardContent>
       </Card>

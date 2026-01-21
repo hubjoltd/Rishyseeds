@@ -494,13 +494,13 @@ export async function registerRoutes(
   });
 
   // === PACKAGING ROUTES ===
-  app.post(api.packaging.create.path, async (req, res) => {
+  app.post(api.packaging.create.path, checkPermission('packaging', 'create'), async (req, res) => {
     try {
       const input = api.packaging.create.input.parse(req.body);
       const output = await storage.createPackagingOutput(input);
       res.status(201).json(output);
-    } catch (e) {
-      res.status(400).json({ message: "Validation failed" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Validation failed" });
     }
   });
 
@@ -854,6 +854,24 @@ export async function registerRoutes(
   app.post("/api/outward", checkPermission('outward', 'create'), async (req, res) => {
     try {
       const validatedData = insertOutwardRecordSchema.parse(req.body);
+      
+      // Stock validation: check if sufficient stock is available
+      const stockBalance = await storage.getStockBalanceByLotAndLocation(
+        validatedData.lotId,
+        validatedData.locationId,
+        validatedData.stockForm,
+        validatedData.packetSize || undefined
+      );
+      
+      const requestedQty = parseFloat(validatedData.quantity);
+      const availableQty = stockBalance ? parseFloat(stockBalance.quantity) : 0;
+      
+      if (requestedQty > availableQty) {
+        return res.status(400).json({ 
+          message: `Insufficient stock. Available: ${availableQty.toFixed(2)} ${validatedData.stockForm === 'packed' ? 'packets' : 'KG'}, Requested: ${requestedQty.toFixed(2)}` 
+        });
+      }
+      
       const record = await storage.createOutwardRecord(validatedData);
       res.status(201).json(record);
     } catch (e: any) {
