@@ -3,7 +3,7 @@ import { api, type InsertUser, type User } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
 type Action = 'view' | 'create' | 'edit' | 'delete';
-type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard';
+type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard' | 'lots' | 'processing' | 'outward';
 type Permissions = Record<Resource, Action[]>;
 
 export interface UserPermissions {

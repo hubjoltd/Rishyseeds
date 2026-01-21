@@ -7,13 +7,13 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
-import { createUserSchema, updateUserSchema } from "@shared/schema";
+import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema } from "@shared/schema";
 
 const SessionStore = MemoryStore(session);
 
 type UserRole = 'admin' | 'manager' | 'hr';
 type Action = 'view' | 'create' | 'edit' | 'delete';
-type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard';
+type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard' | 'lots' | 'processing' | 'outward';
 
 // Granular role-based permissions system
 const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
@@ -29,6 +29,9 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     users: ['view', 'create', 'edit', 'delete'],
     reports: ['view'],
     dashboard: ['view'],
+    lots: ['view', 'create', 'edit', 'delete'],
+    processing: ['view', 'create', 'edit', 'delete'],
+    outward: ['view', 'create', 'edit', 'delete'],
   },
   manager: {
     batches: ['view', 'create', 'edit'],
@@ -42,6 +45,9 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     users: [],
     reports: ['view'],
     dashboard: ['view'],
+    lots: ['view', 'create', 'edit'],
+    processing: ['view', 'create', 'edit'],
+    outward: ['view', 'create', 'edit'],
   },
   hr: {
     batches: ['view'],
@@ -55,6 +61,9 @@ const rolePrivileges: Record<UserRole, Record<Resource, Action[]>> = {
     users: [],
     reports: ['view'],
     dashboard: ['view'],
+    lots: ['view'],
+    processing: ['view'],
+    outward: ['view'],
   },
 };
 
@@ -589,6 +598,182 @@ export async function registerRoutes(
       res.status(201).json(product);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to create product" });
+    }
+  });
+
+  // === LOTS ROUTES ===
+  app.get("/api/lots", checkPermission('lots', 'view'), async (req, res) => {
+    const lotsList = await storage.getLots();
+    res.json(lotsList);
+  });
+
+  app.get("/api/lots/:id", checkPermission('lots', 'view'), async (req, res) => {
+    const lot = await storage.getLot(parseInt(req.params.id));
+    if (!lot) {
+      return res.status(404).json({ message: "Lot not found" });
+    }
+    res.json(lot);
+  });
+
+  app.post("/api/lots", checkPermission('lots', 'create'), async (req, res) => {
+    try {
+      const validatedData = insertLotSchema.parse(req.body);
+      const lot = await storage.createLot(validatedData);
+      res.status(201).json(lot);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to create lot" });
+    }
+  });
+
+  app.patch("/api/lots/:id", checkPermission('lots', 'edit'), async (req, res) => {
+    try {
+      const validatedData = insertLotSchema.partial().parse(req.body);
+      const lot = await storage.updateLot(parseInt(req.params.id), validatedData);
+      if (!lot) {
+        return res.status(404).json({ message: "Lot not found" });
+      }
+      res.json(lot);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to update lot" });
+    }
+  });
+
+  app.delete("/api/lots/:id", checkPermission('lots', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteLot(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete lot" });
+    }
+  });
+
+  app.get("/api/lots/generate-number/:productId", checkPermission('lots', 'view'), async (req, res) => {
+    try {
+      const lotNumber = await storage.generateLotNumber(parseInt(req.params.productId));
+      res.json({ lotNumber });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to generate lot number" });
+    }
+  });
+
+  // === STOCK BALANCES ROUTES ===
+  app.get("/api/stock-balances", checkPermission('stock', 'view'), async (req, res) => {
+    const balances = await storage.getStockBalances();
+    res.json(balances);
+  });
+
+  app.get("/api/stock-balances/lot/:lotId", checkPermission('stock', 'view'), async (req, res) => {
+    const balances = await storage.getStockBalancesByLot(parseInt(req.params.lotId));
+    res.json(balances);
+  });
+
+  // === PROCESSING RECORDS ROUTES ===
+  app.get("/api/processing", checkPermission('processing', 'view'), async (req, res) => {
+    const records = await storage.getProcessingRecords();
+    res.json(records);
+  });
+
+  app.get("/api/processing/:id", checkPermission('processing', 'view'), async (req, res) => {
+    const record = await storage.getProcessingRecord(parseInt(req.params.id));
+    if (!record) {
+      return res.status(404).json({ message: "Processing record not found" });
+    }
+    res.json(record);
+  });
+
+  app.post("/api/processing", checkPermission('processing', 'create'), async (req, res) => {
+    try {
+      const validatedData = insertProcessingRecordSchema.parse(req.body);
+      const record = await storage.createProcessingRecord(validatedData);
+      res.status(201).json(record);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to create processing record" });
+    }
+  });
+
+  app.patch("/api/processing/:id", checkPermission('processing', 'edit'), async (req, res) => {
+    try {
+      const validatedData = insertProcessingRecordSchema.partial().parse(req.body);
+      const record = await storage.updateProcessingRecord(parseInt(req.params.id), validatedData);
+      if (!record) {
+        return res.status(404).json({ message: "Processing record not found" });
+      }
+      res.json(record);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to update processing record" });
+    }
+  });
+
+  app.delete("/api/processing/:id", checkPermission('processing', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteProcessingRecord(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete processing record" });
+    }
+  });
+
+  // === OUTWARD RECORDS ROUTES ===
+  app.get("/api/outward", checkPermission('outward', 'view'), async (req, res) => {
+    const records = await storage.getOutwardRecords();
+    res.json(records);
+  });
+
+  app.get("/api/outward/:id", checkPermission('outward', 'view'), async (req, res) => {
+    const record = await storage.getOutwardRecord(parseInt(req.params.id));
+    if (!record) {
+      return res.status(404).json({ message: "Outward record not found" });
+    }
+    res.json(record);
+  });
+
+  app.post("/api/outward", checkPermission('outward', 'create'), async (req, res) => {
+    try {
+      const validatedData = insertOutwardRecordSchema.parse(req.body);
+      const record = await storage.createOutwardRecord(validatedData);
+      res.status(201).json(record);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to create outward record" });
+    }
+  });
+
+  app.patch("/api/outward/:id", checkPermission('outward', 'edit'), async (req, res) => {
+    try {
+      const validatedData = insertOutwardRecordSchema.partial().parse(req.body);
+      const record = await storage.updateOutwardRecord(parseInt(req.params.id), validatedData);
+      if (!record) {
+        return res.status(404).json({ message: "Outward record not found" });
+      }
+      res.json(record);
+    } catch (e: any) {
+      if (e.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation error", errors: e.errors });
+      }
+      res.status(400).json({ message: e.message || "Failed to update outward record" });
+    }
+  });
+
+  app.delete("/api/outward/:id", checkPermission('outward', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteOutwardRecord(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete outward record" });
     }
   });
 

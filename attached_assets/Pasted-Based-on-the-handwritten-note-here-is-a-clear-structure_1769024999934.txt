@@ -1,0 +1,221 @@
+Based on the handwritten note, here is a **clear, structured Software Development Requirement Document** for your **Godown / Plant Inventory & Movement System**. You can directly share this with developers (Replit / any vendor).
+
+---
+
+# Godown Inventory & Stock Movement System
+
+**Plant Location:** Konajalli
+**Module Type:** Inward – Processing – Packaging – Outward
+
+---
+
+## 1. Objective
+
+To digitize and track **end-to-end stock movement** from **Inward → Storage → Processing → Packaging → Outward dispatch**, with full traceability by **variety, lot number, quantity, and dates**.
+
+---
+
+## 2. User Roles
+
+1. **Admin**
+
+   * Full access to all modules
+   * Can edit/delete records
+   * View reports
+2. **Godown Operator**
+
+   * Inward entry
+   * Stock movement entry
+3. **Production Operator**
+
+   * Processing & packaging updates
+4. **Dispatch Operator**
+
+   * Outward entry
+
+---
+
+## 3. Master Data (Setup Screens)
+
+These must be created before daily operations.
+
+### 3.1 Variety Master
+
+* Variety Name (e.g., Maize-11)
+* Crop Type
+* Status (Active / Inactive)
+
+### 3.2 Packaging Size Master
+
+* Packaging Size (e.g., 10 Kg)
+* Unit (Kg)
+
+### 3.3 Location Master
+
+* Godown
+* Cold Storage
+* Processing Section
+
+---
+
+## 4. Inward Module
+
+**Purpose:** Record raw material received into the plant.
+
+### Fields Required:
+
+* Inward Date
+* Variety (e.g., Maize-11)
+* Quantity Received (in Tons)
+* Lot Number (Auto / Manual)
+* Source (optional)
+* Remarks
+
+**Example:**
+
+* Variety: Maize-11
+* Quantity: 20 Tons
+* Date: 19-01-2026
+* Lot No: Auto-generated
+
+---
+
+## 5. Stock Movement Module
+
+**Purpose:** Track internal movement of stock.
+
+### Movement Types:
+
+1. Godown → Cold Storage
+2. Godown → Processing Section
+3. Cold Storage → Processing
+
+### Fields:
+
+* Movement Date
+* From Location
+* To Location
+* Variety
+* Lot Number
+* Quantity Moved
+* Balance Quantity (auto-calculated)
+
+---
+
+## 6. Processing Module
+
+**Purpose:** Record processing activity and output.
+
+### Fields:
+
+* Processing Date
+* Input Variety
+* Lot Number (Old Lot)
+* Input Quantity
+* Output Variety (if changed)
+* New Lot Number (auto-generated)
+* Process Loss (optional)
+* Final Output Quantity
+
+---
+
+## 7. Packaging Module
+
+**Purpose:** Convert processed stock into packed bags.
+
+### Fields:
+
+* Packaging Date
+* Variety
+* Lot Number
+* Package Size (e.g., 10 Kg)
+* Number of Bags
+* Total Quantity (auto = size × bags)
+* Remaining Loose Stock
+
+**Example:**
+
+* Package Size: 10 Kg
+* No. of Bags: 4
+* Total Qty: 40 Kg
+
+---
+
+## 8. Outward Module
+
+**Purpose:** Track dispatch of packed goods.
+
+### Fields:
+
+* Outward Date
+* Variety
+* Lot Number
+* Package Size
+* Number of Bags Dispatched
+* Total Quantity
+* Destination / Party Name
+* DC / Invoice No (optional)
+
+**Example:**
+
+* Variety: Maize-11
+* Lot No: 11K2001
+* Bags: 100
+
+---
+
+## 9. Stock Calculation Rules
+
+* Stock must always be **lot-based**
+* No outward allowed if stock is insufficient
+* Auto-calculate:
+
+  * Available stock
+  * Balance after movement
+  * Total quantity from bags
+
+---
+
+## 10. Reports Required
+
+1. **Current Stock Report**
+
+   * Variety-wise
+   * Lot-wise
+   * Location-wise
+2. **Inward vs Outward Report**
+3. **Processing Yield Report**
+4. **Packaging Summary**
+5. **Date-wise Movement Report**
+
+---
+
+## 11. Audit & Controls
+
+* Every entry must store:
+
+  * Created By
+  * Created Date & Time
+* Edit/Delete only by Admin
+* Maintain movement history per lot
+
+---
+
+## 12. Technical Expectations
+
+* Web-based application
+* Mobile-friendly UI
+* Database: PostgreSQL / MySQL
+* Role-based access
+* Export reports to Excel
+
+---
+
+If you want, I can also:
+
+* Convert this into **PDF / Word**
+* Create **database table structure**
+* Draw a **process flow diagram**
+* Add **HRMS & Payroll integration points**
+
+Just tell me 👍

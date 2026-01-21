@@ -3,18 +3,20 @@ import { db } from "./db";
 import { 
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
+  lots, stockBalances, processingRecords, outwardRecords,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
   type StockMovement, type InsertStockMovement,
-  type InsertStockEntrySchema,
-  type InsertPackagingOutputSchema,
   type Employee, type InsertEmployee,
-  type InsertAttendanceSchema,
   type Payroll, type InsertPayroll,
-  type Product, type InsertProduct
+  type Product, type InsertProduct,
+  type Lot, type InsertLot,
+  type StockBalance, type InsertStockBalance,
+  type ProcessingRecord, type InsertProcessingRecord,
+  type OutwardRecord, type InsertOutwardRecord
 } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
   // User
@@ -60,7 +62,7 @@ export interface IStorage {
   updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined>;
 
   // Attendance
-  markAttendance(attendance: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
+  markAttendance(record: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
   getAttendance(date?: string): Promise<typeof attendance.$inferSelect[]>;
 
   // Payroll
@@ -70,6 +72,36 @@ export interface IStorage {
   // Products
   getProducts(): Promise<Product[]>;
   createProduct(product: InsertProduct): Promise<Product>;
+
+  // Lots
+  getLots(): Promise<Lot[]>;
+  getLot(id: number): Promise<Lot | undefined>;
+  createLot(lot: InsertLot): Promise<Lot>;
+  updateLot(id: number, updates: Partial<InsertLot>): Promise<Lot | undefined>;
+  deleteLot(id: number): Promise<boolean>;
+  generateLotNumber(productId: number): Promise<string>;
+
+  // Stock Balances
+  getStockBalances(): Promise<StockBalance[]>;
+  getStockBalancesByLot(lotId: number): Promise<StockBalance[]>;
+  getStockBalanceByLotAndLocation(lotId: number, locationId: number, stockForm: string, packetSize?: string): Promise<StockBalance | undefined>;
+  createStockBalance(balance: InsertStockBalance): Promise<StockBalance>;
+  updateStockBalance(id: number, quantity: string): Promise<StockBalance | undefined>;
+  adjustStockBalance(lotId: number, locationId: number, stockForm: string, quantityChange: number, packetSize?: string): Promise<void>;
+
+  // Processing Records
+  getProcessingRecords(): Promise<ProcessingRecord[]>;
+  getProcessingRecord(id: number): Promise<ProcessingRecord | undefined>;
+  createProcessingRecord(record: InsertProcessingRecord): Promise<ProcessingRecord>;
+  updateProcessingRecord(id: number, updates: Partial<InsertProcessingRecord>): Promise<ProcessingRecord | undefined>;
+  deleteProcessingRecord(id: number): Promise<boolean>;
+
+  // Outward Records
+  getOutwardRecords(): Promise<OutwardRecord[]>;
+  getOutwardRecord(id: number): Promise<OutwardRecord | undefined>;
+  createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord>;
+  updateOutwardRecord(id: number, updates: Partial<InsertOutwardRecord>): Promise<OutwardRecord | undefined>;
+  deleteOutwardRecord(id: number): Promise<boolean>;
 
   // Stats
   getDashboardStats(): Promise<{
@@ -292,6 +324,173 @@ export class DatabaseStorage implements IStorage {
   async createProduct(product: InsertProduct): Promise<Product> {
     const [newProduct] = await db.insert(products).values(product).returning();
     return newProduct;
+  }
+
+  // Lots
+  async getLots(): Promise<Lot[]> {
+    return await db.select().from(lots).orderBy(desc(lots.createdAt));
+  }
+
+  async getLot(id: number): Promise<Lot | undefined> {
+    const [lot] = await db.select().from(lots).where(eq(lots.id, id));
+    return lot;
+  }
+
+  async createLot(lot: InsertLot): Promise<Lot> {
+    const [newLot] = await db.insert(lots).values(lot).returning();
+    return newLot;
+  }
+
+  async updateLot(id: number, updates: Partial<InsertLot>): Promise<Lot | undefined> {
+    const [updated] = await db.update(lots).set(updates).where(eq(lots.id, id)).returning();
+    return updated;
+  }
+
+  async deleteLot(id: number): Promise<boolean> {
+    await db.delete(lots).where(eq(lots.id, id));
+    return true;
+  }
+
+  async generateLotNumber(productId: number): Promise<string> {
+    const [product] = await db.select().from(products).where(eq(products.id, productId));
+    if (!product) throw new Error("Product not found");
+    
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `${product.crop.slice(0, 3).toUpperCase()}-${product.variety.slice(0, 3).toUpperCase()}-${dateStr}`;
+    
+    const [countResult] = await db.select({
+      count: sql<number>`count(*)`
+    }).from(lots).where(sql`lot_number LIKE ${prefix + '%'}`);
+    
+    const sequence = String(Number(countResult?.count || 0) + 1).padStart(3, '0');
+    return `${prefix}-${sequence}`;
+  }
+
+  // Stock Balances
+  async getStockBalances(): Promise<StockBalance[]> {
+    return await db.select().from(stockBalances);
+  }
+
+  async getStockBalancesByLot(lotId: number): Promise<StockBalance[]> {
+    return await db.select().from(stockBalances).where(eq(stockBalances.lotId, lotId));
+  }
+
+  async getStockBalanceByLotAndLocation(
+    lotId: number, 
+    locationId: number, 
+    stockForm: string, 
+    packetSize?: string
+  ): Promise<StockBalance | undefined> {
+    if (stockForm === 'packed' && packetSize) {
+      const [balance] = await db.select().from(stockBalances)
+        .where(and(
+          eq(stockBalances.lotId, lotId),
+          eq(stockBalances.locationId, locationId),
+          eq(stockBalances.stockForm, stockForm),
+          eq(stockBalances.packetSize, packetSize)
+        ));
+      return balance;
+    }
+    const [balance] = await db.select().from(stockBalances)
+      .where(and(
+        eq(stockBalances.lotId, lotId),
+        eq(stockBalances.locationId, locationId),
+        eq(stockBalances.stockForm, stockForm)
+      ));
+    return balance;
+  }
+
+  async createStockBalance(balance: InsertStockBalance): Promise<StockBalance> {
+    const [newBalance] = await db.insert(stockBalances).values(balance).returning();
+    return newBalance;
+  }
+
+  async updateStockBalance(id: number, quantity: string): Promise<StockBalance | undefined> {
+    const [updated] = await db.update(stockBalances)
+      .set({ quantity, lastUpdated: new Date() })
+      .where(eq(stockBalances.id, id))
+      .returning();
+    return updated;
+  }
+
+  async adjustStockBalance(
+    lotId: number, 
+    locationId: number, 
+    stockForm: string, 
+    quantityChange: number, 
+    packetSize?: string
+  ): Promise<void> {
+    const existing = await this.getStockBalanceByLotAndLocation(lotId, locationId, stockForm, packetSize);
+    
+    if (existing) {
+      const newQty = Number(existing.quantity) + quantityChange;
+      if (newQty < 0) {
+        throw new Error("Insufficient stock balance");
+      }
+      await this.updateStockBalance(existing.id, String(newQty));
+    } else {
+      if (quantityChange < 0) {
+        throw new Error("Cannot create negative stock balance");
+      }
+      await this.createStockBalance({
+        lotId,
+        locationId,
+        stockForm,
+        packetSize: packetSize || null,
+        quantity: String(quantityChange)
+      });
+    }
+  }
+
+  // Processing Records
+  async getProcessingRecords(): Promise<ProcessingRecord[]> {
+    return await db.select().from(processingRecords).orderBy(desc(processingRecords.processingDate));
+  }
+
+  async getProcessingRecord(id: number): Promise<ProcessingRecord | undefined> {
+    const [record] = await db.select().from(processingRecords).where(eq(processingRecords.id, id));
+    return record;
+  }
+
+  async createProcessingRecord(record: InsertProcessingRecord): Promise<ProcessingRecord> {
+    const [newRecord] = await db.insert(processingRecords).values(record).returning();
+    return newRecord;
+  }
+
+  async updateProcessingRecord(id: number, updates: Partial<InsertProcessingRecord>): Promise<ProcessingRecord | undefined> {
+    const [updated] = await db.update(processingRecords).set(updates).where(eq(processingRecords.id, id)).returning();
+    return updated;
+  }
+
+  async deleteProcessingRecord(id: number): Promise<boolean> {
+    await db.delete(processingRecords).where(eq(processingRecords.id, id));
+    return true;
+  }
+
+  // Outward Records
+  async getOutwardRecords(): Promise<OutwardRecord[]> {
+    return await db.select().from(outwardRecords).orderBy(desc(outwardRecords.dispatchDate));
+  }
+
+  async getOutwardRecord(id: number): Promise<OutwardRecord | undefined> {
+    const [record] = await db.select().from(outwardRecords).where(eq(outwardRecords.id, id));
+    return record;
+  }
+
+  async createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord> {
+    const [newRecord] = await db.insert(outwardRecords).values(record).returning();
+    return newRecord;
+  }
+
+  async updateOutwardRecord(id: number, updates: Partial<InsertOutwardRecord>): Promise<OutwardRecord | undefined> {
+    const [updated] = await db.update(outwardRecords).set(updates).where(eq(outwardRecords.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOutwardRecord(id: number): Promise<boolean> {
+    await db.delete(outwardRecords).where(eq(outwardRecords.id, id));
+    return true;
   }
 
   // Stats

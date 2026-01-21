@@ -205,6 +205,88 @@ export const insertProductSchema = createInsertSchema(products).omit({ id: true,
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 
+// === LOTS (INWARD STOCK WITH AUTO-GENERATED LOT NUMBERS) ===
+export const lots = pgTable("lots", {
+  id: serial("id").primaryKey(),
+  lotNumber: text("lot_number").notNull().unique(), // Auto-generated: CROP-VARIETY-YYYYMMDD-XXX
+  productId: integer("product_id").notNull(), // Reference to products table
+  sourceType: text("source_type").notNull(), // inward, processing_output
+  sourceReferenceId: integer("source_reference_id"), // Optional link to processing record
+  initialQuantity: decimal("initial_quantity").notNull(), // Quantity in KG
+  stockForm: text("stock_form").notNull().default("loose"), // loose, packed
+  status: text("status").notNull().default("active"), // active, exhausted, expired
+  inwardDate: date("inward_date").defaultNow(),
+  expiryDate: date("expiry_date"),
+  remarks: text("remarks"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLotSchema = createInsertSchema(lots).omit({ id: true, createdAt: true });
+
+export type Lot = typeof lots.$inferSelect;
+export type InsertLot = z.infer<typeof insertLotSchema>;
+
+// === STOCK BALANCES (LOT-WISE, LOCATION-WISE TRACKING) ===
+export const stockBalances = pgTable("stock_balances", {
+  id: serial("id").primaryKey(),
+  lotId: integer("lot_id").notNull(),
+  locationId: integer("location_id").notNull(),
+  stockForm: text("stock_form").notNull().default("loose"), // loose, packed
+  packetSize: text("packet_size"), // Only for packed: 1kg, 500g, etc.
+  quantity: decimal("quantity").notNull(), // KG for loose, count for packed
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+export const insertStockBalanceSchema = createInsertSchema(stockBalances).omit({ id: true, lastUpdated: true });
+
+export type StockBalance = typeof stockBalances.$inferSelect;
+export type InsertStockBalance = z.infer<typeof insertStockBalanceSchema>;
+
+// === PROCESSING RECORDS (RAW TO PROCESSED CONVERSION) ===
+export const processingRecords = pgTable("processing_records", {
+  id: serial("id").primaryKey(),
+  inputLotId: integer("input_lot_id").notNull(), // Source lot
+  inputQuantity: decimal("input_quantity").notNull(),
+  outputLotId: integer("output_lot_id"), // Created after processing
+  outputQuantity: decimal("output_quantity"),
+  wasteQuantity: decimal("waste_quantity").default("0"),
+  processingType: text("processing_type").notNull(), // cleaning, grading, treatment
+  processingDate: date("processing_date").defaultNow(),
+  processedBy: text("processed_by"),
+  remarks: text("remarks"),
+  status: text("status").notNull().default("pending"), // pending, completed
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertProcessingRecordSchema = createInsertSchema(processingRecords).omit({ id: true, createdAt: true });
+
+export type ProcessingRecord = typeof processingRecords.$inferSelect;
+export type InsertProcessingRecord = z.infer<typeof insertProcessingRecordSchema>;
+
+// === OUTWARD RECORDS (DISPATCH TRACKING) ===
+export const outwardRecords = pgTable("outward_records", {
+  id: serial("id").primaryKey(),
+  lotId: integer("lot_id").notNull(),
+  locationId: integer("location_id").notNull(), // Source warehouse
+  stockForm: text("stock_form").notNull(), // loose, packed
+  packetSize: text("packet_size"), // For packed
+  quantity: decimal("quantity").notNull(), // KG for loose, count for packed
+  destinationType: text("destination_type").notNull(), // dealer, farmer, own_use, transfer
+  destinationName: text("destination_name"),
+  invoiceNumber: text("invoice_number"),
+  vehicleNumber: text("vehicle_number"),
+  dispatchDate: date("dispatch_date").defaultNow(),
+  dispatchedBy: text("dispatched_by"),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOutwardRecordSchema = createInsertSchema(outwardRecords).omit({ id: true, createdAt: true });
+
+export type OutwardRecord = typeof outwardRecords.$inferSelect;
+export type InsertOutwardRecord = z.infer<typeof insertOutwardRecordSchema>;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;

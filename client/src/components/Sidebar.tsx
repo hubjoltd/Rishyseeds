@@ -19,7 +19,10 @@ import {
   UserCircle,
   CalendarCheck,
   Building2,
-  Shield
+  Shield,
+  PackagePlus,
+  Cog,
+  Truck
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -45,8 +48,11 @@ const allMenuItems: MenuItem[] = [
       { icon: Leaf, label: "Products", href: "/products", roles: ["admin", "manager"] },
       { icon: Package, label: "Batches", href: "/batches", roles: ["admin", "manager"] },
       { icon: MapPin, label: "Warehouses", href: "/locations", roles: ["admin", "manager"] },
+      { icon: PackagePlus, label: "Inward / Lots", href: "/inward", roles: ["admin", "manager"] },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager"] },
+      { icon: Cog, label: "Processing", href: "/processing", roles: ["admin", "manager"] },
       { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager"] },
+      { icon: Truck, label: "Outward", href: "/outward", roles: ["admin", "manager"] },
     ]
   },
   {
