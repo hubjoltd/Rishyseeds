@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
-import { useBatches, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement } from "@/hooks/use-inventory";
+import { useBatches, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertStockMovementSchema, type StockMovement } from "@shared/schema";
 import { z } from "zod";
@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRightLeft, History, AlertCircle, Trash2 } from "lucide-react";
+import { ArrowRightLeft, History, AlertCircle, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -51,12 +51,16 @@ export default function Stock() {
   const { data: locations } = useLocations();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
-  const { canDelete } = useAuth();
+  const { mutate: updateMovement, isPending: isUpdating } = useUpdateStockMovement();
+  const { canDelete, canEdit } = useAuth();
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const { toast } = useToast();
   
   const canDeleteStock = canDelete('stock');
+  const canEditStock = canEdit('stock');
 
   const handleDeleteMovement = () => {
     if (deleteId !== null) {
@@ -64,6 +68,53 @@ export default function Stock() {
         onSuccess: () => setDeleteId(null)
       });
     }
+  };
+
+  const handleEditMovement = (movement: StockMovement) => {
+    setEditingMovement(movement);
+    editForm.reset({
+      batchId: movement.batchId,
+      fromLocationId: movement.fromLocationId,
+      toLocationId: movement.toLocationId,
+      quantity: Number(movement.quantity),
+      responsiblePerson: movement.responsiblePerson || "",
+      remarks: movement.remarks || "",
+    });
+    setEditOpen(true);
+  };
+
+  const onEditSubmit = (data: z.infer<typeof movementFormSchema>) => {
+    if (!editingMovement) return;
+    
+    // Validate quantity for the selected batch
+    const batch = batches?.find(b => b.id === data.batchId);
+    const batchAvailable = batch ? Number(batch.currentQuantity) : 0;
+    // When editing, add back the original quantity to available
+    const originalQty = editingMovement.batchId === data.batchId ? Number(editingMovement.quantity) : 0;
+    const effectiveAvailable = batchAvailable + originalQty;
+    
+    if (data.quantity > effectiveAvailable) {
+      toast({
+        title: "Invalid Quantity",
+        description: `Cannot move ${data.quantity}kg. Only ${effectiveAvailable}kg available in this batch.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    updateMovement({
+      id: editingMovement.id,
+      data: {
+        ...data,
+        quantity: String(data.quantity),
+      }
+    }, {
+      onSuccess: () => {
+        setEditOpen(false);
+        setEditingMovement(null);
+        editForm.reset();
+      },
+    });
   };
 
   // Extend the schema because zod expects numbers but form returns strings initially
@@ -75,6 +126,10 @@ export default function Stock() {
   });
 
   const form = useForm<z.infer<typeof movementFormSchema>>({
+    resolver: zodResolver(movementFormSchema),
+  });
+
+  const editForm = useForm<z.infer<typeof movementFormSchema>>({
     resolver: zodResolver(movementFormSchema),
   });
 
@@ -235,14 +290,14 @@ export default function Stock() {
                 <TableHead>To</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Person</TableHead>
-                {canDeleteStock && <TableHead className="text-right">Actions</TableHead>}
+                {(canEditStock || canDeleteStock) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={canDeleteStock ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={canDeleteStock ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
                 movements?.map((m) => (
                   <TableRow key={m.id}>
@@ -252,16 +307,30 @@ export default function Stock() {
                     <TableCell>{locations?.find(l => l.id === m.toLocationId)?.name || m.toLocationId}</TableCell>
                     <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
                     <TableCell>{m.responsiblePerson}</TableCell>
-                    {canDeleteStock && (
+                    {(canEditStock || canDeleteStock) && (
                       <TableCell className="text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setDeleteId(m.id)}
-                          data-testid={`button-delete-movement-${m.id}`}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {canEditStock && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditMovement(m)}
+                              data-testid={`button-edit-movement-${m.id}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDeleteStock && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => setDeleteId(m.id)}
+                              data-testid={`button-delete-movement-${m.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -290,6 +359,91 @@ export default function Stock() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Stock Movement</DialogTitle>
+                <DialogDescription>
+                  Update movement details
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Batch</label>
+                  <Select 
+                    value={editForm.watch("batchId")?.toString()} 
+                    onValueChange={(val) => editForm.setValue("batchId", parseInt(val))}
+                  >
+                    <SelectTrigger data-testid="select-edit-batch">
+                      <SelectValue placeholder="Select Batch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {batches?.map((b) => (
+                        <SelectItem key={b.id} value={b.id.toString()}>
+                          {b.batchNumber} - {b.crop} ({b.currentQuantity}kg avail)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">From Location</label>
+                    <Select 
+                      value={editForm.watch("fromLocationId")?.toString()}
+                      onValueChange={(val) => editForm.setValue("fromLocationId", parseInt(val))}
+                    >
+                      <SelectTrigger data-testid="select-edit-from-location"><SelectValue placeholder="Source" /></SelectTrigger>
+                      <SelectContent>
+                        {locations?.map((l) => (
+                          <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">To Location</label>
+                    <Select 
+                      value={editForm.watch("toLocationId")?.toString()}
+                      onValueChange={(val) => editForm.setValue("toLocationId", parseInt(val))}
+                    >
+                      <SelectTrigger data-testid="select-edit-to-location"><SelectValue placeholder="Destination" /></SelectTrigger>
+                      <SelectContent>
+                        {locations?.map((l) => (
+                          <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Quantity (KG)</label>
+                  <Input 
+                    type="number" 
+                    {...editForm.register("quantity")}
+                    data-testid="input-edit-quantity"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Responsible Person</label>
+                  <Input {...editForm.register("responsiblePerson")} placeholder="Name" data-testid="input-edit-responsible-person" />
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isUpdating}
+                  data-testid="button-confirm-edit-movement"
+                >
+                  {isUpdating ? "Saving..." : "Save Changes"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
     </div>

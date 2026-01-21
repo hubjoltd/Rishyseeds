@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useBatches, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput } from "@/hooks/use-inventory";
+import { useBatches, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPackagingOutputSchema } from "@shared/schema";
+import { insertPackagingOutputSchema, type PackagingOutput } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Plus, Boxes, Trash2 } from "lucide-react";
+import { Package, Plus, Boxes, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Packaging() {
@@ -49,11 +49,15 @@ export default function Packaging() {
   const { data: batches } = useBatches();
   const { mutate: createPackaging, isPending } = useCreatePackagingOutput();
   const { mutate: deletePackaging, isPending: isDeleting } = useDeletePackagingOutput();
-  const { canDelete } = useAuth();
+  const { mutate: updatePackaging, isPending: isUpdating } = useUpdatePackagingOutput();
+  const { canDelete, canEdit } = useAuth();
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   
   const canDeletePackaging = canDelete('packaging');
+  const canEditPackaging = canEdit('packaging');
 
   const handleDeletePackaging = () => {
     if (deleteId !== null) {
@@ -61,6 +65,35 @@ export default function Packaging() {
         onSuccess: () => setDeleteId(null)
       });
     }
+  };
+
+  const handleEditPackaging = (pkg: PackagingOutput) => {
+    setEditingPackaging(pkg);
+    editForm.reset({
+      batchId: pkg.batchId,
+      packetSize: pkg.packetSize,
+      numberOfPackets: pkg.numberOfPackets,
+      wasteQuantity: Number(pkg.wasteQuantity || 0),
+    });
+    setEditOpen(true);
+  };
+
+  const onEditSubmit = (data: z.infer<typeof packagingFormSchema>) => {
+    if (!editingPackaging) return;
+    
+    updatePackaging({
+      id: editingPackaging.id,
+      data: {
+        ...data,
+        wasteQuantity: data.wasteQuantity !== undefined ? String(data.wasteQuantity) : undefined,
+      }
+    }, {
+      onSuccess: () => {
+        setEditOpen(false);
+        setEditingPackaging(null);
+        editForm.reset();
+      },
+    });
   };
 
   const packagingFormSchema = insertPackagingOutputSchema.extend({
@@ -76,6 +109,10 @@ export default function Packaging() {
       numberOfPackets: 0,
       wasteQuantity: 0,
     }
+  });
+
+  const editForm = useForm<z.infer<typeof packagingFormSchema>>({
+    resolver: zodResolver(packagingFormSchema),
   });
 
   const onSubmit = (data: z.infer<typeof packagingFormSchema>) => {
@@ -258,14 +295,14 @@ export default function Packaging() {
                 <TableHead className="text-right">Packets</TableHead>
                 <TableHead className="text-right">Est. Output (KG)</TableHead>
                 <TableHead className="text-right">Waste (KG)</TableHead>
-                {canDeletePackaging && <TableHead className="text-right">Actions</TableHead>}
+                {(canEditPackaging || canDeletePackaging) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={canDeletePackaging ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
               ) : packagingOutputs?.length === 0 ? (
-                <TableRow><TableCell colSpan={canDeletePackaging ? 7 : 6} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 7 : 6} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
               ) : (
                 packagingOutputs?.map((p) => (
                   <TableRow key={p.id}>
@@ -283,16 +320,30 @@ export default function Packaging() {
                     <TableCell className="text-right text-orange-600">
                       {Number(p.wasteQuantity || 0).toFixed(2)} kg
                     </TableCell>
-                    {canDeletePackaging && (
+                    {(canEditPackaging || canDeletePackaging) && (
                       <TableCell className="text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setDeleteId(p.id)}
-                          data-testid={`button-delete-packaging-${p.id}`}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {canEditPackaging && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditPackaging(p)}
+                              data-testid={`button-edit-packaging-${p.id}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDeletePackaging && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => setDeleteId(p.id)}
+                              data-testid={`button-delete-packaging-${p.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -321,6 +372,88 @@ export default function Packaging() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Packaging Record</DialogTitle>
+                <DialogDescription>
+                  Update packaging details
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Batch</label>
+                  <Select 
+                    value={editForm.watch("batchId")?.toString()} 
+                    onValueChange={(val) => editForm.setValue("batchId", parseInt(val))}
+                  >
+                    <SelectTrigger data-testid="select-edit-batch">
+                      <SelectValue placeholder="Select Batch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {batches?.map((b) => (
+                        <SelectItem key={b.id} value={b.id.toString()}>
+                          {b.batchNumber} - {b.crop} / {b.variety}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Packet Size</label>
+                    <Select 
+                      value={editForm.watch("packetSize")}
+                      onValueChange={(val) => editForm.setValue("packetSize", val)}
+                    >
+                      <SelectTrigger data-testid="select-edit-packet-size">
+                        <SelectValue placeholder="Size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100g">100g</SelectItem>
+                        <SelectItem value="250g">250g</SelectItem>
+                        <SelectItem value="500g">500g</SelectItem>
+                        <SelectItem value="1kg">1kg</SelectItem>
+                        <SelectItem value="5kg">5kg</SelectItem>
+                        <SelectItem value="10kg">10kg</SelectItem>
+                        <SelectItem value="25kg">25kg</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Number of Packets</label>
+                    <Input 
+                      type="number" 
+                      {...editForm.register("numberOfPackets")}
+                      data-testid="input-edit-number-of-packets"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Waste/Loss (KG)</label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    {...editForm.register("wasteQuantity")} 
+                    placeholder="0"
+                    data-testid="input-edit-waste-quantity"
+                  />
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isUpdating}
+                  data-testid="button-confirm-edit-packaging"
+                >
+                  {isUpdating ? "Saving..." : "Save Changes"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
     </div>

@@ -183,6 +183,9 @@ export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Payroll = typeof payrolls.$inferSelect;
 export type InsertPayroll = z.infer<typeof insertPayrollSchema>;
 
+export type PackagingOutput = typeof packagingOutputs.$inferSelect;
+export type InsertPackagingOutput = z.infer<typeof insertPackagingOutputSchema>;
+
 // API TYPES
 export type CreateStockMovementRequest = InsertStockMovement;
 export type CreatePackagingOutputRequest = z.infer<typeof insertPackagingOutputSchema>;
