@@ -67,6 +67,42 @@ export function useCreateBatch() {
   });
 }
 
+export function useUpdateBatch() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertBatch> }) => {
+      const res = await fetch(`/api/batches/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update batch");
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+      toast({ title: "Success", description: "Batch updated successfully" });
+    },
+  });
+}
+
+export function useDeleteBatch() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/batches/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete batch");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.dashboard.stats.path] });
+      toast({ title: "Success", description: "Batch deleted successfully" });
+    },
+  });
+}
+
 // === STOCK OPERATIONS ===
 export function useStockMovements() {
   return useQuery({

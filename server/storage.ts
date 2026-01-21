@@ -112,6 +112,16 @@ export class DatabaseStorage implements IStorage {
     `);
   }
 
+  async updateBatch(id: number, updates: Partial<InsertBatch>): Promise<Batch | undefined> {
+    const [updated] = await db.update(batches).set(updates).where(eq(batches.id, id)).returning();
+    return updated;
+  }
+
+  async deleteBatch(id: number): Promise<boolean> {
+    const result = await db.delete(batches).where(eq(batches.id, id));
+    return true;
+  }
+
   // Stock
   async createStockEntry(entry: typeof stockEntries.$inferInsert): Promise<typeof stockEntries.$inferSelect> {
     // Also update batch quantity
@@ -121,12 +131,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
-    // Deduct from source? 
-    // Logic: If moving from storage to packaging, we might deduct from 'storage' stock?
-    // SRS says: "Cannot move quantity greater than available stock. Automatic stock deduction from source location"
-    // For now, we assume batch quantity tracks overall stock or we need location-based stock.
-    // Simplified: Just update batch current quantity if it's leaving the system, or track location transfers.
-    // We'll just record movement for traceability as per MVP scope.
+    // Get current batch to validate
+    const batch = await this.getBatch(movement.batchId);
+    if (!batch) {
+      throw new Error("Batch not found");
+    }
+
+    const availableQty = Number(batch.currentQuantity);
+    const requestedQty = Number(movement.quantity);
+
+    // Server-side validation: Cannot move more than available
+    if (requestedQty > availableQty) {
+      throw new Error(`Cannot move ${requestedQty}kg. Only ${availableQty}kg available in this batch.`);
+    }
+
+    if (requestedQty <= 0) {
+      throw new Error("Quantity must be positive");
+    }
+
+    // Deduct from batch stock atomically
+    await this.updateBatchQuantity(movement.batchId, -requestedQty);
+    
     const [newMovement] = await db.insert(stockMovements).values(movement).returning();
     return newMovement;
   }

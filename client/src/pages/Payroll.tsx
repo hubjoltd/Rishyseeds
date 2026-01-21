@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { usePayroll, useGeneratePayroll } from "@/hooks/use-hrms";
+import { usePayroll, useGeneratePayroll, useEmployees } from "@/hooks/use-hrms";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,24 +18,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { IndianRupee, Printer, Download } from "lucide-react";
+import { IndianRupee, Printer, Download, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PayslipModal } from "@/components/PayslipModal";
+import type { Payroll as PayrollType } from "@shared/routes";
 
 export default function Payroll() {
   const { data: payrolls, isLoading } = usePayroll();
+  const { data: employees } = useEmployees();
   const { mutate: generatePayroll, isPending } = useGeneratePayroll();
   const { toast } = useToast();
   
   // Default to current month YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedPayroll, setSelectedPayroll] = useState<PayrollType | null>(null);
+  const [payslipOpen, setPayslipOpen] = useState(false);
 
   const handleGenerate = () => {
     generatePayroll({ month: selectedMonth });
   };
 
-  const handlePrint = (payrollId: number) => {
-    toast({ title: "Printing Payslip", description: `Generating PDF for payroll #${payrollId}` });
-    // In a real app, this would trigger a window.print() on a specific print route
+  const handleViewPayslip = (payroll: PayrollType) => {
+    setSelectedPayroll(payroll);
+    setPayslipOpen(true);
+  };
+
+  const getEmployeeForPayroll = (employeeId: number) => {
+    return employees?.find(e => e.id === employeeId);
   };
 
   return (
@@ -95,8 +104,13 @@ export default function Payroll() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handlePrint(p.id)}>
-                        <Printer className="w-4 h-4 text-gray-500" />
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => handleViewPayslip(p)}
+                        data-testid={`button-view-payslip-${p.id}`}
+                      >
+                        <FileText className="w-4 h-4 text-primary" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -106,6 +120,13 @@ export default function Payroll() {
           </Table>
         </CardContent>
       </Card>
+
+      <PayslipModal
+        open={payslipOpen}
+        onOpenChange={setPayslipOpen}
+        payroll={selectedPayroll}
+        employee={selectedPayroll ? getEmployeeForPayroll(selectedPayroll.employeeId) : null}
+      />
     </div>
   );
 }

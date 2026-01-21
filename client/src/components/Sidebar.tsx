@@ -9,7 +9,9 @@ import {
   LogOut,
   Package,
   MapPin,
-  ClipboardCheck
+  ClipboardCheck,
+  ArrowRightLeft,
+  Boxes
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -22,7 +24,8 @@ const menuItems = [
     children: [
       { icon: Package, label: "Batches", href: "/batches" },
       { icon: MapPin, label: "Locations", href: "/locations" },
-      { icon: ClipboardCheck, label: "Stock & Packaging", href: "/stock" },
+      { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock" },
+      { icon: Boxes, label: "Packaging", href: "/packaging" },
     ]
   },
   {

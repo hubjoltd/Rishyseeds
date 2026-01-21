@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,12 +14,12 @@ import Employees from "@/pages/Employees";
 import NotFound from "@/pages/not-found";
 import Locations from "@/pages/Locations";
 import Stock from "@/pages/Stock";
+import Packaging from "@/pages/Packaging";
 import Payroll from "@/pages/Payroll";
 import Attendance from "@/pages/Attendance";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
-  const [_, setLocation] = useLocation();
 
   if (isLoading) {
     return (
@@ -30,8 +30,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!user) {
-    setLocation("/login");
-    return null;
+    return <Redirect to="/login" />;
   }
 
   return (
@@ -64,6 +63,9 @@ function Router() {
       </Route>
       <Route path="/stock">
         <ProtectedRoute component={Stock} />
+      </Route>
+      <Route path="/packaging">
+        <ProtectedRoute component={Packaging} />
       </Route>
       <Route path="/payroll">
         <ProtectedRoute component={Payroll} />

@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation } from "wouter";
+import { Redirect } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,15 +17,17 @@ const loginSchema = z.object({
 
 export default function Login() {
   const { login, isLoggingIn, user } = useAuth();
-  const [_, setLocation] = useLocation();
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
+    defaultValues: {
+      username: "",
+      password: "",
+    },
   });
 
   if (user) {
-    setLocation("/");
-    return null;
+    return <Redirect to="/" />;
   }
 
   const onSubmit = (data: z.infer<typeof loginSchema>) => {

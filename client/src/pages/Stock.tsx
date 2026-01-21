@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useBatches, useCreateStockMovement, useStockMovements, useLocations } from "@/hooks/use-inventory";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertStockMovementSchema } from "@shared/schema";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,8 +30,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRightLeft, History } from "lucide-react";
+import { ArrowRightLeft, History, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Stock() {
   const { data: movements, isLoading } = useStockMovements();
@@ -38,20 +40,42 @@ export default function Stock() {
   const { data: locations } = useLocations();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const [open, setOpen] = useState(false);
+  const { toast } = useToast();
 
   // Extend the schema because zod expects numbers but form returns strings initially
   const movementFormSchema = insertStockMovementSchema.extend({
     batchId: z.coerce.number(),
     fromLocationId: z.coerce.number(),
     toLocationId: z.coerce.number(),
-    quantity: z.coerce.number(),
+    quantity: z.coerce.number().positive("Quantity must be positive"),
   });
 
   const form = useForm<z.infer<typeof movementFormSchema>>({
     resolver: zodResolver(movementFormSchema),
   });
 
+  // Watch selected batch to validate quantity
+  const selectedBatchId = form.watch("batchId");
+  const enteredQuantity = form.watch("quantity");
+
+  const selectedBatch = useMemo(() => {
+    return batches?.find(b => b.id === selectedBatchId);
+  }, [batches, selectedBatchId]);
+
+  const availableStock = selectedBatch ? Number(selectedBatch.currentQuantity) : 0;
+  const quantityExceedsAvailable = enteredQuantity > availableStock;
+
   const onSubmit = (data: z.infer<typeof movementFormSchema>) => {
+    // Validation: Cannot move more than available
+    if (data.quantity > availableStock) {
+      toast({
+        title: "Invalid Quantity",
+        description: `Cannot move ${data.quantity}kg. Only ${availableStock}kg available in this batch.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     moveStock(data, {
       onSuccess: () => {
         setOpen(false);
@@ -78,6 +102,9 @@ export default function Stock() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Move Stock</DialogTitle>
+              <DialogDescription>
+                Transfer inventory between storage and packaging locations
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
@@ -124,7 +151,23 @@ export default function Stock() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Quantity (KG)</label>
-                <Input type="number" {...form.register("quantity")} />
+                <Input 
+                  type="number" 
+                  {...form.register("quantity")} 
+                  className={quantityExceedsAvailable ? "border-red-500 focus-visible:ring-red-500" : ""}
+                />
+                {selectedBatch && (
+                  <p className={`text-xs ${quantityExceedsAvailable ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                    {quantityExceedsAvailable ? (
+                      <span className="flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Exceeds available stock! Max: {availableStock}kg
+                      </span>
+                    ) : (
+                      `Available: ${availableStock}kg`
+                    )}
+                  </p>
+                )}
               </div>
               
               <div className="space-y-2">
@@ -132,7 +175,12 @@ export default function Stock() {
                 <Input {...form.register("responsiblePerson")} placeholder="Name" />
               </div>
 
-              <Button type="submit" className="w-full" disabled={isPending}>
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isPending || quantityExceedsAvailable}
+                data-testid="button-confirm-movement"
+              >
                 {isPending ? "Moving..." : "Confirm Movement"}
               </Button>
             </form>

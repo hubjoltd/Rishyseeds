@@ -121,6 +121,24 @@ export const api = {
         400: errorSchemas.validation,
       },
     },
+    update: {
+      method: 'PUT' as const,
+      path: '/api/batches/:id',
+      input: insertBatchSchema.partial(),
+      responses: {
+        200: z.custom<typeof batches.$inferSelect>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/batches/:id',
+      responses: {
+        204: z.void(),
+        404: errorSchemas.notFound,
+      },
+    },
     get: {
       method: 'GET' as const,
       path: '/api/batches/:id',
@@ -261,3 +279,25 @@ export function buildUrl(path: string, params?: Record<string, string | number>)
   }
   return url;
 }
+
+// Re-export types from schema for convenience
+export type { 
+  User, InsertUser,
+  Batch, InsertBatch,
+  Location, InsertLocation,
+  Employee, InsertEmployee,
+  Payroll, InsertPayroll,
+  StockMovement, InsertStockMovement,
+  CreateStockMovementRequest,
+  CreatePackagingOutputRequest
+} from './schema';
+
+// Inline attendance type
+export type InsertAttendance = {
+  employeeId: number;
+  date: string;
+  status: string;
+  shift?: string;
+  checkIn?: string;
+  checkOut?: string;
+};

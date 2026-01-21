@@ -107,6 +107,30 @@ export async function registerRoutes(
     res.json(batch);
   });
 
+  app.put(api.batches.update.path, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const input = api.batches.update.input.parse(req.body);
+      const batch = await storage.updateBatch(id, input);
+      if (!batch) return res.status(404).json({ message: "Batch not found" });
+      res.json(batch);
+    } catch (e) {
+      res.status(400).json({ message: "Validation failed" });
+    }
+  });
+
+  app.delete(api.batches.delete.path, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const batch = await storage.getBatch(id);
+      if (!batch) return res.status(404).json({ message: "Batch not found" });
+      await storage.deleteBatch(id);
+      res.status(204).send();
+    } catch (e) {
+      res.status(400).json({ message: "Delete failed" });
+    }
+  });
+
   // === STOCK ROUTES ===
   app.post(api.stock.entry.path, async (req, res) => {
     try {
@@ -123,8 +147,8 @@ export async function registerRoutes(
       const input = api.stock.move.input.parse(req.body);
       const movement = await storage.createStockMovement(input);
       res.status(201).json(movement);
-    } catch (e) {
-      res.status(400).json({ message: "Validation failed" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Validation failed" });
     }
   });
 
