@@ -34,6 +34,33 @@ export function useCreateLocation() {
   });
 }
 
+export function useUpdateLocation() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertLocation> }) => {
+      const res = await fetch(`/api/locations/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update location");
+      }
+      return await res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.locations.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/locations", variables.id] });
+      toast({ title: "Success", description: "Location updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
 // === BATCHES ===
 export function useBatches() {
   return useQuery({

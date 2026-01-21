@@ -1,9 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { insertLocationSchema } from "@shared/schema";
+import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -12,7 +23,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Warehouse, Package, ArrowRightLeft, Leaf, Building2 } from "lucide-react";
+import { ArrowLeft, MapPin, Warehouse, Package, ArrowRightLeft, Leaf, Building2, Pencil } from "lucide-react";
+import { useUpdateLocation } from "@/hooks/use-inventory";
 import type { Location, Batch, StockMovement } from "@shared/schema";
 import { format } from "date-fns";
 
@@ -22,6 +34,13 @@ export default function LocationDetail() {
   const [, params] = useRoute("/locations/:id");
   const locationId = params?.id ? parseInt(params.id) : null;
   const [activeTab, setActiveTab] = useState<TabType>("details");
+  const [editOpen, setEditOpen] = useState(false);
+  const { mutate: updateLocation, isPending: isUpdating } = useUpdateLocation();
+
+  const form = useForm<z.infer<typeof insertLocationSchema>>({
+    resolver: zodResolver(insertLocationSchema),
+    defaultValues: { name: "", type: "", capacity: undefined, address: "", isActive: true }
+  });
 
   const { data: location, isLoading: locationLoading } = useQuery<Location>({
     queryKey: ["/api/locations", locationId],
@@ -47,6 +66,25 @@ export default function LocationDetail() {
 
   const uniqueCrops = Array.from(new Set(batches?.map(b => b.crop) || []));
 
+  useEffect(() => {
+    if (location) {
+      form.reset({
+        name: location.name,
+        type: location.type,
+        capacity: location.capacity || undefined,
+        address: location.address || "",
+        isActive: location.isActive ?? true
+      });
+    }
+  }, [location, form]);
+
+  const onEditSubmit = (data: z.infer<typeof insertLocationSchema>) => {
+    if (!locationId) return;
+    updateLocation({ id: locationId, data }, {
+      onSuccess: () => setEditOpen(false)
+    });
+  };
+
   if (locationLoading) {
     return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
   }
@@ -67,25 +105,66 @@ export default function LocationDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/locations">
-          <Button variant="ghost" size="icon" className="h-10 w-10">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-        </Link>
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl stat-gradient-green">
-            <Icon className="w-8 h-8 text-green-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold font-display">{location.name}</h1>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Badge variant="secondary" className="badge-info capitalize">{location.type}</Badge>
-              <span className="text-sm">{location.address || "No address"}</span>
+          <Link href="/locations">
+            <Button variant="ghost" size="icon" className="h-10 w-10">
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-xl stat-gradient-green">
+              <Icon className="w-8 h-8 text-green-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold font-display">{location.name}</h1>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Badge variant="secondary" className="badge-info capitalize">{location.type}</Badge>
+                <span className="text-sm">{location.address || "No address"}</span>
+              </div>
             </div>
           </div>
         </div>
+        <Button onClick={() => setEditOpen(true)} data-testid="button-edit-location">
+          <Pencil className="w-4 h-4 mr-2" />
+          Edit Location
+        </Button>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Location</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Location Name</label>
+              <Input {...form.register("name")} placeholder="e.g., Warehouse A" data-testid="input-location-name" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <Input {...form.register("type")} placeholder="storage, processing, etc." data-testid="input-location-type" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Capacity (optional)</label>
+              <Input 
+                type="number" 
+                {...form.register("capacity", { 
+                  setValueAs: (v) => v === "" || v === undefined ? undefined : Number(v)
+                })} 
+                data-testid="input-location-capacity" 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Address</label>
+              <Input {...form.register("address")} data-testid="input-location-address" />
+            </div>
+            <Button type="submit" className="w-full" disabled={isUpdating} data-testid="button-save-location">
+              {isUpdating ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex gap-2 border-b border-primary/10 pb-1">
         <button

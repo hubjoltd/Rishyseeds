@@ -34,6 +34,32 @@ export function useCreateEmployee() {
   });
 }
 
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertEmployee> }) => {
+      const res = await fetch(`/api/employees/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update employee");
+      }
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.employees.list.path] });
+      toast({ title: "Success", description: "Employee updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
 // === ATTENDANCE ===
 export function useAttendance(date?: string) {
   return useQuery({

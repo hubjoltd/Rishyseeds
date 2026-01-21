@@ -141,6 +141,18 @@ export async function registerRoutes(
     res.json(location);
   });
 
+  app.put("/api/locations/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const updates = req.body;
+      const updated = await storage.updateLocation(id, updates);
+      if (!updated) return res.status(404).json({ message: "Location not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Update failed" });
+    }
+  });
+
   // === BATCHES ROUTES ===
   app.get(api.batches.list.path, async (req, res) => {
     const batches = await storage.getBatches();
@@ -249,6 +261,18 @@ export async function registerRoutes(
     const employee = await storage.getEmployee(Number(req.params.id));
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     res.json(employee);
+  });
+
+  app.put("/api/employees/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const updates = req.body;
+      const updated = await storage.updateEmployee(id, updates);
+      if (!updated) return res.status(404).json({ message: "Employee not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Update failed" });
+    }
   });
 
   // === ATTENDANCE ROUTES ===

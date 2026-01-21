@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { useEmployees, useCreateEmployee } from "@/hooks/use-hrms";
+import { useState, useEffect } from "react";
+import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/use-hrms";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertEmployeeSchema } from "@shared/schema";
+import { insertEmployeeSchema, type Employee } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +30,19 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, UserPlus, Briefcase, Users, Search, Building2, Banknote, Phone, Mail, CreditCard, IndianRupee } from "lucide-react";
+import { Plus, UserPlus, Briefcase, Users, Search, Building2, Banknote, Phone, Mail, CreditCard, IndianRupee, Pencil } from "lucide-react";
 
 type FormTab = "basic" | "salary" | "bank";
 
 export default function Employees() {
   const { data: employees, isLoading } = useEmployees();
   const { mutate: createEmployee, isPending } = useCreateEmployee();
+  const { mutate: updateEmployee, isPending: isUpdating } = useUpdateEmployee();
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [activeTab, setActiveTab] = useState<FormTab>("basic");
+  const [editTab, setEditTab] = useState<FormTab>("basic");
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
 
@@ -59,6 +63,53 @@ export default function Employees() {
     }
   });
 
+  const editForm = useForm<z.infer<typeof insertEmployeeSchema>>({
+    resolver: zodResolver(insertEmployeeSchema),
+    defaultValues: {
+      status: "active",
+      salaryType: "monthly",
+      hra: "0",
+      da: "0",
+      travelAllowance: "0",
+      medicalAllowance: "0",
+      otherAllowances: "0",
+      pfDeduction: "0",
+      esiDeduction: "0",
+      tdsDeduction: "0",
+      otherDeductions: "0",
+    }
+  });
+
+  useEffect(() => {
+    if (editingEmployee) {
+      editForm.reset({
+        employeeId: editingEmployee.employeeId,
+        fullName: editingEmployee.fullName,
+        role: editingEmployee.role || "",
+        department: editingEmployee.department || "",
+        joiningDate: editingEmployee.joiningDate || "",
+        status: editingEmployee.status || "active",
+        salaryType: editingEmployee.salaryType || "monthly",
+        basicSalary: editingEmployee.basicSalary || "0",
+        hra: editingEmployee.hra || "0",
+        da: editingEmployee.da || "0",
+        travelAllowance: editingEmployee.travelAllowance || "0",
+        medicalAllowance: editingEmployee.medicalAllowance || "0",
+        otherAllowances: editingEmployee.otherAllowances || "0",
+        pfDeduction: editingEmployee.pfDeduction || "0",
+        esiDeduction: editingEmployee.esiDeduction || "0",
+        tdsDeduction: editingEmployee.tdsDeduction || "0",
+        otherDeductions: editingEmployee.otherDeductions || "0",
+        bankAccountNumber: editingEmployee.bankAccountNumber || "",
+        bankIfscCode: editingEmployee.bankIfscCode || "",
+        panNumber: editingEmployee.panNumber || "",
+        phone: editingEmployee.phone || "",
+        email: editingEmployee.email || "",
+        address: editingEmployee.address || "",
+      });
+    }
+  }, [editingEmployee, editForm]);
+
   const onSubmit = (data: z.infer<typeof insertEmployeeSchema>) => {
     createEmployee(data, {
       onSuccess: () => {
@@ -67,6 +118,22 @@ export default function Employees() {
         setActiveTab("basic");
       },
     });
+  };
+
+  const onEditSubmit = (data: z.infer<typeof insertEmployeeSchema>) => {
+    if (!editingEmployee) return;
+    updateEmployee({ id: editingEmployee.id, data }, {
+      onSuccess: () => {
+        setEditOpen(false);
+        setEditingEmployee(null);
+        setEditTab("basic");
+      },
+    });
+  };
+
+  const handleEditClick = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEditOpen(true);
   };
 
   const filteredEmployees = employees?.filter(emp =>
@@ -365,6 +432,127 @@ export default function Employees() {
             </form>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={editOpen} onOpenChange={(isOpen) => { setEditOpen(isOpen); if (!isOpen) { setEditingEmployee(null); setEditTab("basic"); } }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-xl">Edit Employee</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-6">
+              <div className="flex gap-2 border-b pb-2">
+                <button type="button" onClick={() => setEditTab("basic")} className={`px-4 py-2 text-sm font-medium rounded-t-lg ${editTab === "basic" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}>Basic Info</button>
+                <button type="button" onClick={() => setEditTab("salary")} className={`px-4 py-2 text-sm font-medium rounded-t-lg ${editTab === "salary" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}>Salary Config</button>
+                <button type="button" onClick={() => setEditTab("bank")} className={`px-4 py-2 text-sm font-medium rounded-t-lg ${editTab === "bank" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}>Bank & Contact</button>
+              </div>
+              {editTab === "basic" && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Employee ID</label>
+                    <Input {...editForm.register("employeeId")} data-testid="input-edit-employee-id" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Full Name</label>
+                    <Input {...editForm.register("fullName")} data-testid="input-edit-employee-name" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Role</label>
+                    <Input {...editForm.register("role")} data-testid="input-edit-employee-role" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Department</label>
+                    <Input {...editForm.register("department")} data-testid="input-edit-employee-department" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Joining Date</label>
+                    <Input type="date" {...editForm.register("joiningDate")} data-testid="input-edit-employee-joining-date" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Status</label>
+                    <Select value={editForm.watch("status")} onValueChange={(val) => editForm.setValue("status", val)}>
+                      <SelectTrigger data-testid="select-edit-employee-status"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="on_leave">On Leave</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+              {editTab === "salary" && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Salary Type</label>
+                    <Select value={editForm.watch("salaryType")} onValueChange={(val) => editForm.setValue("salaryType", val)}>
+                      <SelectTrigger data-testid="select-edit-salary-type"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="daily">Daily</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Basic Salary (₹)</label>
+                    <Input {...editForm.register("basicSalary")} data-testid="input-edit-basic-salary" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">HRA (₹)</label>
+                    <Input {...editForm.register("hra")} data-testid="input-edit-hra" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">DA (₹)</label>
+                    <Input {...editForm.register("da")} data-testid="input-edit-da" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">PF Deduction (₹)</label>
+                    <Input {...editForm.register("pfDeduction")} data-testid="input-edit-pf" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">ESI Deduction (₹)</label>
+                    <Input {...editForm.register("esiDeduction")} data-testid="input-edit-esi" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">TDS Deduction (₹)</label>
+                    <Input {...editForm.register("tdsDeduction")} data-testid="input-edit-tds" />
+                  </div>
+                </div>
+              )}
+              {editTab === "bank" && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Bank Account Number</label>
+                    <Input {...editForm.register("bankAccountNumber")} data-testid="input-edit-bank-account" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Bank IFSC Code</label>
+                    <Input {...editForm.register("bankIfscCode")} data-testid="input-edit-ifsc" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">PAN Number</label>
+                    <Input {...editForm.register("panNumber")} data-testid="input-edit-pan" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Phone</label>
+                    <Input {...editForm.register("phone")} data-testid="input-edit-phone" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Email</label>
+                    <Input {...editForm.register("email")} data-testid="input-edit-email" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium">Address</label>
+                    <Input {...editForm.register("address")} data-testid="input-edit-address" />
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button type="submit" disabled={isUpdating} data-testid="button-save-employee">
+                  {isUpdating ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -427,16 +615,17 @@ export default function Employees() {
                 <TableHead>Salary Type</TableHead>
                 <TableHead className="text-right">Basic Salary</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">Loading employees...</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8">Loading employees...</TableCell>
                 </TableRow>
               ) : filteredEmployees?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No employees found</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No employees found</TableCell>
                 </TableRow>
               ) : (
                 filteredEmployees?.map((emp) => (
@@ -464,6 +653,16 @@ export default function Employees() {
                       <Badge className={emp.status === "active" ? "badge-success" : "badge-warning"}>
                         {emp.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => handleEditClick(emp)}
+                        data-testid={`button-edit-employee-${emp.id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))

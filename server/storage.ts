@@ -26,6 +26,7 @@ export interface IStorage {
   getLocations(): Promise<Location[]>;
   getLocation(id: number): Promise<Location | undefined>;
   createLocation(location: InsertLocation): Promise<Location>;
+  updateLocation(id: number, updates: Partial<InsertLocation>): Promise<Location | undefined>;
 
   // Batches
   getBatches(): Promise<Batch[]>;
@@ -48,6 +49,7 @@ export interface IStorage {
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
+  updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined>;
 
   // Attendance
   markAttendance(attendance: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
@@ -100,6 +102,11 @@ export class DatabaseStorage implements IStorage {
   async createLocation(location: InsertLocation): Promise<Location> {
     const [newLocation] = await db.insert(locations).values(location).returning();
     return newLocation;
+  }
+
+  async updateLocation(id: number, updates: Partial<InsertLocation>): Promise<Location | undefined> {
+    const [updated] = await db.update(locations).set(updates).where(eq(locations.id, id)).returning();
+    return updated;
   }
 
   // Batches
@@ -200,6 +207,11 @@ export class DatabaseStorage implements IStorage {
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
     const [newEmployee] = await db.insert(employees).values(employee).returning();
     return newEmployee;
+  }
+
+  async updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined> {
+    const [updated] = await db.update(employees).set(updates).where(eq(employees.id, id)).returning();
+    return updated;
   }
 
   // Attendance
