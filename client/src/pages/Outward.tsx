@@ -192,7 +192,8 @@ export default function Outward() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="loose">Loose</SelectItem>
+                      <SelectItem value="loose">Raw Seeds</SelectItem>
+                      <SelectItem value="cobs">Cobs</SelectItem>
                       <SelectItem value="packed">Packed</SelectItem>
                     </SelectContent>
                   </Select>
@@ -326,7 +327,7 @@ export default function Outward() {
                       <TableCell>{getLocationName(record.locationId)}</TableCell>
                       <TableCell>
                         <Badge variant={record.stockForm === 'packed' ? 'default' : 'secondary'}>
-                          {record.stockForm}
+                          {record.stockForm === 'loose' ? 'Raw Seeds' : record.stockForm === 'cobs' ? 'Cobs' : record.stockForm}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">

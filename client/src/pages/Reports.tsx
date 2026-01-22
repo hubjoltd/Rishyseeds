@@ -333,7 +333,7 @@ export default function Reports() {
                       <TableCell className="font-mono">{getLotNumber(sb.lotId)}</TableCell>
                       <TableCell>
                         <Badge variant={sb.stockForm === 'packed' ? 'default' : 'secondary'}>
-                          {sb.stockForm}
+                          {sb.stockForm === 'loose' ? 'Raw Seeds' : sb.stockForm === 'cobs' ? 'Cobs' : sb.stockForm}
                         </Badge>
                       </TableCell>
                       <TableCell>{sb.packetSize || '-'}</TableCell>

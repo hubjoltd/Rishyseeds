@@ -276,7 +276,8 @@ export default function Inward() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="loose">Loose</SelectItem>
+                      <SelectItem value="loose">Raw Seeds</SelectItem>
+                      <SelectItem value="cobs">Cobs</SelectItem>
                       <SelectItem value="packed">Packed</SelectItem>
                     </SelectContent>
                   </Select>
@@ -375,7 +376,7 @@ export default function Inward() {
                       <TableCell className="font-medium">{getLotBalance(lot.id)} kg</TableCell>
                       <TableCell>
                         <Badge variant={lot.stockForm === 'packed' ? 'default' : 'secondary'}>
-                          {lot.stockForm}
+                          {lot.stockForm === 'loose' ? 'Raw Seeds' : lot.stockForm === 'cobs' ? 'Cobs' : lot.stockForm}
                         </Badge>
                       </TableCell>
                       <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>

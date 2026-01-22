@@ -275,7 +275,7 @@ export default function Packaging() {
                 {form.formState.errors.locationId && <p className="text-xs text-red-500">Required</p>}
                 {selectedLotId && selectedLocationId && (
                   <p className="text-xs text-muted-foreground">
-                    Available loose stock at {getLocationName(selectedLocationId)}: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} kg</span>
+                    Available raw seeds at {getLocationName(selectedLocationId)}: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} kg</span>
                   </p>
                 )}
               </div>
