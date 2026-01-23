@@ -227,26 +227,37 @@ export default function Inward() {
               <DialogDescription>{editingLot ? "Update lot details" : "Add new incoming seed stock to the system"}</DialogDescription>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(editingLot ? handleUpdate : onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Product (Crop/Variety)</label>
-                <Select 
-                  onValueChange={(val) => {
-                    form.setValue("productId", parseInt(val));
-                    setGeneratedLotNumber("");
-                  }}
-                >
-                  <SelectTrigger data-testid="select-product">
-                    <SelectValue placeholder="Select Product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(products as Product[] || []).map((p: Product) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.crop} - {p.variety}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {editingLot ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Product (Crop/Variety)</label>
+                  <Input 
+                    value={getProductDetails(editingLot.productId)}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Product (Crop/Variety)</label>
+                  <Select 
+                    onValueChange={(val) => {
+                      form.setValue("productId", parseInt(val));
+                      setGeneratedLotNumber("");
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-product">
+                      <SelectValue placeholder="Select Product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(products as Product[] || []).map((p: Product) => (
+                        <SelectItem key={p.id} value={p.id.toString()}>
+                          {p.crop} - {p.variety}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Lot Number</label>
@@ -258,17 +269,19 @@ export default function Inward() {
                     className="bg-muted"
                     data-testid="input-lot-number"
                   />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={handleGenerateLotNumber}
-                    disabled={!selectedProductId || isGenerating}
-                    data-testid="button-generate-lot"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                  </Button>
+                  {!editingLot && (
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={handleGenerateLotNumber}
+                      disabled={!selectedProductId || isGenerating}
+                      data-testid="button-generate-lot"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                    </Button>
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground">Format: CROP-VAR-YYYYMMDD-XXX</p>
+                {!editingLot && <p className="text-xs text-muted-foreground">Format: MA-XX-26-001</p>}
               </div>
 
               <div className="space-y-2">
@@ -280,21 +293,23 @@ export default function Inward() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Warehouse (Location)</label>
-                <Select onValueChange={(val) => form.setValue("locationId", parseInt(val))}>
-                  <SelectTrigger data-testid="select-location">
-                    <SelectValue placeholder="Select Warehouse" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(locations as Location[] || []).map((loc: Location) => (
-                      <SelectItem key={loc.id} value={loc.id.toString()}>
-                        {loc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!editingLot && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Warehouse (Location)</label>
+                  <Select onValueChange={(val) => form.setValue("locationId", parseInt(val))}>
+                    <SelectTrigger data-testid="select-location">
+                      <SelectValue placeholder="Select Warehouse" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(locations as Location[] || []).map((loc: Location) => (
+                        <SelectItem key={loc.id} value={loc.id.toString()}>
+                          {loc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">

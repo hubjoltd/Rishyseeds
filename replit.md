@@ -87,6 +87,14 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 2026 (Latest)
+- **New Lot Number Format**: Lot numbers now follow format MA-[variety last 2 digits]-26-001 (e.g., MA-S5-26-001)
+- **Inward Edit Feature**: Added Edit button to Inward page for updating lot details (source, quantity, dates, remarks)
+- **Stock Balance on Inward**: Creating an inward entry now automatically creates a stock_balance record with correct location
+- **Variety Display**: All pages (Stock Movement, Packaging, Processing, Outward) now show lot number with product variety
+- **Processing Dropdowns Updated**:
+  - Processing Type: Cleaning, Processing, Drying (removed Grading and Treatment)
+  - Processed By: Old Machine, New Machine (dropdown instead of text input)
+- **Stock Forms Renamed**: "Loose" renamed to "Raw Seeds", added "Cobs" as new option
 - **Stock Movement uses Lots**: Stock Movement page now uses Lot Numbers instead of Batches, with auto-display of product name and received quantity when a lot is selected
 - **Comprehensive Stock Reports**: Updated Reports page with 5 report types - Lot Stock, Variety-wise, Location-wise, Outward Log, and Processing reports with CSV export
 - **Stock Validation on Outward**: Server-side validation prevents dispatching more stock than available
