@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLots, useCreateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations } from "@/hooks/use-inventory";
+import { useState, useEffect } from "react";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations } from "@/hooks/use-inventory";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, PackagePlus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Search, PackagePlus, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { format } from "date-fns";
 
 const inwardFormSchema = z.object({
@@ -63,16 +63,19 @@ export default function Inward() {
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
   const { mutate: createLot, isPending } = useCreateLot();
+  const { mutate: updateLot, isPending: isUpdating } = useUpdateLot();
   const { mutate: deleteLot, isPending: isDeleting } = useDeleteLot();
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
-  const { canDelete } = useAuth();
+  const { canDelete, canEdit } = useAuth();
   
   const [open, setOpen] = useState(false);
+  const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [deleteLotId, setDeleteLotId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [generatedLotNumber, setGeneratedLotNumber] = useState("");
 
   const canDeleteLot = canDelete('lots');
+  const canEditLot = canEdit('lots');
 
   const form = useForm<z.infer<typeof inwardFormSchema>>({
     resolver: zodResolver(inwardFormSchema),
@@ -138,6 +141,50 @@ export default function Inward() {
     }
   };
 
+  const handleEdit = (lot: Lot) => {
+    setEditingLot(lot);
+    form.reset({
+      productId: lot.productId,
+      locationId: 0,
+      initialQuantity: Number(lot.initialQuantity),
+      quantityUnit: lot.quantityUnit || "kg",
+      stockForm: lot.stockForm || "loose",
+      sourceName: lot.sourceName || "",
+      inwardDate: lot.inwardDate || "",
+      expiryDate: lot.expiryDate || "",
+      remarks: lot.remarks || "",
+    });
+    setGeneratedLotNumber(lot.lotNumber);
+    setOpen(true);
+  };
+
+  const handleUpdate = (data: z.infer<typeof inwardFormSchema>) => {
+    if (!editingLot) return;
+    
+    const quantityInKg = data.quantityUnit === "tons" 
+      ? data.initialQuantity * 1000 
+      : data.initialQuantity;
+    
+    updateLot({
+      id: editingLot.id,
+      data: {
+        sourceName: data.sourceName || null,
+        initialQuantity: String(quantityInKg),
+        stockForm: data.stockForm,
+        inwardDate: data.inwardDate || null,
+        expiryDate: data.expiryDate || null,
+        remarks: data.remarks || null,
+      }
+    }, {
+      onSuccess: () => {
+        setOpen(false);
+        setEditingLot(null);
+        form.reset();
+        setGeneratedLotNumber("");
+      },
+    });
+  };
+
   const getProductDetails = (productId: number) => {
     const product = products?.find((p: Product) => p.id === productId);
     return product ? `${product.crop} - ${product.variety}` : "Unknown";
@@ -160,7 +207,14 @@ export default function Inward() {
           <p className="text-muted-foreground">Record incoming seed stock with auto-generated lot numbers</p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingLot(null);
+            form.reset();
+            setGeneratedLotNumber("");
+          }
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" data-testid="button-new-inward">
               <Plus className="mr-2 h-4 w-4" />
@@ -169,10 +223,10 @@ export default function Inward() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Record Inward Stock</DialogTitle>
-              <DialogDescription>Add new incoming seed stock to the system</DialogDescription>
+              <DialogTitle>{editingLot ? "Edit Lot" : "Record Inward Stock"}</DialogTitle>
+              <DialogDescription>{editingLot ? "Update lot details" : "Add new incoming seed stock to the system"}</DialogDescription>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(editingLot ? handleUpdate : onSubmit)} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Product (Crop/Variety)</label>
                 <Select 
@@ -387,16 +441,28 @@ export default function Inward() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {canDeleteLot && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeleteLotId(lot.id)}
-                            data-testid={`button-delete-lot-${lot.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          {canEditLot && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEdit(lot)}
+                              data-testid={`button-edit-lot-${lot.id}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canDeleteLot && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteLotId(lot.id)}
+                              data-testid={`button-delete-lot-${lot.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

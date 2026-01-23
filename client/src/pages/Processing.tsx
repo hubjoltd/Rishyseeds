@@ -201,8 +201,7 @@ export default function Processing() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cleaning">Cleaning</SelectItem>
-                    <SelectItem value="grading">Grading</SelectItem>
-                    <SelectItem value="treatment">Seed Treatment</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
                     <SelectItem value="drying">Drying</SelectItem>
                   </SelectContent>
                 </Select>
@@ -210,11 +209,15 @@ export default function Processing() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Processed By</label>
-                <Input 
-                  {...form.register("processedBy")}
-                  placeholder="Person name"
-                  data-testid="input-processed-by"
-                />
+                <Select onValueChange={(val) => form.setValue("processedBy", val)}>
+                  <SelectTrigger data-testid="select-processed-by">
+                    <SelectValue placeholder="Select Machine" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="old_machine">Old Machine</SelectItem>
+                    <SelectItem value="new_machine">New Machine</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
