@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowLeft, MapPin, Warehouse, Package, ArrowRightLeft, Leaf, Building2, Pencil, Trash2 } from "lucide-react";
-import { useUpdateLocation, useDeleteLocation } from "@/hooks/use-inventory";
+import { useUpdateLocation, useDeleteLocation, useLots, useProducts, useStockBalances, useLocations } from "@/hooks/use-inventory";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useLocation as useWouterLocation } from "wouter";
-import type { Location, Batch, StockMovement } from "@shared/schema";
+import type { Location, Lot, Product, StockBalance, StockMovement } from "@shared/schema";
 import { format } from "date-fns";
 
 type TabType = "details" | "crops" | "movements";
@@ -66,9 +66,10 @@ export default function LocationDetail() {
     enabled: !!locationId,
   });
 
-  const { data: batches } = useQuery<Batch[]>({
-    queryKey: ["/api/batches"],
-  });
+  const { data: lots } = useLots();
+  const { data: products } = useProducts();
+  const { data: stockBalances } = useStockBalances();
+  const { data: allLocations } = useLocations();
 
   const { data: movements } = useQuery<StockMovement[]>({
     queryKey: ["/api/stock/history"],
@@ -78,7 +79,46 @@ export default function LocationDetail() {
     m => m.fromLocationId === locationId || m.toLocationId === locationId
   ) || [];
 
-  const uniqueCrops = Array.from(new Set(batches?.map(b => b.crop) || []));
+  // Get stock balances for this location
+  const locationStockBalances = (stockBalances as StockBalance[] || []).filter(
+    sb => sb.locationId === locationId && Number(sb.quantity) > 0
+  );
+
+  // Get unique lots at this location
+  const lotIdsAtLocation = Array.from(new Set(locationStockBalances.map(sb => sb.lotId)));
+  const lotsAtLocation = (lots as Lot[] || []).filter(lot => lotIdsAtLocation.includes(lot.id));
+
+  // Get unique crops/products at this location
+  const productIdsAtLocation = Array.from(new Set(lotsAtLocation.map(lot => lot.productId)));
+  const uniqueProducts = (products as Product[] || []).filter(p => productIdsAtLocation.includes(p.id));
+
+  const getProductName = (productId: number) => {
+    const product = (products as Product[] || []).find(p => p.id === productId);
+    return product ? `${product.crop} - ${product.variety}` : '-';
+  };
+
+  const getLotNumber = (lotId: number | null) => {
+    if (!lotId) return '-';
+    const lot = (lots as Lot[] || []).find(l => l.id === lotId);
+    return lot?.lotNumber || '-';
+  };
+
+  const getLocationName = (locId: number) => {
+    const loc = (allLocations || []).find(l => l.id === locId);
+    return loc?.name || `Location #${locId}`;
+  };
+
+  const getStockFormLabel = (form: string) => {
+    switch (form) {
+      case 'loose': return 'Raw Seeds';
+      case 'cobs': return 'Cobs';
+      case 'packed': return 'Packed';
+      default: return form;
+    }
+  };
+
+  // Calculate total stock at location
+  const totalStockAtLocation = locationStockBalances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
 
   useEffect(() => {
     if (location) {
@@ -300,11 +340,19 @@ export default function LocationDetail() {
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl stat-gradient-green text-center">
-                  <p className="text-3xl font-bold text-green-600">{uniqueCrops.length}</p>
-                  <p className="text-sm text-muted-foreground">Total Crops</p>
+                  <p className="text-3xl font-bold text-green-600">{uniqueProducts.length}</p>
+                  <p className="text-sm text-muted-foreground">Crop Varieties</p>
                 </div>
                 <div className="p-4 rounded-xl stat-gradient-blue text-center">
-                  <p className="text-3xl font-bold text-blue-600">{locationMovements.length}</p>
+                  <p className="text-3xl font-bold text-blue-600">{lotsAtLocation.length}</p>
+                  <p className="text-sm text-muted-foreground">Active Lots</p>
+                </div>
+                <div className="p-4 rounded-xl stat-gradient-amber text-center">
+                  <p className="text-3xl font-bold text-amber-600">{totalStockAtLocation.toFixed(0)}</p>
+                  <p className="text-sm text-muted-foreground">Total Stock (KG)</p>
+                </div>
+                <div className="p-4 rounded-xl stat-gradient-purple text-center">
+                  <p className="text-3xl font-bold text-purple-600">{locationMovements.length}</p>
                   <p className="text-sm text-muted-foreground">Movements</p>
                 </div>
               </div>
@@ -318,48 +366,50 @@ export default function LocationDetail() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Leaf className="w-5 h-5 text-primary" />
-              Crops at this Location
+              Stock at this Warehouse
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <TableHead>Lot Number</TableHead>
                   <TableHead>Crop</TableHead>
                   <TableHead>Variety</TableHead>
-                  <TableHead>Batch Number</TableHead>
+                  <TableHead>Stock Form</TableHead>
                   <TableHead className="text-right">Quantity (KG)</TableHead>
-                  <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches?.length === 0 ? (
+                {locationStockBalances.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      No crops found at this location
+                      No stock found at this warehouse
                     </TableCell>
                   </TableRow>
                 ) : (
-                  batches?.map((batch) => (
-                    <TableRow key={batch.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30">
-                            <Leaf className="w-4 h-4 text-green-600" />
+                  locationStockBalances.map((sb) => {
+                    const lot = (lots as Lot[] || []).find(l => l.id === sb.lotId);
+                    const product = lot ? (products as Product[] || []).find(p => p.id === lot.productId) : null;
+                    return (
+                      <TableRow key={sb.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30">
+                              <Package className="w-4 h-4 text-green-600" />
+                            </div>
+                            <span className="font-mono font-medium">{lot?.lotNumber || '-'}</span>
                           </div>
-                          <span className="font-medium">{batch.crop}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-primary font-medium">{batch.variety}</TableCell>
-                      <TableCell>{batch.batchNumber}</TableCell>
-                      <TableCell className="text-right font-bold">{batch.currentQuantity}</TableCell>
-                      <TableCell>
-                        <Badge className={batch.status === "active" ? "badge-success" : "badge-warning"}>
-                          {batch.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell className="font-medium">{product?.crop || '-'}</TableCell>
+                        <TableCell className="text-primary font-medium">{product?.variety || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{getStockFormLabel(sb.stockForm)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-bold">{Number(sb.quantity).toFixed(2)}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -380,10 +430,10 @@ export default function LocationDetail() {
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead>Date</TableHead>
-                  <TableHead>Batch ID</TableHead>
+                  <TableHead>Lot & Crop</TableHead>
+                  <TableHead>Direction</TableHead>
+                  <TableHead>Other Warehouse</TableHead>
                   <TableHead className="text-right">Quantity (KG)</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
                   <TableHead>Responsible</TableHead>
                 </TableRow>
               </TableHeader>
@@ -391,30 +441,46 @@ export default function LocationDetail() {
                 {locationMovements.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No movements recorded for this location
+                      No movements recorded for this warehouse
                     </TableCell>
                   </TableRow>
                 ) : (
-                  locationMovements.map((mov) => (
-                    <TableRow key={mov.id}>
-                      <TableCell>
-                        {mov.movementDate ? format(new Date(mov.movementDate), "dd/MM/yyyy") : "-"}
-                      </TableCell>
-                      <TableCell className="font-medium">{mov.batchId}</TableCell>
-                      <TableCell className="text-right font-bold">{mov.quantity}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className={mov.fromLocationId === locationId ? "badge-danger" : ""}>
-                          {mov.fromLocationId === locationId ? "This Location" : `Location #${mov.fromLocationId}`}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className={mov.toLocationId === locationId ? "badge-success" : ""}>
-                          {mov.toLocationId === locationId ? "This Location" : `Location #${mov.toLocationId}`}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{mov.responsiblePerson || "-"}</TableCell>
-                    </TableRow>
-                  ))
+                  locationMovements.map((mov) => {
+                    const lot = (lots as Lot[] || []).find(l => l.id === mov.lotId);
+                    const product = lot ? (products as Product[] || []).find(p => p.id === lot.productId) : null;
+                    const isOutgoing = mov.fromLocationId === locationId;
+                    const otherLocationId = isOutgoing ? mov.toLocationId : mov.fromLocationId;
+                    return (
+                      <TableRow key={mov.id}>
+                        <TableCell>
+                          {mov.movementDate ? format(new Date(mov.movementDate), "dd/MM/yyyy") : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="font-mono font-medium">{lot?.lotNumber || '-'}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {product ? `${product.crop} - ${product.variety}` : '-'}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={isOutgoing ? "badge-danger" : "badge-success"}>
+                            {isOutgoing ? "Outgoing" : "Incoming"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="font-medium">{getLocationName(otherLocationId)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {isOutgoing ? "Destination" : "Source"}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-bold">{mov.quantity} kg</TableCell>
+                        <TableCell>{mov.responsiblePerson || "-"}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
