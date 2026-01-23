@@ -391,10 +391,9 @@ export default function Stock() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Lot Number</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>From</TableHead>
-                <TableHead>To</TableHead>
+                <TableHead>Lot & Crop Details</TableHead>
+                <TableHead>From Warehouse</TableHead>
+                <TableHead>To Warehouse</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Person</TableHead>
                 {(canEditStock || canDeleteStock) && <TableHead className="text-right">Actions</TableHead>}
@@ -402,19 +401,36 @@ export default function Stock() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
                 movements?.map((m) => {
                   const lot = (lots as Lot[] || []).find(l => l.id === m.lotId);
+                  const product = lot ? (products as Product[] || []).find(p => p.id === lot.productId) : null;
                   return (
                     <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
                       <TableCell>{m.movementDate ? format(new Date(m.movementDate), 'MMM dd, yyyy') : '-'}</TableCell>
-                      <TableCell className="font-mono">{getLotDetails(m.lotId)}</TableCell>
-                      <TableCell>{lot ? getProductName(lot.productId) : '-'}</TableCell>
-                      <TableCell>{getLocationName(m.fromLocationId)}</TableCell>
-                      <TableCell>{getLocationName(m.toLocationId)}</TableCell>
+                      <TableCell>
+                        <div className="space-y-0.5">
+                          <div className="font-mono font-medium">{lot?.lotNumber || '-'}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {product ? `${product.crop} - ${product.variety}` : '-'}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-0.5">
+                          <div className="font-medium">{getLocationName(m.fromLocationId)}</div>
+                          <div className="text-xs text-muted-foreground">Source</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-0.5">
+                          <div className="font-medium">{getLocationName(m.toLocationId)}</div>
+                          <div className="text-xs text-muted-foreground">Destination</div>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
                       <TableCell>{m.responsiblePerson || '-'}</TableCell>
                       {(canEditStock || canDeleteStock) && (
