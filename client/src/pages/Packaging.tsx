@@ -59,6 +59,7 @@ export default function Packaging() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
   
@@ -66,6 +67,10 @@ export default function Packaging() {
   const canEditPackaging = canEdit('packaging');
 
   const activeSizes = (packagingSizes as PackagingSize[] || []).filter((s: PackagingSize) => s.isActive);
+  const activeLots = (lots as Lot[] || []).filter((l: Lot) => l.status === 'active');
+  const filteredLots = selectedProductId 
+    ? activeLots.filter(l => l.productId === selectedProductId)
+    : activeLots;
   
   const getLotDetails = (lotId: number) => {
     const lot = (lots as Lot[] || []).find((l: Lot) => l.id === lotId);
@@ -234,19 +239,42 @@ export default function Packaging() {
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Lot</label>
+                <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
                 <Select onValueChange={(val) => {
-                  const lotId = parseInt(val);
-                  form.setValue("lotId", lotId);
-                  setSelectedLotId(lotId);
+                  setSelectedProductId(parseInt(val));
+                  form.setValue("lotId", 0);
+                  setSelectedLotId(null);
                 }}>
-                  <SelectTrigger data-testid="select-lot">
-                    <SelectValue placeholder="Select Lot" />
+                  <SelectTrigger data-testid="select-product">
+                    <SelectValue placeholder="Select Product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active').map((lot: Lot) => (
+                    {(products as Product[] || []).map((p: Product) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.crop} - {p.variety}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Lot <span className="text-destructive">*</span></label>
+                <Select 
+                  onValueChange={(val) => {
+                    const lotId = parseInt(val);
+                    form.setValue("lotId", lotId);
+                    setSelectedLotId(lotId);
+                  }}
+                  disabled={!selectedProductId}
+                >
+                  <SelectTrigger data-testid="select-lot">
+                    <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredLots.map((lot: Lot) => (
                       <SelectItem key={lot.id} value={lot.id.toString()}>
-                        {getLotDetails(lot.id)}
+                        {lot.lotNumber}
                       </SelectItem>
                     ))}
                   </SelectContent>

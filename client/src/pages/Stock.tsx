@@ -68,6 +68,7 @@ export default function Stock() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const { toast } = useToast();
   
   const canDeleteStock = canDelete('stock');
@@ -96,6 +97,17 @@ export default function Stock() {
       sb => sb.lotId === lotId && sb.stockForm === 'loose'
     );
     return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
+  };
+
+  const getStockByWarehouse = (lotId: number) => {
+    const balances = (stockBalances as StockBalance[] || []).filter(
+      sb => sb.lotId === lotId && sb.stockForm === 'loose' && Number(sb.quantity) > 0
+    );
+    return balances.map(sb => ({
+      locationId: sb.locationId,
+      locationName: getLocationName(sb.locationId),
+      quantity: Number(sb.quantity)
+    }));
   };
 
   const handleDeleteMovement = () => {
@@ -201,6 +213,9 @@ export default function Stock() {
   };
 
   const activeLots = (lots as Lot[] || []).filter(l => l.status === 'active');
+  const filteredLots = selectedProductId 
+    ? activeLots.filter(l => l.productId === selectedProductId)
+    : activeLots;
 
   return (
     <div className="space-y-8 animate-in fade-in">
@@ -226,13 +241,35 @@ export default function Stock() {
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Lot Number</label>
-                <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
-                  <SelectTrigger data-testid="select-lot">
-                    <SelectValue placeholder="Select Lot" />
+                <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
+                <Select onValueChange={(val) => {
+                  setSelectedProductId(parseInt(val));
+                  form.setValue("lotId", 0);
+                }}>
+                  <SelectTrigger data-testid="select-product">
+                    <SelectValue placeholder="Select Product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeLots.map((lot) => (
+                    {(products as Product[] || []).map((p: Product) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.crop} - {p.variety}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Lot Number <span className="text-destructive">*</span></label>
+                <Select 
+                  onValueChange={(val) => form.setValue("lotId", parseInt(val))}
+                  disabled={!selectedProductId}
+                >
+                  <SelectTrigger data-testid="select-lot">
+                    <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredLots.map((lot) => (
                       <SelectItem key={lot.id} value={lot.id.toString()}>
                         {lot.lotNumber}
                       </SelectItem>
@@ -243,7 +280,7 @@ export default function Stock() {
               </div>
 
               {selectedLot && (
-                <div className="p-3 rounded-lg bg-muted/50 border space-y-2">
+                <div className="p-3 rounded-lg bg-muted/50 border space-y-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Package className="w-4 h-4 text-primary" />
                     <span className="font-medium">Lot Details</span>
@@ -259,9 +296,22 @@ export default function Stock() {
                     </div>
                   </div>
                   <div className="text-sm">
-                    <span className="text-muted-foreground">Available Stock:</span>
+                    <span className="text-muted-foreground">Total Available:</span>
                     <p className="font-bold text-primary">{availableStock.toFixed(2)} KG</p>
                   </div>
+                  {getStockByWarehouse(selectedLot.id).length > 0 && (
+                    <div className="text-sm border-t pt-2">
+                      <span className="text-muted-foreground font-medium">Stock by Warehouse:</span>
+                      <div className="mt-1 space-y-1">
+                        {getStockByWarehouse(selectedLot.id).map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-xs bg-background rounded px-2 py-1">
+                            <span>{item.locationName}</span>
+                            <span className="font-medium">{item.quantity.toFixed(2)} KG</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

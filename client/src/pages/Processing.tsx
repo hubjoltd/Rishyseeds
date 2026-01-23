@@ -71,9 +71,15 @@ export default function Processing() {
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [completeRecordId, setCompleteRecordId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
   const canDeleteProcessing = canDelete('processing');
   const canEditProcessing = canEdit('processing');
+
+  const activeLots = (lots as Lot[] || []).filter((l: Lot) => l.status === 'active');
+  const filteredLots = selectedProductId 
+    ? activeLots.filter(l => l.productId === selectedProductId)
+    : activeLots;
 
   const form = useForm<z.infer<typeof processingFormSchema>>({
     resolver: zodResolver(processingFormSchema),
@@ -168,15 +174,37 @@ export default function Processing() {
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Input Lot</label>
-                <Select onValueChange={(val) => form.setValue("inputLotId", parseInt(val))}>
-                  <SelectTrigger data-testid="select-input-lot">
-                    <SelectValue placeholder="Select Lot" />
+                <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
+                <Select onValueChange={(val) => {
+                  setSelectedProductId(parseInt(val));
+                  form.setValue("inputLotId", 0);
+                }}>
+                  <SelectTrigger data-testid="select-product">
+                    <SelectValue placeholder="Select Product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active').map((lot: Lot) => (
+                    {(products as Product[] || []).map((p: Product) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.crop} - {p.variety}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Input Lot <span className="text-destructive">*</span></label>
+                <Select 
+                  onValueChange={(val) => form.setValue("inputLotId", parseInt(val))}
+                  disabled={!selectedProductId}
+                >
+                  <SelectTrigger data-testid="select-input-lot">
+                    <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredLots.map((lot: Lot) => (
                       <SelectItem key={lot.id} value={lot.id.toString()}>
-                        {getLotDetails(lot.id)}
+                        {lot.lotNumber}
                       </SelectItem>
                     ))}
                   </SelectContent>

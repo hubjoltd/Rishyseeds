@@ -221,26 +221,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
-    // Get current batch to validate
-    const batch = await this.getBatch(movement.batchId);
-    if (!batch) {
-      throw new Error("Batch not found");
+    // Use lot-based stock movement
+    if (!movement.lotId) {
+      throw new Error("Lot is required for stock movement");
     }
 
-    const availableQty = Number(batch.currentQuantity);
     const requestedQty = Number(movement.quantity);
-
-    // Server-side validation: Cannot move more than available
-    if (requestedQty > availableQty) {
-      throw new Error(`Cannot move ${requestedQty}kg. Only ${availableQty}kg available in this batch.`);
-    }
-
     if (requestedQty <= 0) {
       throw new Error("Quantity must be positive");
     }
 
-    // Deduct from batch stock atomically
-    await this.updateBatchQuantity(movement.batchId, -requestedQty);
+    // Get available stock at source location (loose stock)
+    const sourceBalance = await this.getStockBalanceByLotAndLocation(
+      movement.lotId, 
+      movement.fromLocationId, 
+      'loose'
+    );
+    const availableQty = sourceBalance ? Number(sourceBalance.quantity) : 0;
+
+    // Server-side validation: Cannot move more than available
+    if (requestedQty > availableQty) {
+      throw new Error(`Cannot move ${requestedQty}kg. Only ${availableQty.toFixed(2)}kg available at source location.`);
+    }
+
+    // Decrease stock at source location
+    await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'loose', -requestedQty);
+    
+    // Increase stock at destination location
+    await this.adjustStockBalance(movement.lotId, movement.toLocationId, 'loose', requestedQty);
     
     const [newMovement] = await db.insert(stockMovements).values(movement).returning();
     return newMovement;
