@@ -369,9 +369,10 @@ export class DatabaseStorage implements IStorage {
     const [product] = await db.select().from(products).where(eq(products.id, productId));
     if (!product) throw new Error("Product not found");
     
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const prefix = `${product.crop.slice(0, 3).toUpperCase()}-${product.variety.slice(0, 3).toUpperCase()}-${dateStr}`;
+    // Format: MA-[variety last 2 digits]-26(year)-001
+    const varietyCode = product.variety.slice(-2).toUpperCase();
+    const year = new Date().getFullYear().toString().slice(-2); // "26" for 2026
+    const prefix = `MA-${varietyCode}-${year}`;
     
     const [countResult] = await db.select({
       count: sql<number>`count(*)`

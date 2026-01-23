@@ -716,6 +716,19 @@ export async function registerRoutes(
     try {
       const validatedData = insertLotSchema.parse(req.body);
       const lot = await storage.createLot(validatedData);
+      
+      // Create initial stock balance for the lot
+      const locationId = req.body.locationId;
+      if (locationId && lot.initialQuantity) {
+        await storage.createStockBalance({
+          lotId: lot.id,
+          locationId: locationId,
+          stockForm: lot.stockForm || 'loose',
+          quantity: lot.initialQuantity,
+          packetSize: null,
+        });
+      }
+      
       res.status(201).json(lot);
     } catch (e: any) {
       if (e.name === 'ZodError') {

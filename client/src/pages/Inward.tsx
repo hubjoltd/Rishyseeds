@@ -111,6 +111,7 @@ export default function Inward() {
     createLot({
       lotNumber,
       productId: data.productId,
+      locationId: data.locationId,
       sourceType: "inward",
       sourceName: data.sourceName || null,
       initialQuantity: String(quantityInKg),
