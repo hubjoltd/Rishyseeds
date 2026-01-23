@@ -82,7 +82,8 @@ export default function Stock() {
     if (!lotId) return '-';
     const lot = (lots as Lot[] || []).find(l => l.id === lotId);
     if (!lot) return `Lot #${lotId}`;
-    return lot.lotNumber;
+    const product = (products as Product[] || []).find(p => p.id === lot.productId);
+    return `${lot.lotNumber} (${product?.crop} - ${product?.variety || 'Unknown'})`;
   };
 
   const getLocationName = (locationId: number) => {

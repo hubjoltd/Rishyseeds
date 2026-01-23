@@ -114,7 +114,7 @@ export default function Outward() {
     const lot = (lots as Lot[] || []).find((l: Lot) => l.id === lotId);
     if (!lot) return "Unknown";
     const product = (products as Product[] || []).find((p: Product) => p.id === lot.productId);
-    return `${lot.lotNumber} (${product?.crop || 'Unknown'})`;
+    return `${lot.lotNumber} (${product?.crop} - ${product?.variety || 'Unknown'})`;
   };
 
   const getLocationName = (locationId: number) => {
