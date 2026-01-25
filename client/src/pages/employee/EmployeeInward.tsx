@@ -218,6 +218,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
       expiryDate: data.expiryDate || null,
       remarks: data.remarks || null,
       status: "active",
+      createdBy: employee.id,
     });
   };
 

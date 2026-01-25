@@ -223,6 +223,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
         inputQuantity: String(data.inputQuantity),
         wasteQuantity: String(data.wasteQuantity || 0),
         packagingDate: data.packagingDate || new Date().toISOString().slice(0, 10),
+        createdBy: employee.id,
       });
     }
   };

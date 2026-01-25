@@ -230,6 +230,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
         stockForm: data.stockForm,
         movementDate: data.movementDate || new Date().toISOString().slice(0, 10),
         remarks: data.remarks || null,
+        createdBy: employee.id,
       });
     }
   };

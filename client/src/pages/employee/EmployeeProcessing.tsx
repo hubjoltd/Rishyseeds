@@ -205,6 +205,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
         processedBy: data.processedBy || null,
         remarks: data.remarks || null,
         status: "pending",
+        createdBy: employee.id,
       });
     }
   };

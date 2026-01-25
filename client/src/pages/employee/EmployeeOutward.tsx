@@ -232,6 +232,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
         driverName: data.driverName || null,
         dispatchDate: data.dispatchDate || new Date().toISOString().slice(0, 10),
         remarks: data.remarks || null,
+        createdBy: employee.id,
       });
     }
   };
