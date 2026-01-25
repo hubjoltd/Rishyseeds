@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { getAuthToken } from "@/lib/queryClient";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 import {
   Dialog,
   DialogContent,
@@ -59,7 +65,7 @@ export default function Users() {
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
     queryFn: async () => {
-      const res = await fetch("/api/users", { credentials: "include" });
+      const res = await fetch("/api/users", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
       return res.json();
     },
@@ -69,8 +75,7 @@ export default function Users() {
     mutationFn: async (data: UserFormData) => {
       const res = await fetch("/api/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -94,8 +99,7 @@ export default function Users() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<UserFormData> }) => {
       const res = await fetch(`/api/users/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to update user");
@@ -116,7 +120,7 @@ export default function Users() {
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/users/${id}`, {
         method: "DELETE",
-        credentials: "include",
+        ...getAuthHeaders(),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

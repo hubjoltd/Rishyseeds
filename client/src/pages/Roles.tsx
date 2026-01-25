@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getAuthToken } from "@/lib/queryClient";
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,10 @@ export default function Roles() {
   const { data: roles, isLoading } = useQuery({
     queryKey: ["/api/roles"],
     queryFn: async () => {
-      const res = await fetch("/api/roles", { credentials: "include" });
+      const token = getAuthToken();
+      const res = await fetch("/api/roles", { 
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       if (!res.ok) throw new Error("Failed to fetch roles");
       return res.json();
     },
@@ -81,10 +85,13 @@ export default function Roles() {
 
   const createMutation = useMutation({
     mutationFn: async (data: RoleFormData) => {
+      const token = getAuthToken();
       const res = await fetch("/api/roles", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -106,10 +113,13 @@ export default function Roles() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: RoleFormData }) => {
+      const token = getAuthToken();
       const res = await fetch(`/api/roles/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -132,7 +142,11 @@ export default function Roles() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/roles/${id}`, { method: "DELETE", credentials: "include" });
+      const token = getAuthToken();
+      const res = await fetch(`/api/roles/${id}`, { 
+        method: "DELETE", 
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Failed to delete role");

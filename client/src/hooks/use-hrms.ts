@@ -1,13 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertEmployee, type InsertAttendance, type InsertPayroll } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthToken } from "@/lib/queryClient";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // === EMPLOYEES ===
 export function useEmployees() {
   return useQuery({
     queryKey: [api.employees.list.path],
     queryFn: async () => {
-      const res = await fetch(api.employees.list.path, { credentials: "include" });
+      const res = await fetch(api.employees.list.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch employees");
       return api.employees.list.responses[200].parse(await res.json());
     },
@@ -21,8 +27,7 @@ export function useCreateEmployee() {
     mutationFn: async (data: InsertEmployee) => {
       const res = await fetch(api.employees.create.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to add employee");
@@ -42,8 +47,7 @@ export function useUpdateEmployee() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertEmployee> }) => {
       const res = await fetch(`/api/employees/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -69,7 +73,7 @@ export function useAttendance(date?: string) {
     queryFn: async () => {
       // If date is provided, add as query param
       const url = date ? `${api.attendance.list.path}?date=${date}` : api.attendance.list.path;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch attendance");
       return api.attendance.list.responses[200].parse(await res.json());
     },
@@ -83,8 +87,7 @@ export function useMarkAttendance() {
     mutationFn: async (data: InsertAttendance) => {
       const res = await fetch(api.attendance.mark.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to mark attendance");
@@ -102,7 +105,7 @@ export function usePayroll() {
   return useQuery({
     queryKey: [api.payroll.list.path],
     queryFn: async () => {
-      const res = await fetch(api.payroll.list.path, { credentials: "include" });
+      const res = await fetch(api.payroll.list.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch payroll");
       return api.payroll.list.responses[200].parse(await res.json());
     },
@@ -116,8 +119,7 @@ export function useGeneratePayroll() {
     mutationFn: async (data: { month: string; employeeId?: number }) => {
       const res = await fetch(api.payroll.generate.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to generate payroll");

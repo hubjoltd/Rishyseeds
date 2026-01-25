@@ -1,13 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertBatch, type InsertLocation, type CreateStockMovementRequest, type CreatePackagingOutputRequest } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthToken } from "@/lib/queryClient";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // === PRODUCTS ===
 export function useProducts() {
   return useQuery({
     queryKey: ["/api/products"],
     queryFn: async () => {
-      const res = await fetch("/api/products", { credentials: "include" });
+      const res = await fetch("/api/products", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch products");
       return res.json();
     },
@@ -19,7 +25,7 @@ export function useLocations() {
   return useQuery({
     queryKey: [api.locations.list.path],
     queryFn: async () => {
-      const res = await fetch(api.locations.list.path, { credentials: "include" });
+      const res = await fetch(api.locations.list.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch locations");
       return api.locations.list.responses[200].parse(await res.json());
     },
@@ -33,8 +39,7 @@ export function useCreateLocation() {
     mutationFn: async (data: InsertLocation) => {
       const res = await fetch(api.locations.create.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create location");
@@ -54,8 +59,7 @@ export function useUpdateLocation() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertLocation> }) => {
       const res = await fetch(`/api/locations/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -80,7 +84,7 @@ export function useDeleteLocation() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/locations/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/locations/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete warehouse");
@@ -102,7 +106,7 @@ export function useBatches() {
   return useQuery({
     queryKey: [api.batches.list.path],
     queryFn: async () => {
-      const res = await fetch(api.batches.list.path, { credentials: "include" });
+      const res = await fetch(api.batches.list.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch batches");
       return api.batches.list.responses[200].parse(await res.json());
     },
@@ -116,8 +120,7 @@ export function useCreateBatch() {
     mutationFn: async (data: InsertBatch) => {
       const res = await fetch(api.batches.create.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -144,8 +147,7 @@ export function useUpdateBatch() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertBatch> }) => {
       const res = await fetch(`/api/batches/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -169,7 +171,7 @@ export function useDeleteBatch() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/batches/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/batches/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete batch");
@@ -191,7 +193,7 @@ export function useStockMovements() {
   return useQuery({
     queryKey: [api.stock.history.path],
     queryFn: async () => {
-      const res = await fetch(api.stock.history.path, { credentials: "include" });
+      const res = await fetch(api.stock.history.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch movements");
       return api.stock.history.responses[200].parse(await res.json());
     },
@@ -205,8 +207,7 @@ export function useCreateStockMovement() {
     mutationFn: async (data: CreateStockMovementRequest) => {
       const res = await fetch(api.stock.move.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -233,8 +234,7 @@ export function useCreatePackagingOutput() {
     mutationFn: async (data: CreatePackagingOutputRequest) => {
       const res = await fetch(api.packaging.create.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -258,7 +258,7 @@ export function usePackagingOutputs() {
   return useQuery({
     queryKey: [api.packaging.list.path],
     queryFn: async () => {
-      const res = await fetch(api.packaging.list.path, { credentials: "include" });
+      const res = await fetch(api.packaging.list.path, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch packaging history");
       return api.packaging.list.responses[200].parse(await res.json());
     },
@@ -272,8 +272,7 @@ export function useUpdateStockMovement() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<CreateStockMovementRequest> }) => {
       const res = await fetch(`/api/stock/movements/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -297,7 +296,7 @@ export function useDeleteStockMovement() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/stock/movements/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/stock/movements/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete movement");
@@ -321,8 +320,7 @@ export function useUpdatePackagingOutput() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<CreatePackagingOutputRequest> }) => {
       const res = await fetch(`/api/packaging/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -346,7 +344,7 @@ export function useDeletePackagingOutput() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/packaging/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/packaging/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete packaging record");
@@ -368,7 +366,7 @@ export function useLots() {
   return useQuery({
     queryKey: ["/api/lots"],
     queryFn: async () => {
-      const res = await fetch("/api/lots", { credentials: "include" });
+      const res = await fetch("/api/lots", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch lots");
       return res.json();
     },
@@ -382,8 +380,7 @@ export function useCreateLot() {
     mutationFn: async (data: any) => {
       const res = await fetch("/api/lots", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -410,8 +407,7 @@ export function useUpdateLot() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/lots/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -435,7 +431,7 @@ export function useDeleteLot() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/lots/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/lots/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete lot");
@@ -456,7 +452,7 @@ export function useDeleteLot() {
 export function useGenerateLotNumber() {
   return useMutation({
     mutationFn: async (productId: number) => {
-      const res = await fetch(`/api/lots/generate-number/${productId}`, { credentials: "include" });
+      const res = await fetch(`/api/lots/generate-number/${productId}`, { headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to generate lot number");
@@ -471,7 +467,7 @@ export function useStockBalances() {
   return useQuery({
     queryKey: ["/api/stock-balances"],
     queryFn: async () => {
-      const res = await fetch("/api/stock-balances", { credentials: "include" });
+      const res = await fetch("/api/stock-balances", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch stock balances");
       return res.json();
     },
@@ -482,7 +478,7 @@ export function useStockBalancesByLot(lotId: number) {
   return useQuery({
     queryKey: ["/api/stock-balances", "lot", lotId],
     queryFn: async () => {
-      const res = await fetch(`/api/stock-balances/lot/${lotId}`, { credentials: "include" });
+      const res = await fetch(`/api/stock-balances/lot/${lotId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch stock balances for lot");
       return res.json();
     },
@@ -495,7 +491,7 @@ export function useProcessingRecords() {
   return useQuery({
     queryKey: ["/api/processing"],
     queryFn: async () => {
-      const res = await fetch("/api/processing", { credentials: "include" });
+      const res = await fetch("/api/processing", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch processing records");
       return res.json();
     },
@@ -509,8 +505,7 @@ export function useCreateProcessingRecord() {
     mutationFn: async (data: any) => {
       const res = await fetch("/api/processing", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -538,8 +533,7 @@ export function useUpdateProcessingRecord() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/processing/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -565,8 +559,7 @@ export function useCompleteProcessing() {
     mutationFn: async ({ id, outputQuantity, wasteQuantity }: { id: number; outputQuantity: number; wasteQuantity: number }) => {
       const res = await fetch(`/api/processing/${id}/complete`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ outputQuantity, wasteQuantity }),
       });
       if (!res.ok) {
@@ -592,7 +585,7 @@ export function useDeleteProcessingRecord() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/processing/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/processing/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete processing record");
@@ -616,7 +609,7 @@ export function useOutwardRecords() {
   return useQuery({
     queryKey: ["/api/outward"],
     queryFn: async () => {
-      const res = await fetch("/api/outward", { credentials: "include" });
+      const res = await fetch("/api/outward", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch outward records");
       return res.json();
     },
@@ -630,8 +623,7 @@ export function useCreateOutwardRecord() {
     mutationFn: async (data: any) => {
       const res = await fetch("/api/outward", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -659,8 +651,7 @@ export function useUpdateOutwardRecord() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/outward/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -684,7 +675,7 @@ export function useDeleteOutwardRecord() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/outward/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/outward/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete outward record");
@@ -708,7 +699,7 @@ export function usePackagingSizes() {
   return useQuery({
     queryKey: ["/api/packaging-sizes"],
     queryFn: async () => {
-      const res = await fetch("/api/packaging-sizes", { credentials: "include" });
+      const res = await fetch("/api/packaging-sizes", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch packaging sizes");
       return res.json();
     },
@@ -722,8 +713,7 @@ export function useCreatePackagingSize() {
     mutationFn: async (data: { size: string; unit: string; label: string }) => {
       const res = await fetch("/api/packaging-sizes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -749,8 +739,7 @@ export function useUpdatePackagingSize() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/packaging-sizes/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -774,7 +763,7 @@ export function useDeletePackagingSize() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/packaging-sizes/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/packaging-sizes/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete packaging size");
