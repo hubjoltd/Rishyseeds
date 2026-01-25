@@ -91,6 +91,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       toast({
         title: type === "in" ? "Punched In" : "Punched Out",
         description: `Successfully punched ${type} at ${format(new Date(), "h:mm a")}`,
+        variant: type === "in" ? "success" : "destructive",
       });
     },
     onError: (error: Error) => {
