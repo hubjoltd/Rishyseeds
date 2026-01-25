@@ -518,10 +518,26 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.stock.move.path, async (req, res) => {
+  app.post(api.stock.move.path, async (req: any, res) => {
     try {
       const input = api.stock.move.input.parse(req.body);
       const movement = await storage.createStockMovement(input);
+      
+      // Create notification if employee created the record
+      if (req.employeeId && input.createdBy) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee) {
+          await storage.createNotification({
+            type: "stock_movement",
+            message: `${employee.fullName} recorded a stock movement of ${input.quantity} kg`,
+            employeeId: employee.id,
+            employeeName: employee.fullName,
+            resourceType: "stock_movement",
+            resourceId: movement.id,
+          });
+        }
+      }
+      
       res.status(201).json(movement);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Validation failed" });
@@ -557,7 +573,7 @@ export async function registerRoutes(
   });
 
   // === PACKAGING ROUTES ===
-  app.post(api.packaging.create.path, checkPermission('packaging', 'create'), async (req, res) => {
+  app.post(api.packaging.create.path, checkPermission('packaging', 'create'), async (req: any, res) => {
     try {
       const input = api.packaging.create.input.parse(req.body);
       
@@ -603,6 +619,21 @@ export async function registerRoutes(
         input.numberOfPackets,
         input.packetSize
       );
+      
+      // Create notification if employee created the record
+      if (req.employeeId && input.createdBy) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee) {
+          await storage.createNotification({
+            type: "packing",
+            message: `${employee.fullName} packed ${input.numberOfPackets} bags of ${input.packetSize}`,
+            employeeId: employee.id,
+            employeeName: employee.fullName,
+            resourceType: "packaging_output",
+            resourceId: output.id,
+          });
+        }
+      }
       
       res.status(201).json(output);
     } catch (e: any) {
@@ -784,7 +815,7 @@ export async function registerRoutes(
     res.json(lot);
   });
 
-  app.post("/api/lots", checkPermission('lots', 'create'), async (req, res) => {
+  app.post("/api/lots", checkPermission('lots', 'create'), async (req: any, res) => {
     try {
       const validatedData = insertLotSchema.parse(req.body);
       const lot = await storage.createLot(validatedData);
@@ -799,6 +830,21 @@ export async function registerRoutes(
           quantity: lot.initialQuantity,
           packetSize: null,
         });
+      }
+      
+      // Create notification if employee created the record
+      if (req.employeeId && validatedData.createdBy) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee) {
+          await storage.createNotification({
+            type: "inward",
+            message: `${employee.fullName} created inward lot ${lot.lotNumber} (${lot.initialQuantity} kg)`,
+            employeeId: employee.id,
+            employeeName: employee.fullName,
+            resourceType: "lot",
+            resourceId: lot.id,
+          });
+        }
       }
       
       res.status(201).json(lot);
@@ -869,10 +915,26 @@ export async function registerRoutes(
     res.json(record);
   });
 
-  app.post("/api/processing", checkPermission('processing', 'create'), async (req, res) => {
+  app.post("/api/processing", checkPermission('processing', 'create'), async (req: any, res) => {
     try {
       const validatedData = insertProcessingRecordSchema.parse(req.body);
       const record = await storage.createProcessingRecord(validatedData);
+      
+      // Create notification if employee created the record
+      if (req.employeeId && validatedData.createdBy) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee) {
+          await storage.createNotification({
+            type: "processing",
+            message: `${employee.fullName} created a ${validatedData.processingType} processing record`,
+            employeeId: employee.id,
+            employeeName: employee.fullName,
+            resourceType: "processing_record",
+            resourceId: record.id,
+          });
+        }
+      }
+      
       res.status(201).json(record);
     } catch (e: any) {
       if (e.name === 'ZodError') {
@@ -979,7 +1041,7 @@ export async function registerRoutes(
     res.json(record);
   });
 
-  app.post("/api/outward", checkPermission('outward', 'create'), async (req, res) => {
+  app.post("/api/outward", checkPermission('outward', 'create'), async (req: any, res) => {
     try {
       const validatedData = insertOutwardRecordSchema.parse(req.body);
       
@@ -1001,6 +1063,22 @@ export async function registerRoutes(
       }
       
       const record = await storage.createOutwardRecord(validatedData);
+      
+      // Create notification if employee created the record
+      if (req.employeeId && validatedData.createdBy) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee) {
+          await storage.createNotification({
+            type: "outward",
+            message: `${employee.fullName} created dispatch record to ${validatedData.destinationType} (${validatedData.quantity} ${validatedData.stockForm === 'packed' ? 'packets' : 'kg'})`,
+            employeeId: employee.id,
+            employeeName: employee.fullName,
+            resourceType: "outward_record",
+            resourceId: record.id,
+          });
+        }
+      }
+      
       res.status(201).json(record);
     } catch (e: any) {
       if (e.name === 'ZodError') {
@@ -1085,6 +1163,32 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to delete packaging size" });
     }
+  });
+
+  // === NOTIFICATIONS ROUTES ===
+  app.get("/api/notifications", async (req: any, res) => {
+    if (!req.userId) return res.status(401).json({ message: "Authentication required" });
+    const limit = parseInt(req.query.limit as string) || 50;
+    const notifications = await storage.getNotifications(limit);
+    res.json(notifications);
+  });
+
+  app.get("/api/notifications/unread-count", async (req: any, res) => {
+    if (!req.userId) return res.status(401).json({ message: "Authentication required" });
+    const count = await storage.getUnreadNotificationsCount();
+    res.json({ count });
+  });
+
+  app.patch("/api/notifications/:id/read", async (req: any, res) => {
+    if (!req.userId) return res.status(401).json({ message: "Authentication required" });
+    const notification = await storage.markNotificationAsRead(parseInt(req.params.id));
+    res.json(notification);
+  });
+
+  app.post("/api/notifications/mark-all-read", async (req: any, res) => {
+    if (!req.userId) return res.status(401).json({ message: "Authentication required" });
+    await storage.markAllNotificationsAsRead();
+    res.json({ success: true });
   });
 
   // === EMPLOYEE PORTAL ROUTES ===
@@ -1187,6 +1291,17 @@ export async function registerRoutes(
         });
       }
       
+      // Create notification for admin
+      const employee = await storage.getEmployee(employeeId);
+      if (employee) {
+        await storage.createNotification({
+          type: "punch_in",
+          message: `${employee.fullName} punched in at ${now}`,
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+        });
+      }
+      
       res.json({ message: "Punched in successfully", time: now });
     } catch (error) {
       res.status(400).json({ message: "Punch in failed" });
@@ -1211,6 +1326,17 @@ export async function registerRoutes(
       
       const now = new Date().toTimeString().slice(0, 5);
       await storage.updateAttendance(existingAttendance.id, { checkOut: now });
+      
+      // Create notification for admin
+      const employee = await storage.getEmployee(employeeId);
+      if (employee) {
+        await storage.createNotification({
+          type: "punch_out",
+          message: `${employee.fullName} punched out at ${now}`,
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+        });
+      }
       
       res.json({ message: "Punched out successfully", time: now });
     } catch (error) {

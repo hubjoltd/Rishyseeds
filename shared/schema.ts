@@ -332,6 +332,24 @@ export const insertOutwardRecordSchema = createInsertSchema(outwardRecords).omit
 export type OutwardRecord = typeof outwardRecords.$inferSelect;
 export type InsertOutwardRecord = z.infer<typeof insertOutwardRecordSchema>;
 
+// === NOTIFICATIONS ===
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(), // punch_in, punch_out, inward, processing, packing, stock_movement, outward
+  message: text("message").notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
+  employeeName: text("employee_name"),
+  resourceType: text("resource_type"), // lot, processing_record, etc.
+  resourceId: integer("resource_id"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;

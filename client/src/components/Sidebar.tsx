@@ -27,8 +27,8 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
 import { Button } from "@/components/ui/button";
-
 import { Badge } from "@/components/ui/badge";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface MenuItem {
   icon: React.ElementType;
@@ -152,15 +152,18 @@ export default function Sidebar() {
         {collapsed && (
           <img src={logo} alt="Rishi Seeds" className="w-9 h-9 object-contain" />
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("h-8 w-8 shrink-0", collapsed && "absolute -right-4 bg-card border shadow-sm z-10")}
-          onClick={() => setCollapsed(!collapsed)}
-          data-testid="button-toggle-sidebar"
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </Button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-8 w-8 shrink-0", collapsed && "absolute -right-4 bg-card border shadow-sm z-10")}
+            onClick={() => setCollapsed(!collapsed)}
+            data-testid="button-toggle-sidebar"
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       {/* Navigation */}
