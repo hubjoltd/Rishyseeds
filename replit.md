@@ -86,7 +86,19 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-### January 2026 (Latest)
+### January 25, 2026 (Latest)
+- **Inward Edit Fix**: Fixed edit button text to show "Save Changes" when editing and proper disabled state using `isUpdating`
+- **State-Based Destinations**: Added state codes (AP, TS, MP, UP, KA, CG) as destination types in Outward/Dispatch
+- **Variety Field in Dispatch**: Added product variety field to outward/dispatch records for better tracking
+- **Employee Portal**: Separate login page at `/employee-login` for employees to access their dashboard
+- **Punch In/Out System**: Employees can punch in/out for attendance tracking with real-time status
+- **Employee Attendance History**: Employees can view their complete attendance history
+- **Downloadable Payslips**: Employees can download payslips as HTML (with HTML sanitization for security)
+- **Role Management**: New Roles page at `/roles` for creating and managing custom roles with granular permissions
+- **Permission Matrix**: Roles can have view/create/edit/delete permissions for all resources
+- **Administration Section**: New sidebar section with Users and Roles links
+
+### January 2026
 - **New Lot Number Format**: Lot numbers now follow format MA-[variety last 2 digits]-26-001 (e.g., MA-S5-26-001)
 - **Inward Edit Feature**: Added Edit button to Inward page for updating lot details (source, quantity, dates, remarks)
 - **Stock Balance on Inward**: Creating an inward entry now automatically creates a stock_balance record with correct location
@@ -130,3 +142,8 @@ Preferred communication style: Simple, everyday language.
 ## Default Admin Credentials
 - Username: `admin`
 - Password: `admin123`
+
+## Employee Portal Credentials
+- Login URL: `/employee-login`
+- Employee ID: The employee's assigned ID (e.g., EMP001)
+- Password: Same as Employee ID if not explicitly set

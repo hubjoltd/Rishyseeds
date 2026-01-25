@@ -1015,6 +1015,286 @@ export async function registerRoutes(
     }
   });
 
+  // === EMPLOYEE PORTAL ROUTES ===
+  app.post("/api/employee/login", async (req, res) => {
+    try {
+      const { employeeId, password } = req.body;
+      
+      if (!employeeId || !password) {
+        return res.status(400).json({ message: "Employee ID and password are required" });
+      }
+      
+      const employee = await storage.getEmployeeByEmployeeId(employeeId);
+      
+      if (!employee) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Check password (default password is employee ID if not set)
+      const expectedPassword = employee.password || employee.employeeId;
+      if (password !== expectedPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      (req.session as any).employeeId = employee.id;
+      res.json(employee);
+    } catch (error) {
+      res.status(400).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/employee/logout", (req, res) => {
+    (req.session as any).employeeId = null;
+    req.session.destroy(() => {
+      res.json({ message: "Logged out" });
+    });
+  });
+
+  app.get("/api/employee/me", async (req, res) => {
+    const employeeId = (req.session as any).employeeId;
+    if (!employeeId) return res.status(401).json(null);
+    
+    const employee = await storage.getEmployee(employeeId);
+    if (!employee) return res.status(401).json(null);
+    
+    res.json(employee);
+  });
+
+  app.post("/api/employee/punch-in", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const today = new Date().toISOString().slice(0, 10);
+      const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
+      
+      if (existingAttendance?.checkIn) {
+        return res.status(400).json({ message: "Already punched in today" });
+      }
+      
+      const now = new Date().toTimeString().slice(0, 5);
+      
+      if (existingAttendance) {
+        await storage.updateAttendance(existingAttendance.id, { checkIn: now, status: "present" });
+      } else {
+        await storage.markAttendance({
+          employeeId,
+          date: today,
+          status: "present",
+          checkIn: now,
+        });
+      }
+      
+      res.json({ message: "Punched in successfully", time: now });
+    } catch (error) {
+      res.status(400).json({ message: "Punch in failed" });
+    }
+  });
+
+  app.post("/api/employee/punch-out", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const today = new Date().toISOString().slice(0, 10);
+      const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
+      
+      if (!existingAttendance?.checkIn) {
+        return res.status(400).json({ message: "Please punch in first" });
+      }
+      
+      if (existingAttendance.checkOut) {
+        return res.status(400).json({ message: "Already punched out today" });
+      }
+      
+      const now = new Date().toTimeString().slice(0, 5);
+      await storage.updateAttendance(existingAttendance.id, { checkOut: now });
+      
+      res.json({ message: "Punched out successfully", time: now });
+    } catch (error) {
+      res.status(400).json({ message: "Punch out failed" });
+    }
+  });
+
+  app.get("/api/employee/attendance/today", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const today = new Date().toISOString().slice(0, 10);
+      const attendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
+      
+      res.json(attendance || null);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to get attendance" });
+    }
+  });
+
+  app.get("/api/employee/attendance", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const records = await storage.getAttendanceByEmployee(employeeId);
+      res.json(records);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to get attendance" });
+    }
+  });
+
+  app.get("/api/employee/payslips", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const payslips = await storage.getPayrollsByEmployee(employeeId);
+      res.json(payslips);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to get payslips" });
+    }
+  });
+
+  app.get("/api/employee/payslips/:id/download", async (req, res) => {
+    try {
+      const employeeId = (req.session as any).employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const payrollId = parseInt(req.params.id);
+      const payroll = await storage.getPayroll(payrollId);
+      
+      if (!payroll || payroll.employeeId !== employeeId) {
+        return res.status(404).json({ message: "Payslip not found" });
+      }
+      
+      const employee = await storage.getEmployee(employeeId);
+      if (!employee) {
+        return res.status(404).json({ message: "Employee not found" });
+      }
+      
+      // Helper function to escape HTML to prevent injection
+      const escapeHtml = (str: string | null | undefined): string => {
+        if (!str) return '-';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+      };
+      
+      // Generate simple HTML payslip (can be converted to PDF later)
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Payslip - ${escapeHtml(payroll.month)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 40px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .company { font-size: 24px; font-weight: bold; }
+    .title { font-size: 18px; color: #666; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f5f5f5; }
+    .total { font-weight: bold; background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="company">Rishi Seeds Pvt Ltd</div>
+    <div class="title">Payslip for ${escapeHtml(payroll.month)}</div>
+  </div>
+  
+  <table>
+    <tr><th>Employee ID</th><td>${escapeHtml(employee.employeeId)}</td></tr>
+    <tr><th>Name</th><td>${escapeHtml(employee.fullName)}</td></tr>
+    <tr><th>Department</th><td>${escapeHtml(employee.department)}</td></tr>
+    <tr><th>Designation</th><td>${escapeHtml(employee.role)}</td></tr>
+  </table>
+  
+  <h3>Earnings</h3>
+  <table>
+    <tr><th>Basic Pay</th><td>${Number(payroll.basicPay).toLocaleString()}</td></tr>
+    <tr><th>Allowances</th><td>${Number(payroll.allowances || 0).toLocaleString()}</td></tr>
+    <tr><th>Overtime</th><td>${Number(payroll.overtimeAmount || 0).toLocaleString()}</td></tr>
+  </table>
+  
+  <h3>Deductions</h3>
+  <table>
+    <tr><th>Total Deductions</th><td>${Number(payroll.deductions || 0).toLocaleString()}</td></tr>
+  </table>
+  
+  <table>
+    <tr class="total"><th>Net Salary</th><td>${Number(payroll.netSalary).toLocaleString()}</td></tr>
+  </table>
+  
+  <p style="margin-top: 40px; text-align: center; color: #666;">
+    Generated on ${new Date().toLocaleDateString()}
+  </p>
+</body>
+</html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="payslip-${payroll.month}.html"`);
+      res.send(html);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to download payslip" });
+    }
+  });
+
+  // === ROLES MANAGEMENT ROUTES ===
+  const rolePermissionsSchema = z.record(z.array(z.enum(['view', 'create', 'edit', 'delete']))).default({});
+
+  app.get("/api/roles", checkPermission('users', 'view'), async (req, res) => {
+    try {
+      const rolesList = await storage.getRoles();
+      res.json(rolesList);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to get roles" });
+    }
+  });
+
+  app.post("/api/roles", checkPermission('users', 'create'), async (req, res) => {
+    try {
+      const { name, description, permissions } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Role name is required" });
+      }
+      const validatedPermissions = rolePermissionsSchema.parse(permissions || {});
+      const role = await storage.createRole({ name, description, permissions: validatedPermissions });
+      res.status(201).json(role);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid permissions format" });
+      }
+      res.status(400).json({ message: error.message || "Failed to create role" });
+    }
+  });
+
+  app.put("/api/roles/:id", checkPermission('users', 'edit'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, description, permissions, isActive } = req.body;
+      const validatedPermissions = permissions ? rolePermissionsSchema.parse(permissions) : undefined;
+      const role = await storage.updateRole(id, { name, description, permissions: validatedPermissions, isActive });
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+      res.json(role);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid permissions format" });
+      }
+      res.status(400).json({ message: error.message || "Failed to update role" });
+    }
+  });
+
+  app.delete("/api/roles/:id", checkPermission('users', 'delete'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteRole(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to delete role" });
+    }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 

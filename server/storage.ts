@@ -3,7 +3,7 @@ import { db } from "./db";
 import { 
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
-  lots, stockBalances, processingRecords, outwardRecords, packagingSizes,
+  lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -15,7 +15,8 @@ import {
   type StockBalance, type InsertStockBalance,
   type ProcessingRecord, type InsertProcessingRecord,
   type OutwardRecord, type InsertOutwardRecord,
-  type PackagingSize, type InsertPackagingSize
+  type PackagingSize, type InsertPackagingSize,
+  type Role, type InsertRole
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -59,16 +60,29 @@ export interface IStorage {
   // Employees
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
+  getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined>;
 
   // Attendance
   markAttendance(record: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
   getAttendance(date?: string): Promise<typeof attendance.$inferSelect[]>;
+  getAttendanceByEmployee(employeeId: number): Promise<typeof attendance.$inferSelect[]>;
+  getAttendanceByEmployeeAndDate(employeeId: number, date: string): Promise<typeof attendance.$inferSelect | undefined>;
+  updateAttendance(id: number, updates: Partial<typeof attendance.$inferInsert>): Promise<typeof attendance.$inferSelect | undefined>;
 
   // Payroll
   createPayroll(payroll: InsertPayroll): Promise<Payroll>;
   getPayrolls(): Promise<Payroll[]>;
+  getPayroll(id: number): Promise<Payroll | undefined>;
+  getPayrollsByEmployee(employeeId: number): Promise<Payroll[]>;
+
+  // Roles
+  getRoles(): Promise<Role[]>;
+  getRole(id: number): Promise<Role | undefined>;
+  createRole(role: InsertRole): Promise<Role>;
+  updateRole(id: number, updates: Partial<InsertRole>): Promise<Role | undefined>;
+  deleteRole(id: number): Promise<boolean>;
   
   // Products
   getProducts(): Promise<Product[]>;
@@ -300,6 +314,11 @@ export class DatabaseStorage implements IStorage {
     return employee;
   }
 
+  async getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined> {
+    const [employee] = await db.select().from(employees).where(eq(employees.employeeId, employeeId));
+    return employee;
+  }
+
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
     const [newEmployee] = await db.insert(employees).values(employee).returning();
     return newEmployee;
@@ -323,6 +342,23 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(attendance).orderBy(desc(attendance.date));
   }
 
+  async getAttendanceByEmployee(employeeId: number): Promise<typeof attendance.$inferSelect[]> {
+    return await db.select().from(attendance)
+      .where(eq(attendance.employeeId, employeeId))
+      .orderBy(desc(attendance.date));
+  }
+
+  async getAttendanceByEmployeeAndDate(employeeId: number, date: string): Promise<typeof attendance.$inferSelect | undefined> {
+    const [record] = await db.select().from(attendance)
+      .where(and(eq(attendance.employeeId, employeeId), eq(attendance.date, date)));
+    return record;
+  }
+
+  async updateAttendance(id: number, updates: Partial<typeof attendance.$inferInsert>): Promise<typeof attendance.$inferSelect | undefined> {
+    const [updated] = await db.update(attendance).set(updates).where(eq(attendance.id, id)).returning();
+    return updated;
+  }
+
   // Payroll
   async createPayroll(payroll: InsertPayroll): Promise<Payroll> {
     const [newPayroll] = await db.insert(payrolls).values(payroll).returning();
@@ -331,6 +367,42 @@ export class DatabaseStorage implements IStorage {
 
   async getPayrolls(): Promise<Payroll[]> {
     return await db.select().from(payrolls).orderBy(desc(payrolls.generatedDate));
+  }
+
+  async getPayroll(id: number): Promise<Payroll | undefined> {
+    const [payroll] = await db.select().from(payrolls).where(eq(payrolls.id, id));
+    return payroll;
+  }
+
+  async getPayrollsByEmployee(employeeId: number): Promise<Payroll[]> {
+    return await db.select().from(payrolls)
+      .where(eq(payrolls.employeeId, employeeId))
+      .orderBy(desc(payrolls.month));
+  }
+
+  // Roles
+  async getRoles(): Promise<Role[]> {
+    return await db.select().from(roles).orderBy(roles.name);
+  }
+
+  async getRole(id: number): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.id, id));
+    return role;
+  }
+
+  async createRole(role: InsertRole): Promise<Role> {
+    const [newRole] = await db.insert(roles).values(role).returning();
+    return newRole;
+  }
+
+  async updateRole(id: number, updates: Partial<InsertRole>): Promise<Role | undefined> {
+    const [updated] = await db.update(roles).set(updates).where(eq(roles.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRole(id: number): Promise<boolean> {
+    await db.delete(roles).where(eq(roles.id, id));
+    return true;
   }
 
   // Products

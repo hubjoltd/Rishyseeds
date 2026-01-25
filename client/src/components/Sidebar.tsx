@@ -80,7 +80,15 @@ const allMenuItems: MenuItem[] = [
     ]
   },
   { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
-  { icon: Shield, label: "Users & Roles", href: "/users", roles: ["admin"] },
+  {
+    label: "Administration",
+    icon: Shield,
+    roles: ["admin"],
+    children: [
+      { icon: Users, label: "Users", href: "/users", roles: ["admin"] },
+      { icon: Shield, label: "Roles", href: "/roles", roles: ["admin"] },
+    ]
+  },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -96,7 +104,7 @@ export default function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<string[]>(["Master Data", "Plant Operations", "HRMS", "Finance"]);
+  const [expandedSections, setExpandedSections] = useState<string[]>(["Master Data", "Plant Operations", "HRMS", "Finance", "Administration"]);
   
   const userRole = user?.role || "admin";
   

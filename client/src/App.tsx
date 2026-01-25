@@ -25,6 +25,9 @@ import Inward from "@/pages/Inward";
 import Processing from "@/pages/Processing";
 import Outward from "@/pages/Outward";
 import PackagingSizes from "@/pages/PackagingSizes";
+import EmployeeLogin from "@/pages/EmployeeLogin";
+import EmployeePanel from "@/pages/EmployeePanel";
+import Roles from "@/pages/Roles";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -55,6 +58,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/employee-login" component={EmployeeLogin} />
+      <Route path="/employee" component={EmployeePanel} />
       
       {/* Protected Routes */}
       <Route path="/">
@@ -92,6 +97,9 @@ function Router() {
       </Route>
       <Route path="/users">
         <ProtectedRoute component={Users} />
+      </Route>
+      <Route path="/roles">
+        <ProtectedRoute component={Roles} />
       </Route>
       <Route path="/inward">
         <ProtectedRoute component={Inward} />

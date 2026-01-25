@@ -146,8 +146,23 @@ export const employees = pgTable("employees", {
   address: text("address"),
   status: text("status").default("active"),
   joinDate: date("join_date"),
+  password: text("password"), // For employee login
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// === ROLES WITH PERMISSIONS ===
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  permissions: jsonb("permissions").notNull().default({}), // JSON object with resource: [actions]
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true });
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
 
 export const insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true });
 
@@ -296,8 +311,9 @@ export const outwardRecords = pgTable("outward_records", {
   stockForm: text("stock_form").notNull(), // loose, packed
   packetSize: text("packet_size"), // For packed
   quantity: decimal("quantity").notNull(), // KG for loose, count for packed
-  destinationType: text("destination_type").notNull(), // dealer, farmer, own_use, transfer
+  destinationType: text("destination_type").notNull(), // dealer, farmer, own_use, transfer, ap, ts, mp, up, ka, cg
   destinationName: text("destination_name"),
+  variety: text("variety"), // Product variety
   invoiceNumber: text("invoice_number"),
   vehicleNumber: text("vehicle_number"),
   dispatchDate: date("dispatch_date").defaultNow(),

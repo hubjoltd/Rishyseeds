@@ -385,10 +385,13 @@ export default function Inward() {
               <Button 
                 type="submit" 
                 className="w-full" 
-                disabled={isPending}
+                disabled={editingLot ? isUpdating : isPending}
                 data-testid="button-submit-inward"
               >
-                {isPending ? "Recording..." : "Record Inward"}
+                {editingLot 
+                  ? (isUpdating ? "Saving..." : "Save Changes")
+                  : (isPending ? "Recording..." : "Record Inward")
+                }
               </Button>
             </form>
           </DialogContent>

@@ -52,6 +52,7 @@ const outwardFormSchema = z.object({
   quantity: z.coerce.number().positive("Quantity must be positive"),
   destinationType: z.string().min(1, "Please select destination type"),
   destinationName: z.string().optional(),
+  variety: z.string().optional(),
   invoiceNumber: z.string().optional(),
   vehicleNumber: z.string().optional(),
   dispatchedBy: z.string().optional(),
@@ -90,6 +91,7 @@ export default function Outward() {
       quantity: String(data.quantity),
       destinationType: data.destinationType,
       destinationName: data.destinationName || null,
+      variety: data.variety || null,
       invoiceNumber: data.invoiceNumber || null,
       vehicleNumber: data.vehicleNumber || null,
       dispatchedBy: data.dispatchedBy || null,
@@ -223,18 +225,34 @@ export default function Outward() {
                       <SelectItem value="farmer">Farmer</SelectItem>
                       <SelectItem value="own_use">Own Use</SelectItem>
                       <SelectItem value="transfer">Transfer</SelectItem>
+                      <SelectItem value="ap">AP (Andhra Pradesh)</SelectItem>
+                      <SelectItem value="ts">TS (Telangana)</SelectItem>
+                      <SelectItem value="mp">MP (Madhya Pradesh)</SelectItem>
+                      <SelectItem value="up">UP (Uttar Pradesh)</SelectItem>
+                      <SelectItem value="ka">KA (Karnataka)</SelectItem>
+                      <SelectItem value="cg">CG (Chhattisgarh)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Destination Name</label>
-                <Input 
-                  {...form.register("destinationName")}
-                  placeholder="Dealer/farmer name"
-                  data-testid="input-destination-name"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Destination Name</label>
+                  <Input 
+                    {...form.register("destinationName")}
+                    placeholder="Dealer/farmer name"
+                    data-testid="input-destination-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Variety</label>
+                  <Input 
+                    {...form.register("variety")}
+                    placeholder="Product variety"
+                    data-testid="input-variety"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
