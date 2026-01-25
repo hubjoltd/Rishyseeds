@@ -87,6 +87,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
+- **Product Filter in Employee Portal**: All 4 employee plant operations pages (Stock Movement, Packing, Processing, Outward) now have Product dropdown filter before lot selection, matching admin panel UX. State management properly handles both create and edit flows with consistent reset behavior.
 - **Employee Portal Reference Data Access**: All employees can now view products, locations, and packaging sizes regardless of their role permissions (these are lookup tables needed for creating records). The `checkPermission` middleware was updated to allow read access to reference data for all authenticated employees.
 - **Admin Notifications System**: Bell icon in admin sidebar shows real-time notifications for employee activities. Tracks punch in/out, inward, processing, packing, stock movement, and outward operations. Unread count badge, mark as read, and mark all read functionality.
 - **Created By Tracking**: All plant operations records (Inward, Processing, Packing, Stock Movement, Outward) now store createdBy employee ID. Admin portal displays "Created By" column showing employee names. Employee portal automatically populates createdBy when creating new records.
