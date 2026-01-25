@@ -244,8 +244,19 @@ export async function registerRoutes(
   });
 
   // === ROLE-BASED AUTHORIZATION MIDDLEWARE ===
+  // Routes that employees can access - permissions are further checked by checkPermission middleware
+  const employeeAccessibleRoutes = [
+    '/api/products', '/api/locations', '/api/lots', '/api/packaging-sizes',
+    '/api/stock', '/api/processing', '/api/outward', '/api/packaging'
+  ];
+  
   const checkRoleForPath = (routePath: string) => {
     return async (req: any, res: any, next: any) => {
+      // Allow employee access to certain routes - individual endpoints check permissions via checkPermission
+      if (req.employeeId && employeeAccessibleRoutes.includes(routePath)) {
+        return next();
+      }
+      
       const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
@@ -270,6 +281,28 @@ export async function registerRoutes(
   // Granular permission check middleware
   const checkPermission = (resource: Resource, action: Action) => {
     return async (req: any, res: any, next: any) => {
+      // Check if employee is authenticated and has role-based permissions
+      if (req.employeeId) {
+        const employee = await storage.getEmployee(req.employeeId);
+        if (employee && employee.role) {
+          // Get role permissions from roles table
+          const role = await storage.getRoleByName(employee.role);
+          if (role && role.permissions) {
+            const permissions = typeof role.permissions === 'string' 
+              ? JSON.parse(role.permissions) 
+              : role.permissions;
+            const resourcePerms = permissions[resource] || [];
+            if (resourcePerms.includes(action)) {
+              (req as any).employee = employee;
+              return next();
+            }
+          }
+        }
+        return res.status(403).json({ 
+          message: `Access denied. You don't have permission to ${action} ${resource}.` 
+        });
+      }
+      
       const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
