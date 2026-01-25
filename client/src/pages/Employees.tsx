@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/use-hrms";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertEmployeeSchema, type Employee } from "@shared/schema";
+import { insertEmployeeSchema, type Employee, type Role } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ type FormTab = "basic" | "salary" | "bank";
 
 export default function Employees() {
   const { data: employees, isLoading } = useEmployees();
+  const { data: roles } = useQuery<Role[]>({ queryKey: ["/api/roles"] });
   const { mutate: createEmployee, isPending } = useCreateEmployee();
   const { mutate: updateEmployee, isPending: isUpdating } = useUpdateEmployee();
   const [open, setOpen] = useState(false);
@@ -226,7 +228,16 @@ export default function Employees() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Role/Designation *</label>
-                      <Input {...form.register("role")} placeholder="Manager" data-testid="input-role" />
+                      <Select onValueChange={(val) => form.setValue("role", val)} value={form.watch("role")}>
+                        <SelectTrigger data-testid="select-role">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roles?.filter(r => r.isActive).map((role) => (
+                            <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Department</label>
@@ -456,7 +467,16 @@ export default function Employees() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Role</label>
-                    <Input {...editForm.register("role")} data-testid="input-edit-employee-role" />
+                    <Select onValueChange={(val) => editForm.setValue("role", val)} value={editForm.watch("role")}>
+                      <SelectTrigger data-testid="select-edit-role">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roles?.filter(r => r.isActive).map((role) => (
+                          <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Department</label>
