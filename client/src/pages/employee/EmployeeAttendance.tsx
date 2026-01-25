@@ -127,18 +127,18 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
                         {format(new Date(record.date), "EEE, MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
-                        {record.punchIn ? format(new Date(record.punchIn), "h:mm a") : "-"}
+                        {record.checkIn ? format(new Date(record.checkIn), "h:mm a") : "-"}
                       </TableCell>
                       <TableCell>
-                        {record.punchOut ? format(new Date(record.punchOut), "h:mm a") : "-"}
+                        {record.checkOut ? format(new Date(record.checkOut), "h:mm a") : "-"}
                       </TableCell>
                       <TableCell>
-                        {formatDuration(record.punchIn, record.punchOut)}
+                        {formatDuration(record.checkIn, record.checkOut)}
                       </TableCell>
                       <TableCell>
-                        {record.punchOut ? (
+                        {record.checkOut ? (
                           <Badge className="bg-green-100 text-green-700">Completed</Badge>
-                        ) : record.punchIn ? (
+                        ) : record.checkIn ? (
                           <Badge className="bg-amber-100 text-amber-700">Working</Badge>
                         ) : (
                           <Badge variant="outline">Absent</Badge>
