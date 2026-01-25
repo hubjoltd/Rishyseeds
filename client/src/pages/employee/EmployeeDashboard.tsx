@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Clock, Calendar, FileText, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { getEmployeeToken } from "../EmployeeLogin";
+import { useLocation } from "wouter";
+import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -24,11 +25,23 @@ interface EmployeeDashboardProps {
 export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+
+  const handleAuthError = (res: Response) => {
+    if (res.status === 401) {
+      clearEmployeeToken();
+      queryClient.clear();
+      setLocation("/employee-login");
+      return true;
+    }
+    return false;
+  };
 
   const { data: todayAttendance, isLoading: todayLoading } = useQuery({
     queryKey: ["/api/employee/attendance/today"],
     queryFn: async () => {
       const res = await fetch("/api/employee/attendance/today", { headers: getEmployeeAuthHeaders() });
+      if (handleAuthError(res)) return null;
       if (!res.ok) return null;
       return res.json();
     },
@@ -38,6 +51,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     queryKey: ["/api/employee/attendance"],
     queryFn: async () => {
       const res = await fetch("/api/employee/attendance", { headers: getEmployeeAuthHeaders() });
+      if (handleAuthError(res)) return [];
       if (!res.ok) return [];
       return res.json();
     },
@@ -47,6 +61,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     queryKey: ["/api/employee/payslips"],
     queryFn: async () => {
       const res = await fetch("/api/employee/payslips", { headers: getEmployeeAuthHeaders() });
+      if (handleAuthError(res)) return [];
       if (!res.ok) return [];
       return res.json();
     },
@@ -58,6 +73,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         method: "POST",
         headers: getEmployeeAuthHeaders(),
       });
+      if (res.status === 401) {
+        clearEmployeeToken();
+        queryClient.clear();
+        setLocation("/employee-login");
+        throw new Error("Session expired. Please login again.");
+      }
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Punch failed");
@@ -73,7 +94,9 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      if (error.message !== "Session expired. Please login again.") {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
     },
   });
 
