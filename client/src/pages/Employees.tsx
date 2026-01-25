@@ -410,6 +410,19 @@ export default function Employees() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  <Card className="shadow-green">
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm font-medium text-primary">Employee Portal Login</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Password (for employee login)</label>
+                        <Input type="password" {...form.register("password")} placeholder="Set password for employee portal access" data-testid="input-employee-password" />
+                        <p className="text-xs text-muted-foreground">If left blank, employee can use their Employee ID as password</p>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               )}
 
@@ -562,6 +575,11 @@ export default function Employees() {
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-sm font-medium">Address</label>
                     <Input {...editForm.register("address")} data-testid="input-edit-address" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium">Password (for employee portal)</label>
+                    <Input type="password" {...editForm.register("password")} placeholder="Leave blank to keep unchanged" data-testid="input-edit-password" />
+                    <p className="text-xs text-muted-foreground">Update password for employee portal login</p>
                   </div>
                 </div>
               )}
