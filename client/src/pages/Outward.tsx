@@ -72,6 +72,7 @@ export default function Outward() {
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
   const canDeleteOutward = canDelete('outward');
 
@@ -152,20 +153,44 @@ export default function Outward() {
               <DialogDescription>Create an outward record for stock dispatch</DialogDescription>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Lot</label>
-                <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
-                  <SelectTrigger data-testid="select-lot">
-                    <SelectValue placeholder="Select Lot" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active').map((lot: Lot) => (
-                      <SelectItem key={lot.id} value={lot.id.toString()}>
-                        {getLotDetails(lot.id)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Product</label>
+                  <Select onValueChange={(val) => {
+                    const productId = parseInt(val);
+                    setSelectedProductId(productId);
+                    const product = (products as Product[] || []).find((p: Product) => p.id === productId);
+                    if (product) {
+                      form.setValue("variety", product.variety || "");
+                    }
+                  }}>
+                    <SelectTrigger data-testid="select-product">
+                      <SelectValue placeholder="Select Product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(products as Product[] || []).map((product: Product) => (
+                        <SelectItem key={product.id} value={product.id.toString()}>
+                          {product.crop} - {product.variety}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lot</label>
+                  <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
+                    <SelectTrigger data-testid="select-lot">
+                      <SelectValue placeholder="Select Lot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(lots as Lot[] || []).filter((l: Lot) => l.status === 'active' && (!selectedProductId || l.productId === selectedProductId)).map((lot: Lot) => (
+                        <SelectItem key={lot.id} value={lot.id.toString()}>
+                          {lot.lotNumber}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -242,10 +267,12 @@ export default function Outward() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Variety</label>
+                  <label className="text-sm font-medium">Variety (auto-filled)</label>
                   <Input 
-                    {...form.register("variety")}
-                    placeholder="Product variety"
+                    value={form.watch("variety") || ""}
+                    readOnly
+                    className="bg-muted"
+                    placeholder="Select a product first"
                     data-testid="input-variety"
                   />
                 </div>
