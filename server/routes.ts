@@ -1117,7 +1117,8 @@ export async function registerRoutes(
       });
     }
     
-    // Default minimal permissions if role not found in roles table
+    // Default: only basic employee permissions (dashboard/attendance/payslips)
+    // No plant operations access unless role is configured
     return res.json({
       role: employee.role,
       permissions: {
