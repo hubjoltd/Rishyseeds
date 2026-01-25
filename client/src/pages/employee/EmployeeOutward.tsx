@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -24,10 +25,14 @@ function getEmployeeAuthHeaders(): Record<string, string> {
 
 const outwardFormSchema = z.object({
   lotId: z.coerce.number().min(1, "Please select a lot"),
-  destination: z.string().min(1, "Please select destination"),
+  locationId: z.coerce.number().min(1, "Please select source warehouse"),
+  stockForm: z.string().min(1, "Please select stock form"),
   quantity: z.coerce.number().positive("Quantity must be positive"),
+  destinationType: z.string().min(1, "Please select destination"),
+  destinationName: z.string().optional(),
+  invoiceNumber: z.string().optional(),
   vehicleNumber: z.string().optional(),
-  driverName: z.string().optional(),
+  dispatchedBy: z.string().optional(),
   dispatchDate: z.string().optional(),
   remarks: z.string().optional(),
 });
@@ -69,6 +74,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     resolver: zodResolver(outwardFormSchema),
     defaultValues: {
       quantity: 0,
+      stockForm: "loose",
     }
   });
 
@@ -99,6 +105,15 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
   });
 
+  const { data: locations } = useQuery({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const res = await fetch("/api/locations", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch locations");
+      return res.json();
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await fetch("/api/outward", {
@@ -114,7 +129,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
-      toast({ title: "Success", description: "Dispatch record created" });
+      toast({ title: "Success", description: "Dispatch record created", variant: "success" });
       setOpen(false);
       form.reset();
       setSelectedProductId(null);
@@ -140,7 +155,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
-      toast({ title: "Success", description: "Dispatch record updated" });
+      toast({ title: "Success", description: "Dispatch record updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
       form.reset();
@@ -195,6 +210,11 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     return lot?.lotNumber || "Unknown";
   };
 
+  const getLocationName = (locId: number) => {
+    const loc = locations?.find((l: any) => l.id === locId);
+    return loc?.name || "Unknown";
+  };
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleDateString("en-IN");
@@ -212,10 +232,14 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     setSelectedLotId(record.lotId);
     form.reset({
       lotId: record.lotId,
-      destination: record.destination || "",
+      locationId: record.locationId || 0,
+      stockForm: record.stockForm || "loose",
       quantity: Number(record.quantity),
+      destinationType: record.destinationType || record.destination || "",
+      destinationName: record.destinationName || "",
+      invoiceNumber: record.invoiceNumber || "",
       vehicleNumber: record.vehicleNumber || "",
-      driverName: record.driverName || "",
+      dispatchedBy: record.dispatchedBy || "",
       dispatchDate: record.dispatchDate || "",
       remarks: record.remarks || "",
     });
@@ -228,10 +252,14 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
       updateMutation.mutate({
         id: editingRecord.id,
         data: {
-          destination: data.destination,
+          locationId: data.locationId,
+          stockForm: data.stockForm,
           quantity: String(data.quantity),
+          destinationType: data.destinationType,
+          destinationName: data.destinationName || null,
+          invoiceNumber: data.invoiceNumber || null,
           vehicleNumber: data.vehicleNumber || null,
-          driverName: data.driverName || null,
+          dispatchedBy: data.dispatchedBy || null,
           dispatchDate: data.dispatchDate || null,
           remarks: data.remarks || null,
         }
@@ -239,17 +267,23 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     } else {
       createMutation.mutate({
         lotId: data.lotId,
-        destination: data.destination,
+        locationId: data.locationId,
+        stockForm: data.stockForm,
         quantity: String(data.quantity),
+        destinationType: data.destinationType,
+        destinationName: data.destinationName || null,
         variety: lotDetails.variety,
+        invoiceNumber: data.invoiceNumber || null,
         vehicleNumber: data.vehicleNumber || null,
-        driverName: data.driverName || null,
+        dispatchedBy: data.dispatchedBy || null,
         dispatchDate: data.dispatchDate || new Date().toISOString().slice(0, 10),
         remarks: data.remarks || null,
         createdBy: employee.id,
       });
     }
   };
+
+  const stockForm = form.watch("stockForm");
 
   return (
     <div className="space-y-6">
@@ -280,103 +314,178 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingRecord ? "Edit Dispatch Record" : "New Dispatch Record"}</DialogTitle>
               <DialogDescription>{editingRecord ? "Update dispatch details" : "Record outward dispatch"}</DialogDescription>
             </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
-                  <Select 
-                    value={selectedProductId?.toString() || ""}
-                    onValueChange={(val) => {
-                      setSelectedProductId(parseInt(val));
-                      form.setValue("lotId", 0);
-                      setSelectedLotId(null);
-                    }}
-                    disabled={!!editingRecord}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(products || []).map((p: any) => (
-                        <SelectItem key={p.id} value={p.id.toString()}>
-                          {p.crop} - {p.variety}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Product <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={selectedProductId?.toString() || ""}
+                      onValueChange={(val) => {
+                        const productId = parseInt(val);
+                        setSelectedProductId(productId);
+                        form.setValue("lotId", 0);
+                        setSelectedLotId(null);
+                      }}
+                      disabled={!!editingRecord}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(products || []).map((p: any) => (
+                          <SelectItem key={p.id} value={p.id.toString()}>
+                            {p.crop} - {p.variety}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Lot <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("lotId")?.toString() || ""}
+                      onValueChange={(val) => {
+                        const id = parseInt(val);
+                        form.setValue("lotId", id);
+                        setSelectedLotId(id);
+                      }}
+                      disabled={!!editingRecord || !selectedProductId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredLots.map((lot: any) => (
+                          <SelectItem key={lot.id} value={lot.id.toString()}>
+                            {lot.lotNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Lot <span className="text-destructive">*</span></label>
-                  <Select 
-                    value={form.watch("lotId")?.toString() || ""}
-                    onValueChange={(val) => {
-                      const id = parseInt(val);
-                      form.setValue("lotId", id);
-                      setSelectedLotId(id);
-                    }}
-                    disabled={!!editingRecord || !selectedProductId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredLots.map((lot: any) => (
-                        <SelectItem key={lot.id} value={lot.id.toString()}>
-                          {lot.lotNumber}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedLotDetails && (
-                    <p className="text-xs text-muted-foreground">
-                      Variety: {selectedLotDetails.variety}
-                    </p>
-                  )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Source Warehouse <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("locationId")?.toString() || ""}
+                      onValueChange={(val) => form.setValue("locationId", parseInt(val))}
+                      disabled={!!editingRecord}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Warehouse" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(locations || []).map((loc: any) => (
+                          <SelectItem key={loc.id} value={loc.id.toString()}>
+                            {loc.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Stock Form <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("stockForm") || "loose"}
+                      onValueChange={(val) => form.setValue("stockForm", val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="loose">Raw Seeds</SelectItem>
+                        <SelectItem value="cobs">Cobs</SelectItem>
+                        <SelectItem value="packed">Packed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Destination State</label>
-                  <Select 
-                    value={form.watch("destination") || ""}
-                    onValueChange={(val) => form.setValue("destination", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select State" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {stateOptions.map((state) => (
-                        <SelectItem key={state.code} value={state.code}>
-                          {state.name} ({state.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">
+                      {stockForm === 'packed' ? 'No. of Bags' : 'Quantity (KG)'} <span className="text-destructive">*</span>
+                    </label>
+                    <Input 
+                      type="number" 
+                      {...form.register("quantity")} 
+                      placeholder={stockForm === 'packed' ? 'Number of bags' : 'Quantity in KG'}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Destination State <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("destinationType") || ""}
+                      onValueChange={(val) => form.setValue("destinationType", val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select State" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stateOptions.map((state) => (
+                          <SelectItem key={state.code} value={state.code}>
+                            {state.name} ({state.code})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Quantity (KG)</label>
-                  <Input type="number" {...form.register("quantity")} />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Destination Name</label>
+                    <Input 
+                      {...form.register("destinationName")} 
+                      placeholder="Dealer/farmer name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Invoice Number</label>
+                    <Input 
+                      {...form.register("invoiceNumber")} 
+                      placeholder="INV-001"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Vehicle Number</label>
-                    <Input {...form.register("vehicleNumber")} placeholder="e.g., TS09AB1234" />
+                    <Input 
+                      {...form.register("vehicleNumber")} 
+                      placeholder="TS09AB1234"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Driver Name</label>
-                    <Input {...form.register("driverName")} placeholder="Driver name" />
+                    <label className="text-sm font-medium">Dispatched By</label>
+                    <Input 
+                      {...form.register("dispatchedBy")} 
+                      placeholder="Person name"
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Dispatch Date</label>
                   <Input type="date" {...form.register("dispatchDate")} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Remarks</label>
+                  <Textarea 
+                    {...form.register("remarks")} 
+                    placeholder="Additional notes..."
+                    rows={2}
+                  />
                 </div>
 
                 <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
@@ -411,10 +520,12 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                   <TableRow>
                     <TableHead>Lot Number</TableHead>
                     <TableHead>Variety</TableHead>
+                    <TableHead>Warehouse</TableHead>
                     <TableHead>Destination</TableHead>
-                    <TableHead>Quantity (KG)</TableHead>
-                    <TableHead>Vehicle No.</TableHead>
-                    <TableHead>Dispatch Date</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Date</TableHead>
                     {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -423,12 +534,16 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
                       <TableCell className="font-medium">{getLotNumber(record.lotId)}</TableCell>
                       <TableCell>{record.variety || "-"}</TableCell>
+                      <TableCell>{getLocationName(record.locationId)}</TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {stateNames[record.destination] || record.destination}
+                          {stateNames[record.destinationType] || record.destinationType || record.destination || "-"}
                         </Badge>
                       </TableCell>
-                      <TableCell>{Number(record.quantity)?.toLocaleString()}</TableCell>
+                      <TableCell>
+                        {Number(record.quantity)?.toLocaleString()} {record.stockForm === 'packed' ? 'bags' : 'KG'}
+                      </TableCell>
+                      <TableCell>{record.invoiceNumber || "-"}</TableCell>
                       <TableCell>{record.vehicleNumber || "-"}</TableCell>
                       <TableCell>{formatDate(record.dispatchDate)}</TableCell>
                       {(canEdit || canDelete) && (

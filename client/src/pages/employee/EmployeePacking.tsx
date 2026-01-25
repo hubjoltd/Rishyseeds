@@ -24,11 +24,13 @@ function getEmployeeAuthHeaders(): Record<string, string> {
 
 const packingFormSchema = z.object({
   lotId: z.coerce.number().min(1, "Please select a lot"),
+  locationId: z.coerce.number().min(1, "Please select a warehouse"),
   packagingSizeId: z.coerce.number().min(1, "Please select package size"),
-  quantity: z.coerce.number().positive("Quantity must be positive"),
-  inputQuantity: z.coerce.number().positive("Input quantity must be positive"),
+  numberOfPackets: z.coerce.number().positive("Must be at least 1"),
   wasteQuantity: z.coerce.number().min(0, "Waste cannot be negative").optional(),
+  packedBy: z.string().optional(),
   packagingDate: z.string().optional(),
+  remarks: z.string().optional(),
 });
 
 interface EmployeeProps {
@@ -52,12 +54,12 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof packingFormSchema>>({
     resolver: zodResolver(packingFormSchema),
     defaultValues: {
-      quantity: 0,
-      inputQuantity: 0,
+      numberOfPackets: 0,
       wasteQuantity: 0,
     }
   });
@@ -98,6 +100,24 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
   });
 
+  const { data: locations } = useQuery({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const res = await fetch("/api/locations", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch locations");
+      return res.json();
+    },
+  });
+
+  const { data: stockBalances } = useQuery({
+    queryKey: ["/api/stock/balances"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock/balances", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch stock balances");
+      return res.json();
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await fetch("/api/packaging", {
@@ -113,11 +133,12 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
-      toast({ title: "Success", description: "Packing record created" });
+      toast({ title: "Success", description: "Packing record created", variant: "success" });
       setOpen(false);
       form.reset();
       setSelectedProductId(null);
       setSelectedLotId(null);
+      setSelectedLocationId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -139,12 +160,13 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
-      toast({ title: "Success", description: "Packing record updated" });
+      toast({ title: "Success", description: "Packing record updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
       form.reset();
       setSelectedProductId(null);
       setSelectedLotId(null);
+      setSelectedLocationId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -177,6 +199,30 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
   const filteredLots = selectedProductId 
     ? activeLots.filter((l: any) => l.productId === selectedProductId)
     : activeLots;
+  
+  const activeSizes = (packagingSizes || []).filter((s: any) => s.isActive);
+
+  const getLooseStockForLotAndLocation = (lotId: number, locationId: number | null) => {
+    const balances = (stockBalances || []).filter(
+      (b: any) => b.lotId === lotId && b.stockForm === 'loose' && (locationId ? b.locationId === locationId : true)
+    );
+    return balances.reduce((sum: number, b: any) => sum + Number(b.quantity), 0);
+  };
+
+  const getSizeWeightKg = (size: any) => {
+    const numericSize = Number(size.size);
+    return size.unit.toLowerCase() === 'g' ? numericSize / 1000 : numericSize;
+  };
+
+  const watchedSizeId = form.watch("packagingSizeId");
+  const watchedPackets = form.watch("numberOfPackets");
+  
+  const selectedSize = activeSizes.find((s: any) => s.id === watchedSizeId);
+  const estimatedQuantity = selectedSize && watchedPackets 
+    ? (getSizeWeightKg(selectedSize) * watchedPackets).toFixed(2) 
+    : "0";
+
+  const selectedLotLooseStock = selectedLotId ? getLooseStockForLotAndLocation(selectedLotId, selectedLocationId) : 0;
 
   const getLotDetails = (lotId: number) => {
     const lot = (lots || []).find((l: any) => l.id === lotId);
@@ -192,7 +238,12 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
   const getPackageSize = (sizeId: number) => {
     const size = packagingSizes?.find((s: any) => s.id === sizeId);
-    return size ? `${size.size} ${size.unit}` : "Unknown";
+    return size?.label || size ? `${size.size} ${size.unit}` : "Unknown";
+  };
+
+  const getLocationName = (locId: number) => {
+    const loc = locations?.find((l: any) => l.id === locId);
+    return loc?.name || "Unknown";
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -207,36 +258,48 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       setSelectedProductId(lot.productId);
     }
     setSelectedLotId(record.lotId);
+    setSelectedLocationId(record.locationId);
     form.reset({
       lotId: record.lotId,
+      locationId: record.locationId || 0,
       packagingSizeId: record.packagingSizeId,
-      quantity: record.quantity,
-      inputQuantity: Number(record.inputQuantity),
+      numberOfPackets: record.numberOfPackets || record.quantity || 0,
       wasteQuantity: Number(record.wasteQuantity) || 0,
+      packedBy: record.packedBy || "",
       packagingDate: record.packagingDate || "",
+      remarks: record.remarks || "",
     });
     setOpen(true);
   };
 
   const onSubmit = (data: z.infer<typeof packingFormSchema>) => {
+    const size = activeSizes.find((s: any) => s.id === data.packagingSizeId);
+    const totalKg = size ? getSizeWeightKg(size) * data.numberOfPackets : 0;
+    
     if (editingRecord) {
       updateMutation.mutate({
         id: editingRecord.id,
         data: {
-          quantity: data.quantity,
-          inputQuantity: String(data.inputQuantity),
+          numberOfPackets: data.numberOfPackets,
+          totalQuantityKg: String(totalKg),
           wasteQuantity: String(data.wasteQuantity || 0),
+          packedBy: data.packedBy || null,
           packagingDate: data.packagingDate || null,
+          remarks: data.remarks || null,
         }
       });
     } else {
       createMutation.mutate({
         lotId: data.lotId,
+        locationId: data.locationId,
         packagingSizeId: data.packagingSizeId,
-        quantity: data.quantity,
-        inputQuantity: String(data.inputQuantity),
+        packetSize: size?.label || "",
+        numberOfPackets: data.numberOfPackets,
+        totalQuantityKg: String(totalKg),
         wasteQuantity: String(data.wasteQuantity || 0),
+        packedBy: data.packedBy || null,
         packagingDate: data.packagingDate || new Date().toISOString().slice(0, 10),
+        remarks: data.remarks || null,
         createdBy: employee.id,
       });
     }
@@ -261,6 +324,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
             form.reset();
             setSelectedProductId(null);
             setSelectedLotId(null);
+            setSelectedLocationId(null);
           }
         }}>
           {canCreate && (
@@ -271,7 +335,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingRecord ? "Edit Packing Record" : "New Packing Record"}</DialogTitle>
               <DialogDescription>{editingRecord ? "Update packing details" : "Record packaging output"}</DialogDescription>
@@ -326,39 +390,77 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Package Size</label>
+                  <label className="text-sm font-medium">Warehouse <span className="text-destructive">*</span></label>
                   <Select 
-                    value={form.watch("packagingSizeId")?.toString() || ""} 
-                    onValueChange={(val) => form.setValue("packagingSizeId", parseInt(val))}
+                    value={form.watch("locationId")?.toString() || ""}
+                    onValueChange={(val) => {
+                      const id = parseInt(val);
+                      form.setValue("locationId", id);
+                      setSelectedLocationId(id);
+                    }}
                     disabled={!!editingRecord}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Size" />
+                      <SelectValue placeholder="Select Warehouse" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(packagingSizes || []).map((size: any) => (
-                        <SelectItem key={size.id} value={size.id.toString()}>
-                          {size.size} {size.unit}
+                      {(locations || []).map((loc: any) => (
+                        <SelectItem key={loc.id} value={loc.id.toString()}>
+                          {loc.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedLotId && selectedLocationId && (
+                    <p className="text-xs text-muted-foreground">
+                      Available raw seeds: <span className="font-medium">{selectedLotLooseStock.toFixed(2)} KG</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Number of Bags</label>
-                    <Input type="number" {...form.register("quantity")} />
+                    <label className="text-sm font-medium">Package Size <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("packagingSizeId")?.toString() || ""} 
+                      onValueChange={(val) => form.setValue("packagingSizeId", parseInt(val))}
+                      disabled={!!editingRecord}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeSizes.map((size: any) => (
+                          <SelectItem key={size.id} value={size.id.toString()}>
+                            {size.label || `${size.size} ${size.unit}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Input Qty (KG)</label>
-                    <Input type="number" {...form.register("inputQuantity")} />
+                    <label className="text-sm font-medium">Number of Bags <span className="text-destructive">*</span></label>
+                    <Input type="number" {...form.register("numberOfPackets")} />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Waste (KG)</label>
-                  <Input type="number" {...form.register("wasteQuantity")} />
+                {parseFloat(estimatedQuantity) > 0 && (
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm">
+                      Estimated quantity: <span className="font-bold text-primary">{estimatedQuantity} KG</span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Packed By</label>
+                    <Input {...form.register("packedBy")} placeholder="Person name" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Waste (KG)</label>
+                    <Input type="number" step="0.01" {...form.register("wasteQuantity")} placeholder="0" />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -366,9 +468,14 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                   <Input type="date" {...form.register("packagingDate")} />
                 </div>
 
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Remarks</label>
+                  <Input {...form.register("remarks")} placeholder="Optional notes" />
+                </div>
+
                 <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
                   {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {editingRecord ? "Save Changes" : "Create Packing Record"}
+                  {editingRecord ? "Save Changes" : "Record Packing Output"}
                 </Button>
               </form>
             </DialogContent>
@@ -397,9 +504,11 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                 <TableHeader>
                   <TableRow>
                     <TableHead>Lot Number</TableHead>
+                    <TableHead>Warehouse</TableHead>
                     <TableHead>Package Size</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Input (KG)</TableHead>
+                    <TableHead>No. of Bags</TableHead>
+                    <TableHead>Total (KG)</TableHead>
+                    <TableHead>Packed By</TableHead>
                     <TableHead>Waste (KG)</TableHead>
                     <TableHead>Date</TableHead>
                     {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
@@ -409,11 +518,13 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                   {packaging?.map((record: any) => (
                     <TableRow key={record.id} data-testid={`row-packing-${record.id}`}>
                       <TableCell className="font-medium">{getLotNumber(record.lotId)}</TableCell>
+                      <TableCell>{getLocationName(record.locationId)}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{getPackageSize(record.packagingSizeId)}</Badge>
                       </TableCell>
-                      <TableCell>{record.quantity?.toLocaleString()} bags</TableCell>
-                      <TableCell>{Number(record.inputQuantity)?.toLocaleString()}</TableCell>
+                      <TableCell>{(record.numberOfPackets || record.quantity)?.toLocaleString()}</TableCell>
+                      <TableCell>{Number(record.totalQuantityKg || record.inputQuantity)?.toLocaleString()}</TableCell>
+                      <TableCell>{record.packedBy || "-"}</TableCell>
                       <TableCell>{Number(record.wasteQuantity)?.toLocaleString() || 0}</TableCell>
                       <TableCell>{formatDate(record.packagingDate)}</TableCell>
                       {(canEdit || canDelete) && (

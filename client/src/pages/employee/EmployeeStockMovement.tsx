@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -27,7 +28,7 @@ const stockMovementFormSchema = z.object({
   fromLocationId: z.coerce.number().min(1, "Please select source location"),
   toLocationId: z.coerce.number().min(1, "Please select destination"),
   quantity: z.coerce.number().positive("Quantity must be positive"),
-  stockForm: z.string().default("loose"),
+  stockForm: z.string().min(1, "Please select stock form"),
   movementDate: z.string().optional(),
   remarks: z.string().optional(),
 });
@@ -98,6 +99,15 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
   });
 
+  const { data: stockBalances } = useQuery({
+    queryKey: ["/api/stock/balances"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock/balances", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch stock balances");
+      return res.json();
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await fetch("/api/stock/movements", {
@@ -113,7 +123,8 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
-      toast({ title: "Success", description: "Stock movement recorded" });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
+      toast({ title: "Success", description: "Stock movement recorded", variant: "success" });
       setOpen(false);
       form.reset();
       setSelectedProductId(null);
@@ -139,7 +150,8 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
-      toast({ title: "Success", description: "Movement updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
+      toast({ title: "Success", description: "Movement updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
       form.reset();
@@ -165,6 +177,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
       toast({ title: "Success", description: "Movement deleted" });
       setDeleteRecordId(null);
     },
@@ -177,6 +190,13 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   const filteredLots = selectedProductId 
     ? activeLots.filter((l: any) => l.productId === selectedProductId)
     : activeLots;
+
+  const getStockForLotAndLocation = (lotId: number, locationId: number) => {
+    const balance = (stockBalances || []).find(
+      (b: any) => b.lotId === lotId && b.locationId === locationId
+    );
+    return balance ? Number(balance.quantity) : 0;
+  };
 
   const getLotDetails = (lotId: number) => {
     const lot = (lots || []).find((l: any) => l.id === lotId);
@@ -201,6 +221,8 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   };
 
   const selectedLot = selectedLotId ? lots?.find((l: any) => l.id === selectedLotId) : null;
+  const fromLocationId = form.watch("fromLocationId");
+  const availableStock = selectedLotId && fromLocationId ? getStockForLotAndLocation(selectedLotId, fromLocationId) : 0;
 
   const handleEdit = (record: any) => {
     setEditingRecord(record);
@@ -246,6 +268,12 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     }
   };
 
+  const stockFormLabels: Record<string, string> = {
+    loose: "Raw Seeds",
+    cobs: "Cobs",
+    packed: "Packed",
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -275,7 +303,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingRecord ? "Edit Stock Movement" : "Record Stock Movement"}</DialogTitle>
               <DialogDescription>{editingRecord ? "Update movement details" : "Transfer stock between locations"}</DialogDescription>
@@ -329,14 +357,14 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                   </Select>
                   {selectedLot && (
                     <p className="text-xs text-muted-foreground">
-                      Available: {Number(selectedLot.initialQuantity).toLocaleString()} KG
+                      Initial Quantity: {Number(selectedLot.initialQuantity).toLocaleString()} KG
                     </p>
                   )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">From Location</label>
+                    <label className="text-sm font-medium">From Location <span className="text-destructive">*</span></label>
                     <Select 
                       value={form.watch("fromLocationId")?.toString() || ""}
                       onValueChange={(val) => form.setValue("fromLocationId", parseInt(val))}
@@ -351,9 +379,14 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                         ))}
                       </SelectContent>
                     </Select>
+                    {selectedLotId && fromLocationId && (
+                      <p className="text-xs text-muted-foreground">
+                        Available: <span className="font-medium">{availableStock.toLocaleString()} KG</span>
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">To Location</label>
+                    <label className="text-sm font-medium">To Location <span className="text-destructive">*</span></label>
                     <Select 
                       value={form.watch("toLocationId")?.toString() || ""}
                       onValueChange={(val) => form.setValue("toLocationId", parseInt(val))}
@@ -371,29 +404,39 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Quantity (KG)</label>
-                  <Input type="number" {...form.register("quantity")} />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Stock Form</label>
-                  <Select 
-                    value={form.watch("stockForm") || "loose"}
-                    onValueChange={(val) => form.setValue("stockForm", val)}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="loose">Raw Seeds</SelectItem>
-                      <SelectItem value="cobs">Cobs</SelectItem>
-                      <SelectItem value="packed">Packed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Quantity (KG) <span className="text-destructive">*</span></label>
+                    <Input type="number" {...form.register("quantity")} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Stock Form <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("stockForm") || "loose"}
+                      onValueChange={(val) => form.setValue("stockForm", val)}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="loose">Raw Seeds</SelectItem>
+                        <SelectItem value="cobs">Cobs</SelectItem>
+                        <SelectItem value="packed">Packed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Movement Date</label>
                   <Input type="date" {...form.register("movementDate")} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Remarks</label>
+                  <Textarea 
+                    {...form.register("remarks")} 
+                    placeholder="Optional notes..."
+                    rows={2}
+                  />
                 </div>
 
                 <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
@@ -433,6 +476,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                     <TableHead>Quantity (KG)</TableHead>
                     <TableHead>Stock Form</TableHead>
                     <TableHead>Date</TableHead>
+                    <TableHead>Remarks</TableHead>
                     {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -447,9 +491,10 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                       <TableCell>{getLocationName(record.toLocationId)}</TableCell>
                       <TableCell>{Number(record.quantity)?.toLocaleString()}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{record.stockForm || "Raw Seeds"}</Badge>
+                        <Badge variant="outline">{stockFormLabels[record.stockForm] || record.stockForm || "Raw Seeds"}</Badge>
                       </TableCell>
                       <TableCell>{formatDate(record.movementDate)}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{record.remarks || "-"}</TableCell>
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">

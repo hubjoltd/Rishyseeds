@@ -9,10 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Factory, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Factory, Plus, Pencil, Trash2, Loader2, CheckCircle } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
 import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +28,13 @@ const processingFormSchema = z.object({
   inputQuantity: z.coerce.number().positive("Quantity must be positive"),
   processingType: z.string().min(1, "Please select processing type"),
   processedBy: z.string().optional(),
+  processingDate: z.string().optional(),
   remarks: z.string().optional(),
+});
+
+const completeProcessingSchema = z.object({
+  outputQuantity: z.coerce.number().positive("Output quantity must be positive"),
+  wasteQuantity: z.coerce.number().min(0, "Waste cannot be negative"),
 });
 
 interface EmployeeProps {
@@ -49,6 +56,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
   const [open, setOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+  const [completeRecordId, setCompleteRecordId] = useState<number | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
 
@@ -56,6 +64,14 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     resolver: zodResolver(processingFormSchema),
     defaultValues: {
       inputQuantity: 0,
+    }
+  });
+
+  const completeForm = useForm<z.infer<typeof completeProcessingSchema>>({
+    resolver: zodResolver(completeProcessingSchema),
+    defaultValues: {
+      outputQuantity: 0,
+      wasteQuantity: 0,
     }
   });
 
@@ -101,7 +117,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
-      toast({ title: "Success", description: "Processing record created" });
+      toast({ title: "Success", description: "Processing record created", variant: "success" });
       setOpen(false);
       form.reset();
       setSelectedProductId(null);
@@ -127,7 +143,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
-      toast({ title: "Success", description: "Processing record updated" });
+      toast({ title: "Success", description: "Processing record updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
       form.reset();
@@ -161,6 +177,31 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     },
   });
 
+  const completeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/processing/${id}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to complete processing");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      toast({ title: "Success", description: "Processing completed and output lot created", variant: "success" });
+      setCompleteRecordId(null);
+      completeForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const activeLots = (lots || []).filter((l: any) => l.status === 'active');
   const filteredLots = selectedProductId 
     ? activeLots.filter((l: any) => l.productId === selectedProductId)
@@ -183,6 +224,10 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     return new Date(dateStr).toLocaleDateString("en-IN");
   };
 
+  const selectedRecordForComplete = completeRecordId 
+    ? (processing || []).find((r: any) => r.id === completeRecordId)
+    : null;
+
   const handleEdit = (record: any) => {
     setEditingRecord(record);
     const lot = lots?.find((l: any) => l.id === record.inputLotId);
@@ -195,6 +240,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
       inputQuantity: Number(record.inputQuantity),
       processingType: record.processingType || "",
       processedBy: record.processedBy || "",
+      processingDate: record.processingDate || "",
       remarks: record.remarks || "",
     });
     setOpen(true);
@@ -208,6 +254,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
           inputQuantity: String(data.inputQuantity),
           processingType: data.processingType,
           processedBy: data.processedBy || null,
+          processingDate: data.processingDate || null,
           remarks: data.remarks || null,
         }
       });
@@ -217,9 +264,22 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
         inputQuantity: String(data.inputQuantity),
         processingType: data.processingType,
         processedBy: data.processedBy || null,
+        processingDate: data.processingDate || new Date().toISOString().slice(0, 10),
         remarks: data.remarks || null,
         status: "pending",
         createdBy: employee.id,
+      });
+    }
+  };
+
+  const handleComplete = (data: z.infer<typeof completeProcessingSchema>) => {
+    if (completeRecordId) {
+      completeMutation.mutate({
+        id: completeRecordId,
+        data: {
+          outputQuantity: data.outputQuantity,
+          wasteQuantity: data.wasteQuantity,
+        }
       });
     }
   };
@@ -253,7 +313,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingRecord ? "Edit Processing Record" : "New Processing Record"}</DialogTitle>
               <DialogDescription>{editingRecord ? "Update processing details" : "Record seed processing activity"}</DialogDescription>
@@ -307,41 +367,57 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Processing Type</label>
-                  <Select onValueChange={(val) => form.setValue("processingType", val)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cleaning">Cleaning</SelectItem>
-                      <SelectItem value="Processing">Processing</SelectItem>
-                      <SelectItem value="Drying">Drying</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Processing Type <span className="text-destructive">*</span></label>
+                    <Select 
+                      value={form.watch("processingType") || ""}
+                      onValueChange={(val) => form.setValue("processingType", val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Cleaning">Cleaning</SelectItem>
+                        <SelectItem value="Processing">Processing</SelectItem>
+                        <SelectItem value="Drying">Drying</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Processed By</label>
+                    <Select 
+                      value={form.watch("processedBy") || ""}
+                      onValueChange={(val) => form.setValue("processedBy", val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Machine" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Old Machine">Old Machine</SelectItem>
+                        <SelectItem value="New Machine">New Machine</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Input Quantity (KG)</label>
+                  <label className="text-sm font-medium">Input Quantity (KG) <span className="text-destructive">*</span></label>
                   <Input type="number" {...form.register("inputQuantity")} />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Processed By</label>
-                  <Select onValueChange={(val) => form.setValue("processedBy", val)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Machine" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Old Machine">Old Machine</SelectItem>
-                      <SelectItem value="New Machine">New Machine</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label className="text-sm font-medium">Processing Date</label>
+                  <Input type="date" {...form.register("processingDate")} />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Remarks</label>
-                  <Input {...form.register("remarks")} placeholder="Optional remarks" />
+                  <Textarea 
+                    {...form.register("remarks")} 
+                    placeholder="Optional notes..."
+                    rows={2}
+                  />
                 </div>
 
                 <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
@@ -380,6 +456,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
                     <TableHead>Output Qty (KG)</TableHead>
                     <TableHead>Waste (KG)</TableHead>
                     <TableHead>Processed By</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Date</TableHead>
                     {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
@@ -392,13 +469,36 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
                         <Badge variant="outline">{record.processingType}</Badge>
                       </TableCell>
                       <TableCell>{Number(record.inputQuantity)?.toLocaleString()}</TableCell>
-                      <TableCell>{Number(record.outputQuantity)?.toLocaleString() || "-"}</TableCell>
-                      <TableCell>{Number(record.wasteQuantity)?.toLocaleString() || 0}</TableCell>
+                      <TableCell>{record.outputQuantity ? Number(record.outputQuantity)?.toLocaleString() : "-"}</TableCell>
+                      <TableCell>{record.wasteQuantity ? Number(record.wasteQuantity)?.toLocaleString() : "0"}</TableCell>
                       <TableCell>{record.processedBy || "-"}</TableCell>
+                      <TableCell>
+                        <Badge variant={record.status === 'completed' ? 'default' : 'secondary'}>
+                          {record.status === 'completed' ? 'Completed' : 'Pending'}
+                        </Badge>
+                      </TableCell>
                       <TableCell>{formatDate(record.processingDate)}</TableCell>
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {canEdit && record.status !== 'completed' && (
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="text-green-600"
+                                onClick={() => {
+                                  setCompleteRecordId(record.id);
+                                  completeForm.reset({
+                                    outputQuantity: Number(record.inputQuantity) * 0.9,
+                                    wasteQuantity: Number(record.inputQuantity) * 0.1,
+                                  });
+                                }} 
+                                data-testid={`button-complete-processing-${record.id}`}
+                                title="Complete Processing"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </Button>
+                            )}
                             {canEdit && (
                               <Button size="icon" variant="ghost" onClick={() => handleEdit(record)} data-testid={`button-edit-processing-${record.id}`}>
                                 <Pencil className="w-4 h-4" />
@@ -435,6 +535,49 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!completeRecordId} onOpenChange={() => setCompleteRecordId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Processing</DialogTitle>
+            <DialogDescription>
+              Enter the output quantity and waste for this processing batch.
+              {selectedRecordForComplete && (
+                <span className="block mt-2 text-sm">
+                  Input: <strong>{Number(selectedRecordForComplete.inputQuantity).toLocaleString()} KG</strong> from {getLotNumber(selectedRecordForComplete.inputLotId)}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={completeForm.handleSubmit(handleComplete)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Output Quantity (KG) <span className="text-destructive">*</span></label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  {...completeForm.register("outputQuantity")} 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Waste Quantity (KG)</label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  {...completeForm.register("wasteQuantity")} 
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A new output lot will be created with the output quantity.
+            </p>
+            <Button type="submit" className="w-full" disabled={completeMutation.isPending}>
+              {completeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Complete Processing
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
