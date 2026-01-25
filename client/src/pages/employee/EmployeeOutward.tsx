@@ -62,6 +62,8 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
   const [open, setOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof outwardFormSchema>>({
     resolver: zodResolver(outwardFormSchema),
@@ -169,6 +171,9 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
   });
 
   const activeLots = (lots || []).filter((l: any) => l.status === 'active');
+  const filteredLots = selectedProductId 
+    ? activeLots.filter((l: any) => l.productId === selectedProductId)
+    : activeLots;
 
   const getLotDetails = (lotId: number) => {
     const lot = (lots || []).find((l: any) => l.id === lotId);
@@ -191,8 +196,8 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     return new Date(dateStr).toLocaleDateString("en-IN");
   };
 
-  const selectedLotId = form.watch("lotId");
-  const selectedLotDetails = selectedLotId ? getLotDetails(selectedLotId) : null;
+  const formLotId = form.watch("lotId");
+  const selectedLotDetails = formLotId ? getLotDetails(formLotId) : null;
 
   const handleEdit = (record: any) => {
     setEditingRecord(record);
@@ -254,6 +259,8 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
           if (!isOpen) {
             setEditingRecord(null);
             form.reset();
+            setSelectedProductId(null);
+            setSelectedLotId(null);
           }
         }}>
           {canCreate && (
@@ -271,19 +278,47 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
             </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Lot</label>
+                  <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
                   <Select 
-                    value={form.watch("lotId")?.toString() || ""}
-                    onValueChange={(val) => form.setValue("lotId", parseInt(val))}
+                    value={selectedProductId?.toString() || ""}
+                    onValueChange={(val) => {
+                      setSelectedProductId(parseInt(val));
+                      form.setValue("lotId", 0);
+                      setSelectedLotId(null);
+                    }}
                     disabled={!!editingRecord}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Lot" />
+                      <SelectValue placeholder="Select Product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeLots.map((lot: any) => (
+                      {(products || []).map((p: any) => (
+                        <SelectItem key={p.id} value={p.id.toString()}>
+                          {p.crop} - {p.variety}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lot <span className="text-destructive">*</span></label>
+                  <Select 
+                    value={form.watch("lotId")?.toString() || ""}
+                    onValueChange={(val) => {
+                      const id = parseInt(val);
+                      form.setValue("lotId", id);
+                      setSelectedLotId(id);
+                    }}
+                    disabled={!!editingRecord || !selectedProductId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredLots.map((lot: any) => (
                         <SelectItem key={lot.id} value={lot.id.toString()}>
-                          {getLotDetails(lot.id).display}
+                          {lot.lotNumber}
                         </SelectItem>
                       ))}
                     </SelectContent>

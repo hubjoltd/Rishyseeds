@@ -49,6 +49,8 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
   const [open, setOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof processingFormSchema>>({
     resolver: zodResolver(processingFormSchema),
@@ -156,6 +158,9 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
   });
 
   const activeLots = (lots || []).filter((l: any) => l.status === 'active');
+  const filteredLots = selectedProductId 
+    ? activeLots.filter((l: any) => l.productId === selectedProductId)
+    : activeLots;
 
   const getLotDetails = (lotId: number) => {
     const lot = (lots || []).find((l: any) => l.id === lotId);
@@ -227,6 +232,8 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
           if (!isOpen) {
             setEditingRecord(null);
             form.reset();
+            setSelectedProductId(null);
+            setSelectedLotId(null);
           }
         }}>
           {canCreate && (
@@ -244,15 +251,47 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Input Lot</label>
-                  <Select onValueChange={(val) => form.setValue("inputLotId", parseInt(val))}>
+                  <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
+                  <Select 
+                    value={selectedProductId?.toString() || ""}
+                    onValueChange={(val) => {
+                      setSelectedProductId(parseInt(val));
+                      form.setValue("inputLotId", 0);
+                      setSelectedLotId(null);
+                    }}
+                    disabled={!!editingRecord}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Lot" />
+                      <SelectValue placeholder="Select Product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeLots.map((lot: any) => (
+                      {(products || []).map((p: any) => (
+                        <SelectItem key={p.id} value={p.id.toString()}>
+                          {p.crop} - {p.variety}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Input Lot <span className="text-destructive">*</span></label>
+                  <Select 
+                    value={form.watch("inputLotId")?.toString() || ""}
+                    onValueChange={(val) => {
+                      const id = parseInt(val);
+                      form.setValue("inputLotId", id);
+                      setSelectedLotId(id);
+                    }}
+                    disabled={!!editingRecord || !selectedProductId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={selectedProductId ? "Select Lot" : "Select product first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredLots.map((lot: any) => (
                         <SelectItem key={lot.id} value={lot.id.toString()}>
-                          {getLotDetails(lot.id)}
+                          {lot.lotNumber}
                         </SelectItem>
                       ))}
                     </SelectContent>
