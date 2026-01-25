@@ -1024,6 +1024,21 @@ export async function registerRoutes(
       
       const outputLotNumber = await storage.generateLotNumber(inputLot.productId);
       
+      // Get the input lot's stock balance to find the location
+      const inputStockBalances = await storage.getStockBalancesByLot(record.inputLotId);
+      const inputLooseBalance = inputStockBalances.find((b: any) => b.stockForm === 'loose');
+      const locationId = inputLooseBalance?.locationId || (inputStockBalances[0]?.locationId);
+      
+      // Validate stock availability
+      const inputQuantity = Number(record.inputQuantity);
+      const availableStock = inputLooseBalance ? Number(inputLooseBalance.quantity) : 0;
+      
+      if (inputQuantity > availableStock) {
+        return res.status(400).json({ 
+          message: `Insufficient stock. Available: ${availableStock.toFixed(2)} KG, Required: ${inputQuantity.toFixed(2)} KG` 
+        });
+      }
+      
       const outputLot = await storage.createLot({
         lotNumber: outputLotNumber,
         productId: inputLot.productId,
@@ -1037,6 +1052,25 @@ export async function registerRoutes(
         inwardDate: new Date().toISOString().slice(0, 10),
         remarks: `Output from processing ${record.processingType} of lot ${inputLot.lotNumber}`,
       });
+      
+      // Decrease input lot stock balance
+      if (locationId) {
+        await storage.adjustStockBalance(
+          record.inputLotId,
+          locationId,
+          'loose',
+          -inputQuantity
+        );
+        
+        // Create stock balance for output lot
+        await storage.createStockBalance({
+          lotId: outputLot.id,
+          locationId: locationId,
+          stockForm: 'loose',
+          quantity: String(outputQuantity),
+          packetSize: null,
+        });
+      }
       
       const updatedRecord = await storage.updateProcessingRecord(processingId, {
         outputQuantity: String(outputQuantity),
