@@ -61,9 +61,9 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
   });
 
   const { data: packaging, isLoading } = useQuery({
-    queryKey: ["/api/packaging-outputs"],
+    queryKey: ["/api/packaging"],
     queryFn: async () => {
-      const res = await fetch("/api/packaging-outputs", { headers: getEmployeeAuthHeaders() });
+      const res = await fetch("/api/packaging", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch packaging records");
       return res.json();
     },
@@ -98,7 +98,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch("/api/packaging-outputs", {
+      const res = await fetch("/api/packaging", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
@@ -110,7 +110,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/packaging-outputs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
       toast({ title: "Success", description: "Packing record created" });
       setOpen(false);
       form.reset();
@@ -122,7 +122,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const res = await fetch(`/api/packaging-outputs/${id}`, {
+      const res = await fetch(`/api/packaging/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
@@ -134,7 +134,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/packaging-outputs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
       toast({ title: "Success", description: "Packing record updated" });
       setOpen(false);
       setEditingRecord(null);
@@ -147,7 +147,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/packaging-outputs/${id}`, {
+      const res = await fetch(`/api/packaging/${id}`, {
         method: "DELETE",
         headers: getEmployeeAuthHeaders(),
       });
@@ -158,7 +158,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/packaging-outputs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
       toast({ title: "Success", description: "Record deleted" });
       setDeleteRecordId(null);
     },
