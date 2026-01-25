@@ -11,9 +11,13 @@ import {
   Menu,
   X,
   User,
-  Calendar,
   Package,
-  Truck
+  ArrowDownToLine,
+  Factory,
+  Boxes,
+  ArrowRightLeft,
+  Truck,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -24,12 +28,29 @@ interface MenuItem {
   href: string;
 }
 
-const menuItems: MenuItem[] = [
+interface MenuSection {
+  title: string;
+  icon: React.ElementType;
+  items: MenuItem[];
+}
+
+const mainMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal" },
   { icon: Clock, label: "Attendance", href: "/employee-portal/attendance" },
   { icon: FileText, label: "Payslips", href: "/employee-portal/payslips" },
-  { icon: Package, label: "My Operations", href: "/employee-portal/operations" },
 ];
+
+const plantOperationsSection: MenuSection = {
+  title: "Plant Operations",
+  icon: Factory,
+  items: [
+    { icon: ArrowDownToLine, label: "Inward", href: "/employee-portal/inward" },
+    { icon: Factory, label: "Processing", href: "/employee-portal/processing" },
+    { icon: Boxes, label: "Packing", href: "/employee-portal/packing" },
+    { icon: ArrowRightLeft, label: "Stock Movement", href: "/employee-portal/stock-movement" },
+    { icon: Truck, label: "Outward", href: "/employee-portal/outward" },
+  ],
+};
 
 interface EmployeeSidebarProps {
   employee: {
@@ -44,6 +65,7 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
   const [location] = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isPlantOpsOpen, setIsPlantOpsOpen] = useState(true);
 
   const toggleCollapse = () => setIsCollapsed(!isCollapsed);
   const toggleMobile = () => setIsMobileOpen(!isMobileOpen);
@@ -54,6 +76,8 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
     }
     return location.startsWith(href);
   };
+
+  const isPlantOpsActive = plantOperationsSection.items.some((item) => isActive(item.href));
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -72,7 +96,7 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
 
       <nav className="flex-1 overflow-y-auto py-4 px-2">
         <ul className="space-y-1">
-          {menuItems.map((item) => {
+          {mainMenuItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -84,7 +108,7 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer",
                       active
                         ? "bg-primary text-primary-foreground shadow-md"
-                        : "text-muted-foreground hover:bg-green-50 hover:text-primary",
+                        : "text-muted-foreground hover-elevate",
                       isCollapsed && "justify-center"
                     )}
                     data-testid={`nav-employee-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
@@ -97,6 +121,62 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
             );
           })}
         </ul>
+
+        <div className="mt-4">
+          {!isCollapsed && (
+            <p className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Plant Operations
+            </p>
+          )}
+          <div
+            onClick={() => !isCollapsed && setIsPlantOpsOpen(!isPlantOpsOpen)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer",
+              isPlantOpsActive && isCollapsed
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover-elevate",
+              isCollapsed && "justify-center"
+            )}
+            data-testid="nav-employee-plant-operations"
+          >
+            <Factory className={cn("flex-shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5")} />
+            {!isCollapsed && (
+              <>
+                <span className="truncate font-medium flex-1">Operations</span>
+                <ChevronDown className={cn("w-4 h-4 transition-transform", isPlantOpsOpen && "rotate-180")} />
+              </>
+            )}
+          </div>
+
+          {(isPlantOpsOpen || isCollapsed) && (
+            <ul className={cn("space-y-1", !isCollapsed && "ml-4 mt-1")}>
+              {plantOperationsSection.items.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <li key={item.href}>
+                    <Link href={item.href}>
+                      <div
+                        onClick={() => setIsMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer",
+                          active
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover-elevate",
+                          isCollapsed && "justify-center"
+                        )}
+                        data-testid={`nav-employee-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <Icon className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+                        {!isCollapsed && <span className="truncate text-sm">{item.label}</span>}
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </nav>
 
       <div className="border-t border-green-200/50 p-2">
@@ -117,7 +197,7 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
           variant="ghost"
           onClick={onLogout}
           className={cn(
-            "w-full text-red-600 hover:text-red-700 hover:bg-red-50",
+            "w-full text-destructive",
             isCollapsed ? "justify-center px-2" : "justify-start"
           )}
           data-testid="button-employee-logout"
@@ -128,10 +208,10 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
       </div>
 
       <Button
-        variant="ghost"
+        variant="outline"
         size="sm"
         onClick={toggleCollapse}
-        className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 p-0 rounded-full bg-white border shadow-md hover:bg-gray-50"
+        className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 p-0 rounded-full shadow-md"
         data-testid="button-employee-collapse-sidebar"
       >
         {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

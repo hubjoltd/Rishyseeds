@@ -87,6 +87,9 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
+- **Employee Portal Plant Operations**: Added Inward, Processing, Packing, Stock Movement, and Outward pages to employee portal with collapsible sidebar section
+- **Production Database Seeding**: Script to seed Neon production database with 22 locations/warehouses and 67 product varieties from Telangana license document
+- **Responsive Employee Sidebar**: Collapsible Plant Operations section with all seed operations pages
 - **Inward Edit Fix**: Fixed edit button text to show "Save Changes" when editing and proper disabled state using `isUpdating`
 - **State-Based Destinations**: Added state codes (AP, TS, MP, UP, KA, CG) as destination types in Outward/Dispatch
 - **Variety Field in Dispatch**: Added product variety field to outward/dispatch records for better tracking

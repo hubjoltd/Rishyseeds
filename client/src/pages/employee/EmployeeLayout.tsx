@@ -7,6 +7,11 @@ import EmployeeDashboard from "./EmployeeDashboard";
 import EmployeeAttendance from "./EmployeeAttendance";
 import EmployeePayslips from "./EmployeePayslips";
 import EmployeeOperations from "./EmployeeOperations";
+import EmployeeInward from "./EmployeeInward";
+import EmployeeProcessing from "./EmployeeProcessing";
+import EmployeePacking from "./EmployeePacking";
+import EmployeeStockMovement from "./EmployeeStockMovement";
+import EmployeeOutward from "./EmployeeOutward";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -69,6 +74,11 @@ export default function EmployeeLayout() {
           <Route path="/employee-portal/attendance" component={() => <EmployeeAttendance employee={employee} />} />
           <Route path="/employee-portal/payslips" component={() => <EmployeePayslips employee={employee} />} />
           <Route path="/employee-portal/operations" component={() => <EmployeeOperations employee={employee} />} />
+          <Route path="/employee-portal/inward" component={() => <EmployeeInward employee={employee} />} />
+          <Route path="/employee-portal/processing" component={() => <EmployeeProcessing employee={employee} />} />
+          <Route path="/employee-portal/packing" component={() => <EmployeePacking employee={employee} />} />
+          <Route path="/employee-portal/stock-movement" component={() => <EmployeeStockMovement employee={employee} />} />
+          <Route path="/employee-portal/outward" component={() => <EmployeeOutward employee={employee} />} />
           <Route component={() => <EmployeeDashboard employee={employee} />} />
         </Switch>
       </main>
