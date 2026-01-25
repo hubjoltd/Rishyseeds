@@ -87,6 +87,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
+- **Employee Portal Reference Data Access**: All employees can now view products, locations, and packaging sizes regardless of their role permissions (these are lookup tables needed for creating records). The `checkPermission` middleware was updated to allow read access to reference data for all authenticated employees.
 - **Admin Notifications System**: Bell icon in admin sidebar shows real-time notifications for employee activities. Tracks punch in/out, inward, processing, packing, stock movement, and outward operations. Unread count badge, mark as read, and mark all read functionality.
 - **Created By Tracking**: All plant operations records (Inward, Processing, Packing, Stock Movement, Outward) now store createdBy employee ID. Admin portal displays "Created By" column showing employee names. Employee portal automatically populates createdBy when creating new records.
 - **Complete Employee CRUD**: All 5 plant operations pages (Inward, Processing, Packing, Stock Movement, Outward) now have complete Add/Edit/Delete functionality with working dialogs, form validation, and proper state management

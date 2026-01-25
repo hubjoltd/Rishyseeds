@@ -244,17 +244,28 @@ export async function registerRoutes(
   });
 
   // === ROLE-BASED AUTHORIZATION MIDDLEWARE ===
-  // Routes that employees can access - permissions are further checked by checkPermission middleware
+  // Routes that employees can access for reading/writing - permissions are further checked by checkPermission middleware
   const employeeAccessibleRoutes = [
-    '/api/products', '/api/locations', '/api/lots', '/api/packaging-sizes',
-    '/api/stock', '/api/processing', '/api/outward', '/api/packaging'
+    '/api/lots', '/api/stock', '/api/processing', '/api/outward', '/api/packaging'
+  ];
+  
+  // Reference data routes that employees can only READ (GET requests only)
+  const employeeReadOnlyRoutes = [
+    '/api/products', '/api/locations', '/api/packaging-sizes'
   ];
   
   const checkRoleForPath = (routePath: string) => {
     return async (req: any, res: any, next: any) => {
       // Allow employee access to certain routes - individual endpoints check permissions via checkPermission
-      if (req.employeeId && employeeAccessibleRoutes.includes(routePath)) {
-        return next();
+      if (req.employeeId) {
+        // Full access routes - let checkPermission handle the action-level authorization
+        if (employeeAccessibleRoutes.includes(routePath)) {
+          return next();
+        }
+        // Read-only access routes - only allow GET requests
+        if (employeeReadOnlyRoutes.includes(routePath) && req.method === 'GET') {
+          return next();
+        }
       }
       
       const userId = req.userId;
@@ -278,13 +289,26 @@ export async function registerRoutes(
     };
   };
 
+  // Reference data resources that all authenticated employees can view
+  const referenceDataResources: Resource[] = ['products', 'locations', 'packagingSizes'];
+  
   // Granular permission check middleware
   const checkPermission = (resource: Resource, action: Action) => {
     return async (req: any, res: any, next: any) => {
       // Check if employee is authenticated and has role-based permissions
       if (req.employeeId) {
         const employee = await storage.getEmployee(req.employeeId);
-        if (employee && employee.role) {
+        if (!employee) {
+          return res.status(401).json({ message: "Employee not found" });
+        }
+        
+        // Allow all employees to view reference data (products, locations, packaging sizes)
+        if (action === 'view' && referenceDataResources.includes(resource)) {
+          (req as any).employee = employee;
+          return next();
+        }
+        
+        if (employee.role) {
           // Get role permissions from roles table
           const role = await storage.getRoleByName(employee.role);
           if (role && role.permissions) {
