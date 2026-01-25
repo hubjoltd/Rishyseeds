@@ -11,6 +11,19 @@ function getEmployeeAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function formatTimeString(timeStr: string | null | undefined): string {
+  if (!timeStr) return "-";
+  // Handle both time strings "HH:mm" and ISO timestamps
+  if (timeStr.includes("T") || timeStr.includes("-")) {
+    return format(new Date(timeStr), "h:mm a");
+  }
+  // Convert "HH:mm" to 12-hour format
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
+}
+
 interface EmployeeAttendanceProps {
   employee: {
     fullName: string;
@@ -28,9 +41,19 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
     },
   });
 
-  const formatDuration = (punchIn: string, punchOut: string | null) => {
-    if (!punchOut) return "-";
-    const minutes = differenceInMinutes(new Date(punchOut), new Date(punchIn));
+  const formatDuration = (checkIn: string | null, checkOut: string | null) => {
+    if (!checkIn || !checkOut) return "-";
+    // Handle time strings like "HH:mm"
+    const parseTime = (timeStr: string) => {
+      if (timeStr.includes("T") || timeStr.includes("-")) {
+        return new Date(timeStr);
+      }
+      const [hours, minutes] = timeStr.split(":").map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date;
+    };
+    const minutes = differenceInMinutes(parseTime(checkOut), parseTime(checkIn));
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}h ${mins}m`;
@@ -127,10 +150,10 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
                         {format(new Date(record.date), "EEE, MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
-                        {record.checkIn ? format(new Date(record.checkIn), "h:mm a") : "-"}
+                        {formatTimeString(record.checkIn)}
                       </TableCell>
                       <TableCell>
-                        {record.checkOut ? format(new Date(record.checkOut), "h:mm a") : "-"}
+                        {formatTimeString(record.checkOut)}
                       </TableCell>
                       <TableCell>
                         {formatDuration(record.checkIn, record.checkOut)}

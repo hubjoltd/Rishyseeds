@@ -13,6 +13,19 @@ function getEmployeeAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function formatTimeString(timeStr: string | null | undefined): string {
+  if (!timeStr) return "-";
+  // Handle both time strings "HH:mm" and ISO timestamps
+  if (timeStr.includes("T") || timeStr.includes("-")) {
+    return format(new Date(timeStr), "h:mm a");
+  }
+  // Convert "HH:mm" to 12-hour format
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
+}
+
 interface EmployeeDashboardProps {
   employee: {
     fullName: string;
@@ -169,7 +182,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           </CardHeader>
           <CardContent>
             {todayAttendance?.checkIn ? (
-              <p className="text-lg font-semibold">{format(new Date(todayAttendance.checkIn), "h:mm a")}</p>
+              <p className="text-lg font-semibold">{formatTimeString(todayAttendance.checkIn)}</p>
             ) : (
               <p className="text-sm text-muted-foreground">Not punched in</p>
             )}
@@ -223,13 +236,13 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               <div>
                 <span className="text-muted-foreground">Punch In:</span>
                 <span className="ml-2 font-medium">
-                  {todayAttendance?.checkIn ? format(new Date(todayAttendance.checkIn), "h:mm a") : "-"}
+                  {formatTimeString(todayAttendance?.checkIn)}
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground">Punch Out:</span>
                 <span className="ml-2 font-medium">
-                  {todayAttendance?.checkOut ? format(new Date(todayAttendance.checkOut), "h:mm a") : "-"}
+                  {formatTimeString(todayAttendance?.checkOut)}
                 </span>
               </div>
             </div>
