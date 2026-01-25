@@ -12,6 +12,21 @@ import crypto from "crypto";
 // Simple in-memory token store (use Redis/DB in production)
 const tokenStore = new Map<string, { type: 'user' | 'employee', id: number, expiresAt: number }>();
 
+// Helper functions to get Indian Standard Time (IST = UTC+5:30)
+function getISTDate(): string {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in ms
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.toISOString().slice(0, 10);
+}
+
+function getISTTime(): string {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in ms
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.toISOString().slice(11, 16); // HH:mm format
+}
+
 function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -1366,14 +1381,14 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getISTDate();
       const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
       
       if (existingAttendance?.checkIn) {
         return res.status(400).json({ message: "Already punched in today" });
       }
       
-      const now = new Date().toTimeString().slice(0, 5);
+      const now = getISTTime();
       
       if (existingAttendance) {
         await storage.updateAttendance(existingAttendance.id, { checkIn: now, status: "present" });
@@ -1408,7 +1423,7 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getISTDate();
       const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
       
       if (!existingAttendance?.checkIn) {
@@ -1419,7 +1434,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Already punched out today" });
       }
       
-      const now = new Date().toTimeString().slice(0, 5);
+      const now = getISTTime();
       await storage.updateAttendance(existingAttendance.id, { checkOut: now });
       
       // Create notification for admin
@@ -1444,7 +1459,7 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getISTDate();
       const attendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
       
       res.json(attendance || null);
