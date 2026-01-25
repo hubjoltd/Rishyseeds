@@ -116,6 +116,8 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       toast({ title: "Success", description: "Packing record created" });
       setOpen(false);
       form.reset();
+      setSelectedProductId(null);
+      setSelectedLotId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -141,6 +143,8 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
       setOpen(false);
       setEditingRecord(null);
       form.reset();
+      setSelectedProductId(null);
+      setSelectedLotId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -198,6 +202,11 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
   const handleEdit = (record: any) => {
     setEditingRecord(record);
+    const lot = lots?.find((l: any) => l.id === record.lotId);
+    if (lot) {
+      setSelectedProductId(lot.productId);
+    }
+    setSelectedLotId(record.lotId);
     form.reset({
       lotId: record.lotId,
       packagingSizeId: record.packagingSizeId,

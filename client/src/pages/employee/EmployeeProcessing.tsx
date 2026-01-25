@@ -104,6 +104,8 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
       toast({ title: "Success", description: "Processing record created" });
       setOpen(false);
       form.reset();
+      setSelectedProductId(null);
+      setSelectedLotId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -129,6 +131,8 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
       setOpen(false);
       setEditingRecord(null);
       form.reset();
+      setSelectedProductId(null);
+      setSelectedLotId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -181,6 +185,11 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
 
   const handleEdit = (record: any) => {
     setEditingRecord(record);
+    const lot = lots?.find((l: any) => l.id === record.inputLotId);
+    if (lot) {
+      setSelectedProductId(lot.productId);
+    }
+    setSelectedLotId(record.inputLotId);
     form.reset({
       inputLotId: record.inputLotId,
       inputQuantity: Number(record.inputQuantity),

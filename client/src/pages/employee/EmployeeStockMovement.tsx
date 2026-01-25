@@ -116,6 +116,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       toast({ title: "Success", description: "Stock movement recorded" });
       setOpen(false);
       form.reset();
+      setSelectedProductId(null);
       setSelectedLotId(null);
     },
     onError: (error: Error) => {
@@ -142,6 +143,8 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       setOpen(false);
       setEditingRecord(null);
       form.reset();
+      setSelectedProductId(null);
+      setSelectedLotId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -201,6 +204,11 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
   const handleEdit = (record: any) => {
     setEditingRecord(record);
+    const lot = lots?.find((l: any) => l.id === record.lotId);
+    if (lot) {
+      setSelectedProductId(lot.productId);
+    }
+    setSelectedLotId(record.lotId);
     form.reset({
       lotId: record.lotId,
       fromLocationId: record.fromLocationId,
@@ -210,7 +218,6 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       movementDate: record.movementDate || "",
       remarks: record.remarks || "",
     });
-    setSelectedLotId(record.lotId);
     setOpen(true);
   };
 
