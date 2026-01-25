@@ -87,6 +87,8 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
+- **Role-Based Employee Portal**: Employee sidebar now displays menu items based on their role permissions (configured in Roles page)
+- **Employee Permissions API**: New endpoint `/api/employee/permissions` returns permissions based on employee's role from roles table
 - **Employee Portal Plant Operations**: Added Inward, Processing, Packing, Stock Movement, and Outward pages to employee portal with collapsible sidebar section
 - **Production Database Seeding**: Script to seed Neon production database with 22 locations/warehouses and 67 product varieties from Telangana license document
 - **Responsive Employee Sidebar**: Collapsible Plant Operations section with all seed operations pages
