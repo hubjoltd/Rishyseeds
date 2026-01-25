@@ -20,6 +20,11 @@ function getEmployeeAuthHeaders(): Record<string, string> {
 
 export type EmployeePermissions = Record<string, string[]>;
 
+export function hasPermission(permissions: EmployeePermissions, resource: string, action: string): boolean {
+  const resourcePerms = permissions[resource];
+  return Array.isArray(resourcePerms) && resourcePerms.includes(action);
+}
+
 export default function EmployeeLayout() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -88,11 +93,11 @@ export default function EmployeeLayout() {
           <Route path="/employee-portal/attendance" component={() => <EmployeeAttendance employee={employee} />} />
           <Route path="/employee-portal/payslips" component={() => <EmployeePayslips employee={employee} />} />
           <Route path="/employee-portal/operations" component={() => <EmployeeOperations employee={employee} />} />
-          <Route path="/employee-portal/inward" component={() => <EmployeeInward employee={employee} />} />
-          <Route path="/employee-portal/processing" component={() => <EmployeeProcessing employee={employee} />} />
-          <Route path="/employee-portal/packing" component={() => <EmployeePacking employee={employee} />} />
-          <Route path="/employee-portal/stock-movement" component={() => <EmployeeStockMovement employee={employee} />} />
-          <Route path="/employee-portal/outward" component={() => <EmployeeOutward employee={employee} />} />
+          <Route path="/employee-portal/inward" component={() => <EmployeeInward employee={employee} permissions={permissions} />} />
+          <Route path="/employee-portal/processing" component={() => <EmployeeProcessing employee={employee} permissions={permissions} />} />
+          <Route path="/employee-portal/packing" component={() => <EmployeePacking employee={employee} permissions={permissions} />} />
+          <Route path="/employee-portal/stock-movement" component={() => <EmployeeStockMovement employee={employee} permissions={permissions} />} />
+          <Route path="/employee-portal/outward" component={() => <EmployeeOutward employee={employee} permissions={permissions} />} />
           <Route component={() => <EmployeeDashboard employee={employee} />} />
         </Switch>
       </main>

@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRightLeft, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowRightLeft, ArrowRight, Plus, Pencil, Trash2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
+import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -17,9 +19,14 @@ interface EmployeeProps {
     fullName: string;
     employeeId: string;
   };
+  permissions?: EmployeePermissions;
 }
 
-export default function EmployeeStockMovement({ employee }: EmployeeProps) {
+export default function EmployeeStockMovement({ employee, permissions = {} }: EmployeeProps) {
+  const canCreate = hasPermission(permissions, "stock", "create");
+  const canEdit = hasPermission(permissions, "stock", "edit");
+  const canDelete = hasPermission(permissions, "stock", "delete");
+
   const { data: movements, isLoading } = useQuery({
     queryKey: ["/api/stock-movements"],
     queryFn: async () => {
@@ -64,14 +71,22 @@ export default function EmployeeStockMovement({ employee }: EmployeeProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-primary/10 rounded-lg">
-          <ArrowRightLeft className="w-6 h-6 text-primary" />
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <ArrowRightLeft className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Stock Movement</h1>
+            <p className="text-muted-foreground">View stock transfer records</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stock Movement</h1>
-          <p className="text-muted-foreground">View stock transfer records</p>
-        </div>
+        {canCreate && (
+          <Button data-testid="button-add-movement">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Movement
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -102,6 +117,7 @@ export default function EmployeeStockMovement({ employee }: EmployeeProps) {
                     <TableHead>Quantity (KG)</TableHead>
                     <TableHead>Stock Form</TableHead>
                     <TableHead>Date</TableHead>
+                    {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -118,6 +134,22 @@ export default function EmployeeStockMovement({ employee }: EmployeeProps) {
                         <Badge variant="outline">{record.stockForm || "Raw Seeds"}</Badge>
                       </TableCell>
                       <TableCell>{formatDate(record.movementDate)}</TableCell>
+                      {(canEdit || canDelete) && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" data-testid={`button-edit-movement-${record.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button size="icon" variant="ghost" className="text-destructive" data-testid={`button-delete-movement-${record.id}`}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

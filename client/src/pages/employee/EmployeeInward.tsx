@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowDownToLine, Package } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowDownToLine, Package, Plus, Pencil, Trash2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
+import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -17,9 +19,14 @@ interface EmployeeProps {
     fullName: string;
     employeeId: string;
   };
+  permissions?: EmployeePermissions;
 }
 
-export default function EmployeeInward({ employee }: EmployeeProps) {
+export default function EmployeeInward({ employee, permissions = {} }: EmployeeProps) {
+  const canCreate = hasPermission(permissions, "lots", "create");
+  const canEdit = hasPermission(permissions, "lots", "edit");
+  const canDelete = hasPermission(permissions, "lots", "delete");
+
   const { data: lots, isLoading } = useQuery({
     queryKey: ["/api/lots"],
     queryFn: async () => {
@@ -50,14 +57,22 @@ export default function EmployeeInward({ employee }: EmployeeProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-primary/10 rounded-lg">
-          <ArrowDownToLine className="w-6 h-6 text-primary" />
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <ArrowDownToLine className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Inward Records</h1>
+            <p className="text-muted-foreground">View incoming seed lots</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inward Records</h1>
-          <p className="text-muted-foreground">View incoming seed lots</p>
-        </div>
+        {canCreate && (
+          <Button data-testid="button-add-inward">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Inward
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -87,6 +102,7 @@ export default function EmployeeInward({ employee }: EmployeeProps) {
                     <TableHead>Quantity (KG)</TableHead>
                     <TableHead>Received Date</TableHead>
                     <TableHead>Status</TableHead>
+                    {(canEdit || canDelete) && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -102,6 +118,22 @@ export default function EmployeeInward({ employee }: EmployeeProps) {
                           {lot.status || "Active"}
                         </Badge>
                       </TableCell>
+                      {(canEdit || canDelete) && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" data-testid={`button-edit-lot-${lot.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button size="icon" variant="ghost" className="text-destructive" data-testid={`button-delete-lot-${lot.id}`}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
