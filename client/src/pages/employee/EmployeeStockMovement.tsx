@@ -62,9 +62,9 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   });
 
   const { data: movements, isLoading } = useQuery({
-    queryKey: ["/api/stock-movements"],
+    queryKey: ["/api/stock/movements"],
     queryFn: async () => {
-      const res = await fetch("/api/stock-movements", { headers: getEmployeeAuthHeaders() });
+      const res = await fetch("/api/stock/movements", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch stock movements");
       return res.json();
     },
@@ -99,7 +99,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch("/api/stock-movements", {
+      const res = await fetch("/api/stock/movements", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
@@ -111,7 +111,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
       toast({ title: "Success", description: "Stock movement recorded" });
       setOpen(false);
       form.reset();
@@ -124,7 +124,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const res = await fetch(`/api/stock-movements/${id}`, {
+      const res = await fetch(`/api/stock/movements/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
@@ -136,7 +136,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
       toast({ title: "Success", description: "Movement updated" });
       setOpen(false);
       setEditingRecord(null);
@@ -149,7 +149,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/stock-movements/${id}`, {
+      const res = await fetch(`/api/stock/movements/${id}`, {
         method: "DELETE",
         headers: getEmployeeAuthHeaders(),
       });
@@ -160,7 +160,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
       toast({ title: "Success", description: "Movement deleted" });
       setDeleteRecordId(null);
     },
