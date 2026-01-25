@@ -11,6 +11,20 @@ import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import logo from "@assets/20260121014034_1768984704057.webp";
 
+const EMPLOYEE_TOKEN_KEY = 'employee_auth_token';
+
+function setEmployeeToken(token: string): void {
+  localStorage.setItem(EMPLOYEE_TOKEN_KEY, token);
+}
+
+export function getEmployeeToken(): string | null {
+  return localStorage.getItem(EMPLOYEE_TOKEN_KEY);
+}
+
+export function clearEmployeeToken(): void {
+  localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
+}
+
 const employeeLoginSchema = z.object({
   employeeId: z.string().min(1, "Employee ID is required"),
   password: z.string().min(1, "Password is required"),
@@ -34,7 +48,6 @@ export default function EmployeeLogin() {
       const res = await fetch("/api/employee/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -44,6 +57,9 @@ export default function EmployeeLogin() {
       return res.json();
     },
     onSuccess: (data) => {
+      if (data.token) {
+        setEmployeeToken(data.token);
+      }
       queryClient.setQueryData(["/api/employee/me"], data);
       toast({ title: "Welcome!", description: `Logged in as ${data.fullName}` });
       setLocation("/employee");

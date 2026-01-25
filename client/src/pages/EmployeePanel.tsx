@@ -10,6 +10,15 @@ import { Loader2, LogOut, Clock, User, FileText, Calendar, Download, Cog, Packag
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import logo from "@assets/20260121014034_1768984704057.webp";
+import { getEmployeeToken, clearEmployeeToken } from "./EmployeeLogin";
+
+function getEmployeeAuthHeaders(): Record<string, string> {
+  const token = getEmployeeToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 export default function EmployeePanel() {
   const [, setLocation] = useLocation();
@@ -19,8 +28,14 @@ export default function EmployeePanel() {
   const { data: employee, isLoading } = useQuery({
     queryKey: ["/api/employee/me"],
     queryFn: async () => {
-      const res = await fetch("/api/employee/me", { credentials: "include" });
+      const token = getEmployeeToken();
+      if (!token) {
+        setLocation("/employee-login");
+        return null;
+      }
+      const res = await fetch("/api/employee/me", { headers: getEmployeeAuthHeaders() });
       if (res.status === 401) {
+        clearEmployeeToken();
         setLocation("/employee-login");
         return null;
       }
@@ -32,7 +47,7 @@ export default function EmployeePanel() {
   const { data: attendance, isLoading: attendanceLoading } = useQuery({
     queryKey: ["/api/employee/attendance"],
     queryFn: async () => {
-      const res = await fetch("/api/employee/attendance", { credentials: "include" });
+      const res = await fetch("/api/employee/attendance", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch attendance");
       return res.json();
     },
@@ -42,7 +57,7 @@ export default function EmployeePanel() {
   const { data: payslips, isLoading: payslipsLoading } = useQuery({
     queryKey: ["/api/employee/payslips"],
     queryFn: async () => {
-      const res = await fetch("/api/employee/payslips", { credentials: "include" });
+      const res = await fetch("/api/employee/payslips", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch payslips");
       return res.json();
     },
@@ -52,7 +67,7 @@ export default function EmployeePanel() {
   const { data: todayAttendance, isLoading: todayLoading } = useQuery({
     queryKey: ["/api/employee/attendance/today"],
     queryFn: async () => {
-      const res = await fetch("/api/employee/attendance/today", { credentials: "include" });
+      const res = await fetch("/api/employee/attendance/today", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) return null;
       return res.json();
     },
@@ -62,7 +77,7 @@ export default function EmployeePanel() {
   const { data: operations, isLoading: operationsLoading } = useQuery({
     queryKey: ["/api/employee/operations"],
     queryFn: async () => {
-      const res = await fetch("/api/employee/operations", { credentials: "include" });
+      const res = await fetch("/api/employee/operations", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch operations");
       return res.json();
     },
@@ -73,7 +88,7 @@ export default function EmployeePanel() {
     mutationFn: async (type: "in" | "out") => {
       const res = await fetch(`/api/employee/punch-${type}`, {
         method: "POST",
-        credentials: "include",
+        headers: getEmployeeAuthHeaders(),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -93,7 +108,8 @@ export default function EmployeePanel() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await fetch("/api/employee/logout", { method: "POST", credentials: "include" });
+      await fetch("/api/employee/logout", { method: "POST", headers: getEmployeeAuthHeaders() });
+      clearEmployeeToken();
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/employee/me"], null);
@@ -104,7 +120,7 @@ export default function EmployeePanel() {
 
   const downloadPayslip = async (payrollId: number, month: string) => {
     try {
-      const res = await fetch(`/api/employee/payslips/${payrollId}/download`, { credentials: "include" });
+      const res = await fetch(`/api/employee/payslips/${payrollId}/download`, { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to download payslip");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);

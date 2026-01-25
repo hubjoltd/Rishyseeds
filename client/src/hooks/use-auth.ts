@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type InsertUser, type User } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { setAuthToken, clearAuthToken, getAuthToken } from "@/lib/queryClient";
 
 type Action = 'view' | 'create' | 'edit' | 'delete';
 type Resource = 'batches' | 'locations' | 'stock' | 'packaging' | 'products' | 'employees' | 'attendance' | 'payroll' | 'users' | 'reports' | 'dashboard' | 'lots' | 'processing' | 'outward' | 'packagingSizes';
@@ -18,8 +19,16 @@ export function useAuth() {
   const userQuery = useQuery({
     queryKey: [api.auth.me.path],
     queryFn: async () => {
-      const res = await fetch(api.auth.me.path, { credentials: "include" });
-      if (res.status === 401) return null;
+      const token = getAuthToken();
+      if (!token) return null;
+      
+      const res = await fetch(api.auth.me.path, { 
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        clearAuthToken();
+        return null;
+      }
       if (!res.ok) throw new Error("Failed to fetch user");
       return await res.json() as User;
     },
@@ -28,7 +37,12 @@ export function useAuth() {
   const permissionsQuery = useQuery({
     queryKey: ["/api/auth/permissions"],
     queryFn: async () => {
-      const res = await fetch("/api/auth/permissions", { credentials: "include" });
+      const token = getAuthToken();
+      if (!token) return null;
+      
+      const res = await fetch("/api/auth/permissions", { 
+        headers: { Authorization: `Bearer ${token}` }
+      });
       if (res.status === 401) return null;
       if (!res.ok) throw new Error("Failed to fetch permissions");
       return await res.json() as UserPermissions;
@@ -41,7 +55,6 @@ export function useAuth() {
       const res = await fetch(api.auth.login.path, {
         method: api.auth.login.method,
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(credentials),
       });
 
@@ -49,10 +62,17 @@ export function useAuth() {
         const error = await res.json();
         throw new Error(error.message || "Login failed");
       }
-      return await res.json() as User;
+      const data = await res.json() as User & { token: string };
+      
+      if (data.token) {
+        setAuthToken(data.token);
+      }
+      
+      return data;
     },
     onSuccess: (user) => {
       queryClient.setQueryData([api.auth.me.path], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/permissions"] });
       toast({ title: "Welcome back!", description: `Logged in as ${user.username}` });
     },
     onError: (error: Error) => {
@@ -62,11 +82,16 @@ export function useAuth() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await fetch(api.auth.logout.path, { method: api.auth.logout.method, credentials: "include" });
+      const token = getAuthToken();
+      await fetch(api.auth.logout.path, { 
+        method: api.auth.logout.method,
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      clearAuthToken();
     },
     onSuccess: () => {
       queryClient.setQueryData([api.auth.me.path], null);
-      queryClient.clear(); // Clear all data on logout
+      queryClient.clear();
       toast({ title: "Logged out", description: "See you next time!" });
     },
   });

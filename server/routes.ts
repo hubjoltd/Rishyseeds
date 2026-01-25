@@ -5,12 +5,37 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import session from "express-session";
-import MemoryStore from "memorystore";
 import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
 import { seedProductsAndWarehouses } from "./seed-data";
+import crypto from "crypto";
 
-const SessionStore = MemoryStore(session);
+// Simple in-memory token store (use Redis/DB in production)
+const tokenStore = new Map<string, { type: 'user' | 'employee', id: number, expiresAt: number }>();
+
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function createToken(type: 'user' | 'employee', id: number): string {
+  const token = generateToken();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  tokenStore.set(token, { type, id, expiresAt });
+  return token;
+}
+
+function validateToken(token: string): { type: 'user' | 'employee', id: number } | null {
+  const session = tokenStore.get(token);
+  if (!session) return null;
+  if (session.expiresAt < Date.now()) {
+    tokenStore.delete(token);
+    return null;
+  }
+  return { type: session.type, id: session.id };
+}
+
+function deleteToken(token: string): void {
+  tokenStore.delete(token);
+}
 
 type UserRole = 'admin' | 'manager' | 'hr' | 'godown_operator' | 'production_operator' | 'dispatch_operator';
 type Action = 'view' | 'create' | 'edit' | 'delete';
@@ -147,26 +172,24 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // === SESSION SETUP ===
-  app.set('trust proxy', 1);
-  const sessionStore = new SessionStore({
-    checkPeriod: 86400000 // prune expired entries every 24h
-  });
-  
-  app.use(session({
-    name: 'rishi.sid',
-    secret: process.env.SESSION_SECRET || 'rishi-seeds-secret-key',
-    resave: true,
-    saveUninitialized: true,
-    store: sessionStore,
-    cookie: { 
-      path: '/',
-      secure: false,
-      httpOnly: true,
-      sameSite: 'lax' as const,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  // === TOKEN-BASED AUTH MIDDLEWARE ===
+  // Extract token from Authorization header and attach user/employee ID to request
+  app.use((req: any, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const session = validateToken(token);
+      if (session) {
+        if (session.type === 'user') {
+          req.userId = session.id;
+        } else {
+          req.employeeId = session.id;
+        }
+        req.authToken = token;
+      }
     }
-  }));
+    next();
+  });
   
 
   // === AUTH ROUTES ===
@@ -179,29 +202,22 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
-      (req.session as any).userId = user.id;
-      
-      // Explicitly save session before responding
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          return res.status(500).json({ message: "Session error" });
-        }
-        res.json(user);
-      });
+      const token = createToken('user', user.id);
+      res.json({ ...user, token });
     } catch (error) {
       res.status(400).json({ message: "Invalid input" });
     }
   });
 
-  app.post(api.auth.logout.path, (req, res) => {
-    req.session.destroy(() => {
-      res.json({ message: "Logged out" });
-    });
+  app.post(api.auth.logout.path, (req: any, res) => {
+    if (req.authToken) {
+      deleteToken(req.authToken);
+    }
+    res.json({ message: "Logged out" });
   });
 
-  app.get(api.auth.me.path, async (req, res) => {
-    const userId = (req.session as any).userId;
+  app.get(api.auth.me.path, async (req: any, res) => {
+    const userId = req.userId;
     if (!userId) return res.status(401).json(null);
     
     const user = await storage.getUser(userId);
@@ -211,8 +227,8 @@ export async function registerRoutes(
   });
 
   // Get current user's permissions
-  app.get("/api/auth/permissions", async (req, res) => {
-    const userId = (req.session as any).userId;
+  app.get("/api/auth/permissions", async (req: any, res) => {
+    const userId = req.userId;
     if (!userId) return res.status(401).json({ message: "Not authenticated" });
     
     const user = await storage.getUser(userId);
@@ -230,7 +246,7 @@ export async function registerRoutes(
   // === ROLE-BASED AUTHORIZATION MIDDLEWARE ===
   const checkRoleForPath = (routePath: string) => {
     return async (req: any, res: any, next: any) => {
-      const userId = (req.session as any)?.userId;
+      const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -254,7 +270,7 @@ export async function registerRoutes(
   // Granular permission check middleware
   const checkPermission = (resource: Resource, action: Action) => {
     return async (req: any, res: any, next: any) => {
-      const userId = (req.session as any)?.userId;
+      const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -334,13 +350,13 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/users/:id", async (req, res) => {
+  app.delete("/api/users/:id", async (req: any, res) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
-      const currentUserId = (req.session as any)?.userId;
+      const currentUserId = req.userId;
       if (id === currentUserId) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
@@ -1059,22 +1075,22 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
-      (req.session as any).employeeId = employee.id;
-      res.json(employee);
+      const token = createToken('employee', employee.id);
+      res.json({ ...employee, token });
     } catch (error) {
       res.status(400).json({ message: "Login failed" });
     }
   });
 
-  app.post("/api/employee/logout", (req, res) => {
-    (req.session as any).employeeId = null;
-    req.session.destroy(() => {
-      res.json({ message: "Logged out" });
-    });
+  app.post("/api/employee/logout", (req: any, res) => {
+    if (req.authToken) {
+      deleteToken(req.authToken);
+    }
+    res.json({ message: "Logged out" });
   });
 
-  app.get("/api/employee/me", async (req, res) => {
-    const employeeId = (req.session as any).employeeId;
+  app.get("/api/employee/me", async (req: any, res) => {
+    const employeeId = req.employeeId;
     if (!employeeId) return res.status(401).json(null);
     
     const employee = await storage.getEmployee(employeeId);
@@ -1083,9 +1099,9 @@ export async function registerRoutes(
     res.json(employee);
   });
 
-  app.post("/api/employee/punch-in", async (req, res) => {
+  app.post("/api/employee/punch-in", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const today = new Date().toISOString().slice(0, 10);
@@ -1114,9 +1130,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/employee/punch-out", async (req, res) => {
+  app.post("/api/employee/punch-out", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const today = new Date().toISOString().slice(0, 10);
@@ -1139,9 +1155,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/employee/attendance/today", async (req, res) => {
+  app.get("/api/employee/attendance/today", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const today = new Date().toISOString().slice(0, 10);
@@ -1153,9 +1169,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/employee/attendance", async (req, res) => {
+  app.get("/api/employee/attendance", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const records = await storage.getAttendanceByEmployee(employeeId);
@@ -1165,9 +1181,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/employee/payslips", async (req, res) => {
+  app.get("/api/employee/payslips", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const payslips = await storage.getPayrollsByEmployee(employeeId);
@@ -1177,9 +1193,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/employee/operations", async (req, res) => {
+  app.get("/api/employee/operations", async (req: any, res) => {
     try {
-      const empId = (req.session as any).employeeId;
+      const empId = req.employeeId;
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
       
       const employee = await storage.getEmployee(empId);
@@ -1200,9 +1216,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/employee/payslips/:id/download", async (req, res) => {
+  app.get("/api/employee/payslips/:id/download", async (req: any, res) => {
     try {
-      const employeeId = (req.session as any).employeeId;
+      const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
       const payrollId = parseInt(req.params.id);
