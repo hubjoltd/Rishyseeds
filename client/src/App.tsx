@@ -26,7 +26,7 @@ import Processing from "@/pages/Processing";
 import Outward from "@/pages/Outward";
 import PackagingSizes from "@/pages/PackagingSizes";
 import EmployeeLogin from "@/pages/EmployeeLogin";
-import EmployeePanel from "@/pages/EmployeePanel";
+import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -59,7 +59,8 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/employee-login" component={EmployeeLogin} />
-      <Route path="/employee" component={EmployeePanel} />
+      <Route path="/employee-portal/:rest*" component={EmployeeLayout} />
+      <Route path="/employee-portal" component={EmployeeLayout} />
       
       {/* Protected Routes */}
       <Route path="/">

@@ -1,0 +1,172 @@
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
+import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard,
+  Clock,
+  FileText,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  X,
+  User,
+  Calendar,
+  Package,
+  Truck
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import logo from "@assets/20260121014034_1768984704057.webp";
+
+interface MenuItem {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+}
+
+const menuItems: MenuItem[] = [
+  { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal" },
+  { icon: Clock, label: "Attendance", href: "/employee-portal/attendance" },
+  { icon: FileText, label: "Payslips", href: "/employee-portal/payslips" },
+  { icon: Package, label: "My Operations", href: "/employee-portal/operations" },
+];
+
+interface EmployeeSidebarProps {
+  employee: {
+    fullName: string;
+    employeeId: string;
+    role?: string;
+  } | null;
+  onLogout: () => void;
+}
+
+export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
+  const [location] = useLocation();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const toggleCollapse = () => setIsCollapsed(!isCollapsed);
+  const toggleMobile = () => setIsMobileOpen(!isMobileOpen);
+
+  const isActive = (href: string) => {
+    if (href === "/employee-portal") {
+      return location === "/employee-portal" || location === "/employee-portal/";
+    }
+    return location.startsWith(href);
+  };
+
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className={cn(
+        "flex items-center border-b border-green-200/50 transition-all duration-300",
+        isCollapsed ? "justify-center p-4" : "gap-3 p-4"
+      )}>
+        <img src={logo} alt="Rishi Seeds" className={cn("transition-all", isCollapsed ? "w-10 h-10" : "w-12 h-12")} />
+        {!isCollapsed && (
+          <div className="flex-1 min-w-0">
+            <h1 className="font-bold text-primary text-lg truncate">Employee Portal</h1>
+            <p className="text-xs text-muted-foreground truncate">{employee?.fullName || "Loading..."}</p>
+          </div>
+        )}
+      </div>
+
+      <nav className="flex-1 overflow-y-auto py-4 px-2">
+        <ul className="space-y-1">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+            return (
+              <li key={item.href}>
+                <Link href={item.href}>
+                  <div
+                    onClick={() => setIsMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer",
+                      active
+                        ? "bg-primary text-primary-foreground shadow-md"
+                        : "text-muted-foreground hover:bg-green-50 hover:text-primary",
+                      isCollapsed && "justify-center"
+                    )}
+                    data-testid={`nav-employee-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                  >
+                    <Icon className={cn("flex-shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5")} />
+                    {!isCollapsed && <span className="truncate font-medium">{item.label}</span>}
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <div className="border-t border-green-200/50 p-2">
+        {!isCollapsed && employee && (
+          <div className="px-3 py-2 mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{employee.fullName}</p>
+                <p className="text-xs text-muted-foreground truncate">{employee.role || employee.employeeId}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <Button
+          variant="ghost"
+          onClick={onLogout}
+          className={cn(
+            "w-full text-red-600 hover:text-red-700 hover:bg-red-50",
+            isCollapsed ? "justify-center px-2" : "justify-start"
+          )}
+          data-testid="button-employee-logout"
+        >
+          <LogOut className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4 mr-2")} />
+          {!isCollapsed && "Logout"}
+        </Button>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={toggleCollapse}
+        className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 p-0 rounded-full bg-white border shadow-md hover:bg-gray-50"
+        data-testid="button-employee-collapse-sidebar"
+      >
+        {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+      </Button>
+    </div>
+  );
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleMobile}
+        className="lg:hidden fixed top-4 left-4 z-50 bg-white shadow-md"
+        data-testid="button-employee-mobile-menu"
+      >
+        {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </Button>
+
+      {isMobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          "fixed lg:relative z-40 h-full bg-gradient-to-b from-green-50/80 to-white border-r border-green-100 transition-all duration-300 flex flex-col",
+          isCollapsed ? "lg:w-[72px]" : "lg:w-64",
+          isMobileOpen ? "w-64 translate-x-0" : "-translate-x-full lg:translate-x-0"
+        )}
+      >
+        <SidebarContent />
+      </aside>
+    </>
+  );
+}

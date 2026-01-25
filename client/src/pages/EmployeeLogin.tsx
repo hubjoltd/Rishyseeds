@@ -62,7 +62,7 @@ export default function EmployeeLogin() {
       }
       queryClient.setQueryData(["/api/employee/me"], data);
       toast({ title: "Welcome!", description: `Logged in as ${data.fullName}` });
-      setLocation("/employee");
+      setLocation("/employee-portal");
     },
     onError: (error: Error) => {
       toast({ title: "Login Failed", description: error.message, variant: "destructive" });
