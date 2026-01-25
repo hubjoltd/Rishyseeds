@@ -218,19 +218,15 @@ export default function Outward() {
                   <label className="text-sm font-medium">Destination Type</label>
                   <Select onValueChange={(val) => form.setValue("destinationType", val)}>
                     <SelectTrigger data-testid="select-destination-type">
-                      <SelectValue placeholder="Select" />
+                      <SelectValue placeholder="Select State" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="dealer">Dealer</SelectItem>
-                      <SelectItem value="farmer">Farmer</SelectItem>
-                      <SelectItem value="own_use">Own Use</SelectItem>
-                      <SelectItem value="transfer">Transfer</SelectItem>
-                      <SelectItem value="ap">AP (Andhra Pradesh)</SelectItem>
-                      <SelectItem value="ts">TS (Telangana)</SelectItem>
-                      <SelectItem value="mp">MP (Madhya Pradesh)</SelectItem>
-                      <SelectItem value="up">UP (Uttar Pradesh)</SelectItem>
-                      <SelectItem value="ka">KA (Karnataka)</SelectItem>
-                      <SelectItem value="cg">CG (Chhattisgarh)</SelectItem>
+                      <SelectItem value="AP">AP (Andhra Pradesh)</SelectItem>
+                      <SelectItem value="TS">TS (Telangana)</SelectItem>
+                      <SelectItem value="MP">MP (Madhya Pradesh)</SelectItem>
+                      <SelectItem value="UP">UP (Uttar Pradesh)</SelectItem>
+                      <SelectItem value="KA">KA (Karnataka)</SelectItem>
+                      <SelectItem value="CG">CG (Chhattisgarh)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -325,7 +321,8 @@ export default function Outward() {
                   <TableHead>From</TableHead>
                   <TableHead>Form</TableHead>
                   <TableHead className="text-right">Packets/Bags</TableHead>
-                  <TableHead>Destination</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Variety</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -334,7 +331,7 @@ export default function Outward() {
               <TableBody>
                 {filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No dispatch records found.
                     </TableCell>
                   </TableRow>
@@ -356,11 +353,9 @@ export default function Outward() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-col">
-                          <Badge variant="outline" className="w-fit">{record.destinationType}</Badge>
-                          {record.destinationName && <span className="text-xs text-muted-foreground mt-1">{record.destinationName}</span>}
-                        </div>
+                        <Badge variant="outline" className="w-fit">{record.destinationType}</Badge>
                       </TableCell>
+                      <TableCell>{record.variety || '-'}</TableCell>
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
                       <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
                       <TableCell className="text-right">
