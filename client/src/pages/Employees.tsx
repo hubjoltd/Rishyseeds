@@ -89,7 +89,7 @@ export default function Employees() {
         fullName: editingEmployee.fullName,
         role: editingEmployee.role || "",
         department: editingEmployee.department || "",
-        joiningDate: editingEmployee.joiningDate || "",
+        joinDate: editingEmployee.joinDate || "",
         status: editingEmployee.status || "active",
         salaryType: editingEmployee.salaryType || "monthly",
         basicSalary: editingEmployee.basicSalary || "0",
@@ -103,7 +103,7 @@ export default function Employees() {
         tdsDeduction: editingEmployee.tdsDeduction || "0",
         otherDeductions: editingEmployee.otherDeductions || "0",
         bankAccountNumber: editingEmployee.bankAccountNumber || "",
-        bankIfscCode: editingEmployee.bankIfscCode || "",
+        ifscCode: editingEmployee.ifscCode || "",
         panNumber: editingEmployee.panNumber || "",
         phone: editingEmployee.phone || "",
         email: editingEmployee.email || "",
@@ -484,11 +484,11 @@ export default function Employees() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Joining Date</label>
-                    <Input type="date" {...editForm.register("joiningDate")} data-testid="input-edit-employee-joining-date" />
+                    <Input type="date" {...editForm.register("joinDate")} data-testid="input-edit-employee-joining-date" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Status</label>
-                    <Select value={editForm.watch("status")} onValueChange={(val) => editForm.setValue("status", val)}>
+                    <Select value={editForm.watch("status") ?? undefined} onValueChange={(val) => editForm.setValue("status", val)}>
                       <SelectTrigger data-testid="select-edit-employee-status"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="active">Active</SelectItem>
@@ -545,7 +545,7 @@ export default function Employees() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Bank IFSC Code</label>
-                    <Input {...editForm.register("bankIfscCode")} data-testid="input-edit-ifsc" />
+                    <Input {...editForm.register("ifscCode")} data-testid="input-edit-ifsc" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">PAN Number</label>
