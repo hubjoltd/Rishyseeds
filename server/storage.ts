@@ -458,16 +458,27 @@ export class DatabaseStorage implements IStorage {
     const [product] = await db.select().from(products).where(eq(products.id, productId));
     if (!product) throw new Error("Product not found");
     
-    // Format: MA-[variety last 2 digits]-26(year)-001
+    // Format: MA-[variety last 2 chars]-26(year)-001
+    // Extract last 2 characters from variety name
     const varietyCode = product.variety.slice(-2).toUpperCase();
     const year = new Date().getFullYear().toString().slice(-2); // "26" for 2026
     const prefix = `MA-${varietyCode}-${year}`;
     
-    const [countResult] = await db.select({
-      count: sql<number>`count(*)`
-    }).from(lots).where(sql`lot_number LIKE ${prefix + '%'}`);
+    // Find the maximum sequence number for this prefix
+    const existingLots = await db.select({ lotNumber: lots.lotNumber })
+      .from(lots)
+      .where(sql`lot_number LIKE ${prefix + '-%'}`);
     
-    const sequence = String(Number(countResult?.count || 0) + 1).padStart(3, '0');
+    let maxSequence = 0;
+    for (const lot of existingLots) {
+      const match = lot.lotNumber.match(/-(\d{3})$/);
+      if (match) {
+        const seq = parseInt(match[1]);
+        if (seq > maxSequence) maxSequence = seq;
+      }
+    }
+    
+    const sequence = String(maxSequence + 1).padStart(3, '0');
     return `${prefix}-${sequence}`;
   }
 

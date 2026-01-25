@@ -151,13 +151,13 @@ export async function registerRoutes(
   app.set('trust proxy', 1);
   app.use(session({
     secret: process.env.SESSION_SECRET || 'rishi-seeds-secret-key',
-    resave: false,
+    resave: true,
     saveUninitialized: false,
     store: new SessionStore({
       checkPeriod: 86400000 // prune expired entries every 24h
     }),
     cookie: { 
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Allow cookies on HTTP in development
       httpOnly: true,
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
