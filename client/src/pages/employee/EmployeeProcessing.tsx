@@ -111,7 +111,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/processing/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
       });

@@ -125,7 +125,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/stock/movements/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
       });

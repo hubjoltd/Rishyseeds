@@ -130,7 +130,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
   const updateLotMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/lots/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
         body: JSON.stringify(data),
       });
