@@ -48,9 +48,9 @@ const plantOperationsSection: MenuSection = {
   sectionResource: "lots",
   items: [
     { icon: ArrowDownToLine, label: "Inward", href: "/employee-portal/inward", resource: "lots" },
+    { icon: ArrowRightLeft, label: "Stock Movement", href: "/employee-portal/stock-movement", resource: "stock" },
     { icon: Factory, label: "Processing", href: "/employee-portal/processing", resource: "processing" },
     { icon: Boxes, label: "Packing", href: "/employee-portal/packing", resource: "packaging" },
-    { icon: ArrowRightLeft, label: "Stock Movement", href: "/employee-portal/stock-movement", resource: "stock" },
     { icon: Truck, label: "Outward", href: "/employee-portal/outward", resource: "outward" },
   ],
 };

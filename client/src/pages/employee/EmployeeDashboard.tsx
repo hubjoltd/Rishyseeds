@@ -101,8 +101,8 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     },
   });
 
-  const isPunchedIn = todayAttendance?.punchIn && !todayAttendance?.punchOut;
-  const isPunchedOut = todayAttendance?.punchIn && todayAttendance?.punchOut;
+  const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
+  const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
   const thisMonthAttendance = attendance?.filter((a: any) => {
     const date = new Date(a.date);
@@ -168,8 +168,8 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {todayAttendance?.punchIn ? (
-              <p className="text-lg font-semibold">{format(new Date(todayAttendance.punchIn), "h:mm a")}</p>
+            {todayAttendance?.checkIn ? (
+              <p className="text-lg font-semibold">{format(new Date(todayAttendance.checkIn), "h:mm a")}</p>
             ) : (
               <p className="text-sm text-muted-foreground">Not punched in</p>
             )}
@@ -189,7 +189,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <Button
               size="lg"
               onClick={() => punchMutation.mutate("in")}
-              disabled={punchMutation.isPending || !!todayAttendance?.punchIn}
+              disabled={punchMutation.isPending || !!todayAttendance?.checkIn}
               className="flex-1 bg-green-600 hover:bg-green-700"
               data-testid="button-punch-in"
             >
@@ -204,7 +204,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               size="lg"
               variant="destructive"
               onClick={() => punchMutation.mutate("out")}
-              disabled={punchMutation.isPending || !todayAttendance?.punchIn || !!todayAttendance?.punchOut}
+              disabled={punchMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut}
               className="flex-1"
               data-testid="button-punch-out"
             >
@@ -217,25 +217,23 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             </Button>
           </div>
 
-          {todayAttendance && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">Today's Record</p>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Punch In:</span>
-                  <span className="ml-2 font-medium">
-                    {todayAttendance.punchIn ? format(new Date(todayAttendance.punchIn), "h:mm a") : "-"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Punch Out:</span>
-                  <span className="ml-2 font-medium">
-                    {todayAttendance.punchOut ? format(new Date(todayAttendance.punchOut), "h:mm a") : "-"}
-                  </span>
-                </div>
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-muted-foreground mb-2">Today's Record</p>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Punch In:</span>
+                <span className="ml-2 font-medium">
+                  {todayAttendance?.checkIn ? format(new Date(todayAttendance.checkIn), "h:mm a") : "-"}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Punch Out:</span>
+                <span className="ml-2 font-medium">
+                  {todayAttendance?.checkOut ? format(new Date(todayAttendance.checkOut), "h:mm a") : "-"}
+                </span>
               </div>
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>
