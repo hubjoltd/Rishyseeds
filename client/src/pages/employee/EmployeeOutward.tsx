@@ -1,17 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Truck, MapPin, Plus, Pencil, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Truck, MapPin, Plus, Trash2, Loader2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
 import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
+import { useToast } from "@/hooks/use-toast";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+const outwardFormSchema = z.object({
+  lotId: z.coerce.number().min(1, "Please select a lot"),
+  destination: z.string().min(1, "Please select destination"),
+  quantity: z.coerce.number().positive("Quantity must be positive"),
+  vehicleNumber: z.string().optional(),
+  driverName: z.string().optional(),
+  dispatchDate: z.string().optional(),
+  remarks: z.string().optional(),
+});
 
 interface EmployeeProps {
   employee: {
@@ -31,10 +50,24 @@ const stateNames: Record<string, string> = {
   CG: "Chhattisgarh",
 };
 
+const stateOptions = Object.entries(stateNames).map(([code, name]) => ({ code, name }));
+
 export default function EmployeeOutward({ employee, permissions = {} }: EmployeeProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const canCreate = hasPermission(permissions, "outward", "create");
   const canEdit = hasPermission(permissions, "outward", "edit");
   const canDelete = hasPermission(permissions, "outward", "delete");
+
+  const [open, setOpen] = useState(false);
+  const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+
+  const form = useForm<z.infer<typeof outwardFormSchema>>({
+    resolver: zodResolver(outwardFormSchema),
+    defaultValues: {
+      quantity: 0,
+    }
+  });
 
   const { data: outward, isLoading } = useQuery({
     queryKey: ["/api/outward"],
@@ -54,6 +87,74 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
   });
 
+  const { data: products } = useQuery({
+    queryKey: ["/api/products"],
+    queryFn: async () => {
+      const res = await fetch("/api/products", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch products");
+      return res.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/outward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create dispatch");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      toast({ title: "Success", description: "Dispatch record created" });
+      setOpen(false);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/outward/${id}`, {
+        method: "DELETE",
+        headers: getEmployeeAuthHeaders(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete record");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      toast({ title: "Success", description: "Record deleted" });
+      setDeleteRecordId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const activeLots = (lots || []).filter((l: any) => l.status === 'active');
+
+  const getLotDetails = (lotId: number) => {
+    const lot = (lots || []).find((l: any) => l.id === lotId);
+    if (!lot) return { lotNumber: "Unknown", variety: "" };
+    const product = (products || []).find((p: any) => p.id === lot.productId);
+    return {
+      lotNumber: lot.lotNumber,
+      variety: product?.variety || "",
+      display: `${lot.lotNumber} (${product?.crop} - ${product?.variety || 'Unknown'})`,
+    };
+  };
+
   const getLotNumber = (lotId: number) => {
     const lot = lots?.find((l: any) => l.id === lotId);
     return lot?.lotNumber || "Unknown";
@@ -62,6 +163,23 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleDateString("en-IN");
+  };
+
+  const selectedLotId = form.watch("lotId");
+  const selectedLotDetails = selectedLotId ? getLotDetails(selectedLotId) : null;
+
+  const onSubmit = (data: z.infer<typeof outwardFormSchema>) => {
+    const lotDetails = getLotDetails(data.lotId);
+    createMutation.mutate({
+      lotId: data.lotId,
+      destination: data.destination,
+      quantity: String(data.quantity),
+      variety: lotDetails.variety,
+      vehicleNumber: data.vehicleNumber || null,
+      driverName: data.driverName || null,
+      dispatchDate: data.dispatchDate || new Date().toISOString().slice(0, 10),
+      remarks: data.remarks || null,
+    });
   };
 
   return (
@@ -77,10 +195,87 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
           </div>
         </div>
         {canCreate && (
-          <Button data-testid="button-add-outward">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Dispatch
-          </Button>
+          <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) form.reset();
+          }}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-outward">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Dispatch
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>New Dispatch Record</DialogTitle>
+                <DialogDescription>Record outward dispatch</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lot</label>
+                  <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Lot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeLots.map((lot: any) => (
+                        <SelectItem key={lot.id} value={lot.id.toString()}>
+                          {getLotDetails(lot.id).display}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedLotDetails && (
+                    <p className="text-xs text-muted-foreground">
+                      Variety: {selectedLotDetails.variety}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Destination State</label>
+                  <Select onValueChange={(val) => form.setValue("destination", val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select State" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stateOptions.map((state) => (
+                        <SelectItem key={state.code} value={state.code}>
+                          {state.name} ({state.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Quantity (KG)</label>
+                  <Input type="number" {...form.register("quantity")} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Vehicle Number</label>
+                    <Input {...form.register("vehicleNumber")} placeholder="e.g., TS09AB1234" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Driver Name</label>
+                    <Input {...form.register("driverName")} placeholder="Driver name" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Dispatch Date</label>
+                  <Input type="date" {...form.register("dispatchDate")} />
+                </div>
+
+                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Create Dispatch Record
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
@@ -124,19 +319,14 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                           {stateNames[record.destination] || record.destination}
                         </Badge>
                       </TableCell>
-                      <TableCell>{record.quantity?.toLocaleString()}</TableCell>
+                      <TableCell>{Number(record.quantity)?.toLocaleString()}</TableCell>
                       <TableCell>{record.vehicleNumber || "-"}</TableCell>
                       <TableCell>{formatDate(record.dispatchDate)}</TableCell>
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {canEdit && (
-                              <Button size="icon" variant="ghost" data-testid={`button-edit-outward-${record.id}`}>
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            )}
                             {canDelete && (
-                              <Button size="icon" variant="ghost" className="text-destructive" data-testid={`button-delete-outward-${record.id}`}>
+                              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => setDeleteRecordId(record.id)} data-testid={`button-delete-outward-${record.id}`}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             )}
@@ -151,6 +341,21 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteRecordId} onOpenChange={() => setDeleteRecordId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dispatch Record?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteRecordId && deleteMutation.mutate(deleteRecordId)} className="bg-destructive text-destructive-foreground">
+              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

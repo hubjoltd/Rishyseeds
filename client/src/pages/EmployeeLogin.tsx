@@ -130,11 +130,6 @@ export default function EmployeeLogin() {
               )}
             </Button>
           </form>
-          <div className="mt-6 text-center">
-            <a href="/login" className="text-sm text-muted-foreground hover:text-primary">
-              Admin Login
-            </a>
-          </div>
         </CardContent>
       </Card>
     </div>
