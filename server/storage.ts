@@ -54,6 +54,7 @@ export interface IStorage {
   // Packaging
   createPackagingOutput(output: typeof packagingOutputs.$inferInsert): Promise<typeof packagingOutputs.$inferSelect>;
   getPackagingOutputs(): Promise<typeof packagingOutputs.$inferSelect[]>;
+  getPackagingOutputsByEmployee(employeeName: string): Promise<typeof packagingOutputs.$inferSelect[]>;
   updatePackagingOutput(id: number, updates: Partial<typeof packagingOutputs.$inferInsert>): Promise<typeof packagingOutputs.$inferSelect | undefined>;
   deletePackagingOutput(id: number): Promise<boolean>;
 
@@ -108,6 +109,7 @@ export interface IStorage {
   // Processing Records
   getProcessingRecords(): Promise<ProcessingRecord[]>;
   getProcessingRecord(id: number): Promise<ProcessingRecord | undefined>;
+  getProcessingRecordsByEmployee(employeeName: string): Promise<ProcessingRecord[]>;
   createProcessingRecord(record: InsertProcessingRecord): Promise<ProcessingRecord>;
   updateProcessingRecord(id: number, updates: Partial<InsertProcessingRecord>): Promise<ProcessingRecord | undefined>;
   deleteProcessingRecord(id: number): Promise<boolean>;
@@ -115,6 +117,7 @@ export interface IStorage {
   // Outward Records
   getOutwardRecords(): Promise<OutwardRecord[]>;
   getOutwardRecord(id: number): Promise<OutwardRecord | undefined>;
+  getOutwardRecordsByEmployee(employeeName: string): Promise<OutwardRecord[]>;
   createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord>;
   updateOutwardRecord(id: number, updates: Partial<InsertOutwardRecord>): Promise<OutwardRecord | undefined>;
   deleteOutwardRecord(id: number): Promise<boolean>;
@@ -292,6 +295,12 @@ export class DatabaseStorage implements IStorage {
 
   async getPackagingOutputs(): Promise<typeof packagingOutputs.$inferSelect[]> {
     return await db.select().from(packagingOutputs).orderBy(desc(packagingOutputs.productionDate));
+  }
+
+  async getPackagingOutputsByEmployee(employeeName: string): Promise<typeof packagingOutputs.$inferSelect[]> {
+    return await db.select().from(packagingOutputs)
+      .where(eq(packagingOutputs.packedBy, employeeName))
+      .orderBy(desc(packagingOutputs.productionDate));
   }
 
   async updatePackagingOutput(id: number, updates: Partial<typeof packagingOutputs.$inferInsert>): Promise<typeof packagingOutputs.$inferSelect | undefined> {
@@ -548,6 +557,12 @@ export class DatabaseStorage implements IStorage {
     return record;
   }
 
+  async getProcessingRecordsByEmployee(employeeName: string): Promise<ProcessingRecord[]> {
+    return await db.select().from(processingRecords)
+      .where(eq(processingRecords.processedBy, employeeName))
+      .orderBy(desc(processingRecords.processingDate));
+  }
+
   async createProcessingRecord(record: InsertProcessingRecord): Promise<ProcessingRecord> {
     const [newRecord] = await db.insert(processingRecords).values(record).returning();
     return newRecord;
@@ -571,6 +586,12 @@ export class DatabaseStorage implements IStorage {
   async getOutwardRecord(id: number): Promise<OutwardRecord | undefined> {
     const [record] = await db.select().from(outwardRecords).where(eq(outwardRecords.id, id));
     return record;
+  }
+
+  async getOutwardRecordsByEmployee(employeeName: string): Promise<OutwardRecord[]> {
+    return await db.select().from(outwardRecords)
+      .where(eq(outwardRecords.dispatchedBy, employeeName))
+      .orderBy(desc(outwardRecords.dispatchDate));
   }
 
   async createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord> {

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LogOut, Clock, User, FileText, Calendar, Download } from "lucide-react";
+import { Loader2, LogOut, Clock, User, FileText, Calendar, Download, Cog, Package, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -54,6 +54,16 @@ export default function EmployeePanel() {
     queryFn: async () => {
       const res = await fetch("/api/employee/attendance/today", { credentials: "include" });
       if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!employee,
+  });
+
+  const { data: operations, isLoading: operationsLoading } = useQuery({
+    queryKey: ["/api/employee/operations"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/operations", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch operations");
       return res.json();
     },
     enabled: !!employee,
@@ -189,10 +199,14 @@ export default function EmployeePanel() {
         </Card>
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
               Profile
+            </TabsTrigger>
+            <TabsTrigger value="operations" data-testid="tab-operations">
+              <Cog className="h-4 w-4 mr-2" />
+              My Work
             </TabsTrigger>
             <TabsTrigger value="attendance" data-testid="tab-attendance">
               <Calendar className="h-4 w-4 mr-2" />
@@ -256,6 +270,149 @@ export default function EmployeePanel() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="operations">
+            <div className="space-y-6">
+              {operationsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Cog className="h-5 w-5 text-primary" />
+                        Processing Records
+                      </CardTitle>
+                      <CardDescription>Processing work you've completed</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Input Qty (KG)</TableHead>
+                            <TableHead>Output Qty (KG)</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(operations?.processing || []).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
+                                No processing records found
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            (operations?.processing || []).map((record: any) => (
+                              <TableRow key={record.id}>
+                                <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
+                                <TableCell className="capitalize">{record.processingType}</TableCell>
+                                <TableCell>{Number(record.inputQuantity).toLocaleString()}</TableCell>
+                                <TableCell>{record.outputQuantity ? Number(record.outputQuantity).toLocaleString() : "-"}</TableCell>
+                                <TableCell>
+                                  <Badge variant={record.status === "completed" ? "default" : "secondary"}>
+                                    {record.status}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5 text-primary" />
+                        Packaging Records
+                      </CardTitle>
+                      <CardDescription>Packaging work you've completed</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Packet Size</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Raw Used (KG)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(operations?.packaging || []).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
+                                No packaging records found
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            (operations?.packaging || []).map((record: any) => (
+                              <TableRow key={record.id}>
+                                <TableCell>{record.productionDate ? format(new Date(record.productionDate), "PP") : "-"}</TableCell>
+                                <TableCell>{record.packetSize}</TableCell>
+                                <TableCell>{Number(record.quantity).toLocaleString()}</TableCell>
+                                <TableCell>{Number(record.rawMaterialUsed || 0).toLocaleString()}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Truck className="h-5 w-5 text-primary" />
+                        Dispatch Records
+                      </CardTitle>
+                      <CardDescription>Dispatch work you've completed</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Destination</TableHead>
+                            <TableHead>Stock Form</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Invoice</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(operations?.outward || []).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
+                                No dispatch records found
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            (operations?.outward || []).map((record: any) => (
+                              <TableRow key={record.id}>
+                                <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
+                                <TableCell>
+                                  <span className="capitalize">{record.destinationType}</span>
+                                  {record.destinationName && <span className="text-muted-foreground"> - {record.destinationName}</span>}
+                                </TableCell>
+                                <TableCell className="capitalize">{record.stockForm}</TableCell>
+                                <TableCell>{Number(record.quantity).toLocaleString()}</TableCell>
+                                <TableCell>{record.invoiceNumber || "-"}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="attendance">

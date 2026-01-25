@@ -1154,6 +1154,29 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/employee/operations", async (req, res) => {
+    try {
+      const empId = (req.session as any).employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      
+      const employee = await storage.getEmployee(empId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      
+      // Get plant operations where this employee was involved
+      const processingRecords = await storage.getProcessingRecordsByEmployee(employee.fullName);
+      const outwardRecords = await storage.getOutwardRecordsByEmployee(employee.fullName);
+      const packagingRecords = await storage.getPackagingOutputsByEmployee(employee.fullName);
+      
+      res.json({
+        processing: processingRecords,
+        outward: outwardRecords,
+        packaging: packagingRecords,
+      });
+    } catch (error) {
+      res.status(400).json({ message: "Failed to get operations" });
+    }
+  });
+
   app.get("/api/employee/payslips/:id/download", async (req, res) => {
     try {
       const employeeId = (req.session as any).employeeId;
