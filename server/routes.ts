@@ -1099,6 +1099,35 @@ export async function registerRoutes(
     res.json(employee);
   });
 
+  // Get employee permissions based on their role
+  app.get("/api/employee/permissions", async (req: any, res) => {
+    const employeeId = req.employeeId;
+    if (!employeeId) return res.status(401).json(null);
+    
+    const employee = await storage.getEmployee(employeeId);
+    if (!employee) return res.status(401).json(null);
+    
+    // Look up role permissions by the employee's role name
+    const role = await storage.getRoleByName(employee.role);
+    
+    if (role) {
+      return res.json({
+        role: employee.role,
+        permissions: role.permissions || {}
+      });
+    }
+    
+    // Default minimal permissions if role not found in roles table
+    return res.json({
+      role: employee.role,
+      permissions: {
+        dashboard: ["view"],
+        attendance: ["view"],
+        payroll: ["view"]
+      }
+    });
+  });
+
   app.post("/api/employee/punch-in", async (req: any, res) => {
     try {
       const employeeId = req.employeeId;
