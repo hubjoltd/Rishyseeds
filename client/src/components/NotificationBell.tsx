@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Bell, Check, Clock, Package, Truck, ArrowRightLeft, Settings, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,18 +34,51 @@ function getNotificationIcon(type: string) {
   }
 }
 
+function playNotificationSound() {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.4);
+  } catch (e) {
+    console.log("Could not play notification sound");
+  }
+}
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
+  const previousCountRef = useRef<number>(0);
 
   const { data: unreadCount = 0 } = useQuery<{ count: number }>({
     queryKey: ["/api/notifications/unread-count"],
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   const { data: notifications = [] } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
     enabled: open,
   });
+
+  const count = typeof unreadCount === 'object' ? unreadCount.count : 0;
+
+  useEffect(() => {
+    if (count > previousCountRef.current && previousCountRef.current !== 0) {
+      playNotificationSound();
+    }
+    previousCountRef.current = count;
+  }, [count]);
 
   const markAllRead = useMutation({
     mutationFn: () => apiRequest("POST", "/api/notifications/mark-all-read"),
@@ -62,8 +95,6 @@ export function NotificationBell() {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
-
-  const count = typeof unreadCount === 'object' ? unreadCount.count : 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -22,13 +22,16 @@ import {
   Shield,
   PackagePlus,
   Cog,
-  Truck
+  Truck,
+  Menu,
+  X
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NotificationBell } from "@/components/NotificationBell";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 interface MenuItem {
   icon: React.ElementType;
@@ -100,10 +103,17 @@ const roleLabels: Record<string, string> = {
   dispatch_operator: "Dispatch Operator",
 };
 
-export default function Sidebar() {
+function SidebarContent({ 
+  collapsed, 
+  setCollapsed, 
+  onNavigate 
+}: { 
+  collapsed: boolean; 
+  setCollapsed: (v: boolean) => void;
+  onNavigate?: () => void;
+}) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(["Master Data", "Plant Operations", "HRMS", "Finance", "Administration"]);
   
   const userRole = user?.role || "admin";
@@ -128,14 +138,12 @@ export default function Sidebar() {
     return location.startsWith(href);
   };
 
+  const handleNavClick = () => {
+    onNavigate?.();
+  };
+
   return (
-    <aside 
-      className={cn(
-        "h-screen bg-card flex flex-col transition-all duration-300 ease-in-out shadow-green",
-        collapsed ? "w-[72px]" : "w-[260px]"
-      )}
-    >
-      {/* Logo Section */}
+    <div className="h-full flex flex-col">
       <div className={cn(
         "flex items-center gap-3 p-4 border-b border-primary/10",
         collapsed ? "justify-center" : "justify-between"
@@ -157,7 +165,7 @@ export default function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn("h-8 w-8 shrink-0", collapsed && "absolute -right-4 bg-card border shadow-sm z-10")}
+            className={cn("h-8 w-8 shrink-0 hidden md:flex", collapsed && "absolute -right-4 bg-card border shadow-sm z-10")}
             onClick={() => setCollapsed(!collapsed)}
             data-testid="button-toggle-sidebar"
           >
@@ -166,13 +174,12 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
         <ul className="space-y-1">
           {menuItems.map((item) => (
             <li key={item.label}>
               {item.href ? (
-                <Link href={item.href}>
+                <Link href={item.href} onClick={handleNavClick}>
                   <div
                     className={cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200",
@@ -211,7 +218,7 @@ export default function Sidebar() {
                     <ul className="mt-1 ml-4 space-y-1 border-l border-primary/20 pl-3">
                       {item.children.map((child) => (
                         <li key={child.href}>
-                          <Link href={child.href}>
+                          <Link href={child.href} onClick={handleNavClick}>
                             <div
                               className={cn(
                                 "flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 text-sm",
@@ -236,7 +243,6 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* User Info */}
       {user && !collapsed && (
         <div className="p-3 border-t border-primary/10">
           <div className="flex items-center gap-3 px-2">
@@ -253,7 +259,6 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Footer */}
       <div className={cn(
         "p-3 border-t border-primary/10",
         collapsed ? "flex justify-center" : ""
@@ -271,7 +276,6 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Real-time indicator */}
       {!collapsed && (
         <div className="px-4 pb-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -280,6 +284,49 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export function MobileHeader() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="md:hidden flex items-center justify-between p-3 border-b bg-card sticky top-0 z-50">
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetTrigger asChild>
+          <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+            <Menu className="h-5 w-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="p-0 w-[280px]">
+          <SidebarContent 
+            collapsed={false} 
+            setCollapsed={() => {}} 
+            onNavigate={() => setOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+      <div className="flex items-center gap-2">
+        <img src={logo} alt="Rishi Seeds" className="w-8 h-8 object-contain" />
+        <span className="font-bold text-primary">Rishi Seeds</span>
+      </div>
+      <NotificationBell />
+    </div>
+  );
+}
+
+export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <aside 
+      className={cn(
+        "h-screen bg-card flex-col transition-all duration-300 ease-in-out shadow-green hidden md:flex",
+        collapsed ? "w-[72px]" : "w-[260px]"
+      )}
+    >
+      <SidebarContent collapsed={collapsed} setCollapsed={setCollapsed} />
     </aside>
   );
 }
