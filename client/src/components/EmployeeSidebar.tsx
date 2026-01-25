@@ -11,7 +11,6 @@ import {
   Menu,
   X,
   User,
-  Package,
   ArrowDownToLine,
   Factory,
   Boxes,
@@ -26,31 +25,36 @@ interface MenuItem {
   icon: React.ElementType;
   label: string;
   href: string;
+  resource?: string;
 }
 
 interface MenuSection {
   title: string;
   icon: React.ElementType;
   items: MenuItem[];
+  sectionResource?: string;
 }
 
 const mainMenuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal" },
-  { icon: Clock, label: "Attendance", href: "/employee-portal/attendance" },
-  { icon: FileText, label: "Payslips", href: "/employee-portal/payslips" },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal", resource: "dashboard" },
+  { icon: Clock, label: "Attendance", href: "/employee-portal/attendance", resource: "attendance" },
+  { icon: FileText, label: "Payslips", href: "/employee-portal/payslips", resource: "payroll" },
 ];
 
 const plantOperationsSection: MenuSection = {
   title: "Plant Operations",
   icon: Factory,
+  sectionResource: "lots",
   items: [
-    { icon: ArrowDownToLine, label: "Inward", href: "/employee-portal/inward" },
-    { icon: Factory, label: "Processing", href: "/employee-portal/processing" },
-    { icon: Boxes, label: "Packing", href: "/employee-portal/packing" },
-    { icon: ArrowRightLeft, label: "Stock Movement", href: "/employee-portal/stock-movement" },
-    { icon: Truck, label: "Outward", href: "/employee-portal/outward" },
+    { icon: ArrowDownToLine, label: "Inward", href: "/employee-portal/inward", resource: "lots" },
+    { icon: Factory, label: "Processing", href: "/employee-portal/processing", resource: "processing" },
+    { icon: Boxes, label: "Packing", href: "/employee-portal/packing", resource: "packaging" },
+    { icon: ArrowRightLeft, label: "Stock Movement", href: "/employee-portal/stock-movement", resource: "stock" },
+    { icon: Truck, label: "Outward", href: "/employee-portal/outward", resource: "outward" },
   ],
 };
+
+type EmployeePermissions = Record<string, string[]>;
 
 interface EmployeeSidebarProps {
   employee: {
@@ -59,9 +63,10 @@ interface EmployeeSidebarProps {
     role?: string;
   } | null;
   onLogout: () => void;
+  permissions?: EmployeePermissions;
 }
 
-export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
+export function EmployeeSidebar({ employee, onLogout, permissions = {} }: EmployeeSidebarProps) {
   const [location] = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -77,7 +82,24 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
     return location.startsWith(href);
   };
 
-  const isPlantOpsActive = plantOperationsSection.items.some((item) => isActive(item.href));
+  const hasPermission = (resource: string): boolean => {
+    if (!resource) return true;
+    const resourcePerms = permissions[resource];
+    return Array.isArray(resourcePerms) && resourcePerms.length > 0;
+  };
+
+  const filteredMainItems = mainMenuItems.filter(item => 
+    !item.resource || hasPermission(item.resource)
+  );
+
+  const filteredPlantOpsItems = plantOperationsSection.items.filter(item =>
+    !item.resource || hasPermission(item.resource)
+  );
+
+  const showPlantOps = filteredPlantOpsItems.length > 0 || 
+    (plantOperationsSection.sectionResource && hasPermission(plantOperationsSection.sectionResource));
+
+  const isPlantOpsActive = filteredPlantOpsItems.some((item) => isActive(item.href));
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -96,7 +118,7 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
 
       <nav className="flex-1 overflow-y-auto py-4 px-2">
         <ul className="space-y-1">
-          {mainMenuItems.map((item) => {
+          {filteredMainItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -122,61 +144,63 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
           })}
         </ul>
 
-        <div className="mt-4">
-          {!isCollapsed && (
-            <p className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Plant Operations
-            </p>
-          )}
-          <div
-            onClick={() => !isCollapsed && setIsPlantOpsOpen(!isPlantOpsOpen)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer",
-              isPlantOpsActive && isCollapsed
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover-elevate",
-              isCollapsed && "justify-center"
-            )}
-            data-testid="nav-employee-plant-operations"
-          >
-            <Factory className={cn("flex-shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5")} />
+        {showPlantOps && (
+          <div className="mt-4">
             {!isCollapsed && (
-              <>
-                <span className="truncate font-medium flex-1">Operations</span>
-                <ChevronDown className={cn("w-4 h-4 transition-transform", isPlantOpsOpen && "rotate-180")} />
-              </>
+              <p className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Plant Operations
+              </p>
+            )}
+            <div
+              onClick={() => !isCollapsed && setIsPlantOpsOpen(!isPlantOpsOpen)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer",
+                isPlantOpsActive && isCollapsed
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover-elevate",
+                isCollapsed && "justify-center"
+              )}
+              data-testid="nav-employee-plant-operations"
+            >
+              <Factory className={cn("flex-shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5")} />
+              {!isCollapsed && (
+                <>
+                  <span className="truncate font-medium flex-1">Operations</span>
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", isPlantOpsOpen && "rotate-180")} />
+                </>
+              )}
+            </div>
+
+            {(isPlantOpsOpen || isCollapsed) && (
+              <ul className={cn("space-y-1", !isCollapsed && "ml-4 mt-1")}>
+                {filteredPlantOpsItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <li key={item.href}>
+                      <Link href={item.href}>
+                        <div
+                          onClick={() => setIsMobileOpen(false)}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer",
+                            active
+                              ? "bg-primary text-primary-foreground shadow-md"
+                              : "text-muted-foreground hover-elevate",
+                            isCollapsed && "justify-center"
+                          )}
+                          data-testid={`nav-employee-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <Icon className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+                          {!isCollapsed && <span className="truncate text-sm">{item.label}</span>}
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
-
-          {(isPlantOpsOpen || isCollapsed) && (
-            <ul className={cn("space-y-1", !isCollapsed && "ml-4 mt-1")}>
-              {plantOperationsSection.items.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                return (
-                  <li key={item.href}>
-                    <Link href={item.href}>
-                      <div
-                        onClick={() => setIsMobileOpen(false)}
-                        className={cn(
-                          "flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer",
-                          active
-                            ? "bg-primary text-primary-foreground shadow-md"
-                            : "text-muted-foreground hover-elevate",
-                          isCollapsed && "justify-center"
-                        )}
-                        data-testid={`nav-employee-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <Icon className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
-                        {!isCollapsed && <span className="truncate text-sm">{item.label}</span>}
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        )}
       </nav>
 
       <div className="border-t border-green-200/50 p-2">

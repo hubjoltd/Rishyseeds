@@ -18,6 +18,8 @@ function getEmployeeAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export type EmployeePermissions = Record<string, string[]>;
+
 export default function EmployeeLayout() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -39,6 +41,16 @@ export default function EmployeeLayout() {
       if (!res.ok) throw new Error("Failed to fetch employee data");
       return res.json();
     },
+  });
+
+  const { data: permissionsData } = useQuery({
+    queryKey: ["/api/employee/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/permissions", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ role: string; permissions: EmployeePermissions }>;
+    },
+    enabled: !!employee,
   });
 
   const handleLogout = async () => {
@@ -65,9 +77,11 @@ export default function EmployeeLayout() {
     return null;
   }
 
+  const permissions = permissionsData?.permissions || {};
+
   return (
     <div className="flex h-screen bg-gray-50/50">
-      <EmployeeSidebar employee={employee} onLogout={handleLogout} />
+      <EmployeeSidebar employee={employee} onLogout={handleLogout} permissions={permissions} />
       <main className="flex-1 overflow-auto p-4 lg:p-6 pt-16 lg:pt-6">
         <Switch>
           <Route path="/employee-portal" component={() => <EmployeeDashboard employee={employee} />} />
