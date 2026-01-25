@@ -39,6 +39,7 @@ const mainMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal", resource: "dashboard" },
   { icon: Clock, label: "Attendance", href: "/employee-portal/attendance", resource: "attendance" },
   { icon: FileText, label: "Payslips", href: "/employee-portal/payslips", resource: "payroll" },
+  { icon: User, label: "My Profile", href: "/employee-portal/profile" },
 ];
 
 const plantOperationsSection: MenuSection = {

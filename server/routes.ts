@@ -1260,6 +1260,43 @@ export async function registerRoutes(
     res.json(employee);
   });
 
+  app.get("/api/employee/profile", async (req: any, res) => {
+    const employeeId = req.employeeId;
+    if (!employeeId) return res.status(401).json({ message: "Unauthorized" });
+    
+    const employee = await storage.getEmployee(employeeId);
+    if (!employee) return res.status(401).json({ message: "Employee not found" });
+    
+    const { password, ...profileData } = employee;
+    res.json(profileData);
+  });
+
+  app.post("/api/employee/update-password", async (req: any, res) => {
+    const employeeId = req.employeeId;
+    if (!employeeId) return res.status(401).json({ message: "Unauthorized" });
+    
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new password are required" });
+    }
+    
+    if (newPassword.length < 4) {
+      return res.status(400).json({ message: "Password must be at least 4 characters" });
+    }
+    
+    const employee = await storage.getEmployee(employeeId);
+    if (!employee) return res.status(401).json({ message: "Employee not found" });
+    
+    const expectedPassword = employee.password || employee.employeeId;
+    if (currentPassword !== expectedPassword) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+    
+    await storage.updateEmployee(employee.id, { password: newPassword });
+    res.json({ message: "Password updated successfully" });
+  });
+
   // Get employee permissions based on their role
   app.get("/api/employee/permissions", async (req: any, res) => {
     const employeeId = req.employeeId;

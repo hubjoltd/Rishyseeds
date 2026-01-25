@@ -12,6 +12,7 @@ import EmployeeProcessing from "./EmployeeProcessing";
 import EmployeePacking from "./EmployeePacking";
 import EmployeeStockMovement from "./EmployeeStockMovement";
 import EmployeeOutward from "./EmployeeOutward";
+import EmployeeProfile from "./EmployeeProfile";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -98,6 +99,7 @@ export default function EmployeeLayout() {
           <Route path="/employee-portal/packing" component={() => <EmployeePacking employee={employee} permissions={permissions} />} />
           <Route path="/employee-portal/stock-movement" component={() => <EmployeeStockMovement employee={employee} permissions={permissions} />} />
           <Route path="/employee-portal/outward" component={() => <EmployeeOutward employee={employee} permissions={permissions} />} />
+          <Route path="/employee-portal/profile" component={() => <EmployeeProfile employee={employee} />} />
           <Route component={() => <EmployeeDashboard employee={employee} />} />
         </Switch>
       </main>
