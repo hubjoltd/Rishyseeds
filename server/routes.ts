@@ -187,6 +187,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Google domain verification
+  app.get("/google04e2cf6bed3e661f.html", (req, res) => {
+    res.send("google-site-verification: google04e2cf6bed3e661f.html");
+  });
+  
   // === TOKEN-BASED AUTH MIDDLEWARE ===
   // Extract token from Authorization header and attach user/employee ID to request
   app.use((req: any, res, next) => {
