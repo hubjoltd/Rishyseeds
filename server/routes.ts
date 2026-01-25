@@ -175,7 +175,15 @@ export async function registerRoutes(
       }
       
       (req.session as any).userId = user.id;
-      res.json(user);
+      
+      // Explicitly save session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+          return res.status(500).json({ message: "Session error" });
+        }
+        res.json(user);
+      });
     } catch (error) {
       res.status(400).json({ message: "Invalid input" });
     }
