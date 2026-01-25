@@ -149,20 +149,25 @@ export async function registerRoutes(
   
   // === SESSION SETUP ===
   app.set('trust proxy', 1);
+  const sessionStore = new SessionStore({
+    checkPeriod: 86400000 // prune expired entries every 24h
+  });
+  
   app.use(session({
+    name: 'rishi.sid',
     secret: process.env.SESSION_SECRET || 'rishi-seeds-secret-key',
     resave: true,
-    saveUninitialized: false,
-    store: new SessionStore({
-      checkPeriod: 86400000 // prune expired entries every 24h
-    }),
+    saveUninitialized: true,
+    store: sessionStore,
     cookie: { 
-      secure: false, // Allow cookies on HTTP in development
+      path: '/',
+      secure: false,
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   }));
+  
 
   // === AUTH ROUTES ===
   app.post(api.auth.login.path, async (req, res) => {
