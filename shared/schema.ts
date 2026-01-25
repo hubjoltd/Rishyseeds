@@ -90,9 +90,11 @@ export const stockMovements = pgTable("stock_movements", {
   fromLocationId: integer("from_location_id").notNull(),
   toLocationId: integer("to_location_id").notNull(),
   quantity: decimal("quantity").notNull(),
+  stockForm: text("stock_form"), // raw_seeds, cobs, packed
   movementDate: date("movement_date").defaultNow(),
   responsiblePerson: text("responsible_person"),
   remarks: text("remarks"),
+  createdBy: integer("created_by"), // Employee ID who created the record
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -295,6 +297,7 @@ export const processingRecords = pgTable("processing_records", {
   processedBy: text("processed_by"),
   remarks: text("remarks"),
   status: text("status").notNull().default("pending"), // pending, completed
+  createdBy: integer("created_by"), // Employee ID who created the record
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -318,7 +321,9 @@ export const outwardRecords = pgTable("outward_records", {
   vehicleNumber: text("vehicle_number"),
   dispatchDate: date("dispatch_date").defaultNow(),
   dispatchedBy: text("dispatched_by"),
+  driverName: text("driver_name"),
   remarks: text("remarks"),
+  createdBy: integer("created_by"), // Employee ID who created the record
   createdAt: timestamp("created_at").defaultNow(),
 });
 

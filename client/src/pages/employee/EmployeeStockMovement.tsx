@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowRightLeft, ArrowRight, Plus, Trash2, Loader2 } from "lucide-react";
+import { ArrowRightLeft, ArrowRight, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
 import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +49,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   const canDelete = hasPermission(permissions, "stock", "delete");
 
   const [open, setOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
 
@@ -121,6 +122,31 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/stock-movements/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update movement");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      toast({ title: "Success", description: "Movement updated" });
+      setOpen(false);
+      setEditingRecord(null);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/stock-movements/${id}`, {
@@ -169,16 +195,43 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
   const selectedLot = selectedLotId ? lots?.find((l: any) => l.id === selectedLotId) : null;
 
-  const onSubmit = (data: z.infer<typeof stockMovementFormSchema>) => {
-    createMutation.mutate({
-      lotId: data.lotId,
-      fromLocationId: data.fromLocationId,
-      toLocationId: data.toLocationId,
-      quantity: String(data.quantity),
-      stockForm: data.stockForm,
-      movementDate: data.movementDate || new Date().toISOString().slice(0, 10),
-      remarks: data.remarks || null,
+  const handleEdit = (record: any) => {
+    setEditingRecord(record);
+    form.reset({
+      lotId: record.lotId,
+      fromLocationId: record.fromLocationId,
+      toLocationId: record.toLocationId,
+      quantity: Number(record.quantity),
+      stockForm: record.stockForm || "loose",
+      movementDate: record.movementDate || "",
+      remarks: record.remarks || "",
     });
+    setSelectedLotId(record.lotId);
+    setOpen(true);
+  };
+
+  const onSubmit = (data: z.infer<typeof stockMovementFormSchema>) => {
+    if (editingRecord) {
+      updateMutation.mutate({
+        id: editingRecord.id,
+        data: {
+          quantity: String(data.quantity),
+          stockForm: data.stockForm,
+          movementDate: data.movementDate || null,
+          remarks: data.remarks || null,
+        }
+      });
+    } else {
+      createMutation.mutate({
+        lotId: data.lotId,
+        fromLocationId: data.fromLocationId,
+        toLocationId: data.toLocationId,
+        quantity: String(data.quantity),
+        stockForm: data.stockForm,
+        movementDate: data.movementDate || new Date().toISOString().slice(0, 10),
+        remarks: data.remarks || null,
+      });
+    }
   };
 
   return (
@@ -193,33 +246,39 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
             <p className="text-muted-foreground">View stock transfer records</p>
           </div>
         </div>
-        {canCreate && (
-          <Dialog open={open} onOpenChange={(isOpen) => {
-            setOpen(isOpen);
-            if (!isOpen) {
-              form.reset();
-              setSelectedLotId(null);
-            }
-          }}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingRecord(null);
+            form.reset();
+            setSelectedLotId(null);
+          }
+        }}>
+          {canCreate && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-movement">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Movement
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Record Stock Movement</DialogTitle>
-                <DialogDescription>Transfer stock between locations</DialogDescription>
-              </DialogHeader>
+          )}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingRecord ? "Edit Stock Movement" : "Record Stock Movement"}</DialogTitle>
+              <DialogDescription>{editingRecord ? "Update movement details" : "Transfer stock between locations"}</DialogDescription>
+            </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Lot</label>
-                  <Select onValueChange={(val) => {
-                    const id = parseInt(val);
-                    form.setValue("lotId", id);
-                    setSelectedLotId(id);
-                  }}>
+                  <Select 
+                    value={form.watch("lotId")?.toString() || ""}
+                    onValueChange={(val) => {
+                      const id = parseInt(val);
+                      form.setValue("lotId", id);
+                      setSelectedLotId(id);
+                    }}
+                    disabled={!!editingRecord}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Lot" />
                     </SelectTrigger>
@@ -241,7 +300,11 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">From Location</label>
-                    <Select onValueChange={(val) => form.setValue("fromLocationId", parseInt(val))}>
+                    <Select 
+                      value={form.watch("fromLocationId")?.toString() || ""}
+                      onValueChange={(val) => form.setValue("fromLocationId", parseInt(val))}
+                      disabled={!!editingRecord}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
@@ -254,7 +317,11 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">To Location</label>
-                    <Select onValueChange={(val) => form.setValue("toLocationId", parseInt(val))}>
+                    <Select 
+                      value={form.watch("toLocationId")?.toString() || ""}
+                      onValueChange={(val) => form.setValue("toLocationId", parseInt(val))}
+                      disabled={!!editingRecord}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
@@ -274,7 +341,10 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Stock Form</label>
-                  <Select defaultValue="loose" onValueChange={(val) => form.setValue("stockForm", val)}>
+                  <Select 
+                    value={form.watch("stockForm") || "loose"}
+                    onValueChange={(val) => form.setValue("stockForm", val)}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="loose">Raw Seeds</SelectItem>
@@ -289,14 +359,13 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                   <Input type="date" {...form.register("movementDate")} />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Record Movement
+                <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingRecord ? "Save Changes" : "Record Movement"}
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
       <Card>
@@ -347,6 +416,11 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" onClick={() => handleEdit(record)} data-testid={`button-edit-movement-${record.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button size="icon" variant="ghost" className="text-destructive" onClick={() => setDeleteRecordId(record.id)} data-testid={`button-delete-movement-${record.id}`}>
                                 <Trash2 className="w-4 h-4" />

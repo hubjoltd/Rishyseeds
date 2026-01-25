@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Truck, MapPin, Plus, Trash2, Loader2 } from "lucide-react";
+import { Truck, MapPin, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
 import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -60,6 +60,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
   const canDelete = hasPermission(permissions, "outward", "delete");
 
   const [open, setOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof outwardFormSchema>>({
@@ -120,6 +121,31 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/outward/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update record");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      toast({ title: "Success", description: "Dispatch record updated" });
+      setOpen(false);
+      setEditingRecord(null);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/outward/${id}`, {
@@ -168,18 +194,46 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
   const selectedLotId = form.watch("lotId");
   const selectedLotDetails = selectedLotId ? getLotDetails(selectedLotId) : null;
 
+  const handleEdit = (record: any) => {
+    setEditingRecord(record);
+    form.reset({
+      lotId: record.lotId,
+      destination: record.destination || "",
+      quantity: Number(record.quantity),
+      vehicleNumber: record.vehicleNumber || "",
+      driverName: record.driverName || "",
+      dispatchDate: record.dispatchDate || "",
+      remarks: record.remarks || "",
+    });
+    setOpen(true);
+  };
+
   const onSubmit = (data: z.infer<typeof outwardFormSchema>) => {
     const lotDetails = getLotDetails(data.lotId);
-    createMutation.mutate({
-      lotId: data.lotId,
-      destination: data.destination,
-      quantity: String(data.quantity),
-      variety: lotDetails.variety,
-      vehicleNumber: data.vehicleNumber || null,
-      driverName: data.driverName || null,
-      dispatchDate: data.dispatchDate || new Date().toISOString().slice(0, 10),
-      remarks: data.remarks || null,
-    });
+    if (editingRecord) {
+      updateMutation.mutate({
+        id: editingRecord.id,
+        data: {
+          destination: data.destination,
+          quantity: String(data.quantity),
+          vehicleNumber: data.vehicleNumber || null,
+          driverName: data.driverName || null,
+          dispatchDate: data.dispatchDate || null,
+          remarks: data.remarks || null,
+        }
+      });
+    } else {
+      createMutation.mutate({
+        lotId: data.lotId,
+        destination: data.destination,
+        quantity: String(data.quantity),
+        variety: lotDetails.variety,
+        vehicleNumber: data.vehicleNumber || null,
+        driverName: data.driverName || null,
+        dispatchDate: data.dispatchDate || new Date().toISOString().slice(0, 10),
+        remarks: data.remarks || null,
+      });
+    }
   };
 
   return (
@@ -194,26 +248,34 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
             <p className="text-muted-foreground">View dispatch records</p>
           </div>
         </div>
-        {canCreate && (
-          <Dialog open={open} onOpenChange={(isOpen) => {
-            setOpen(isOpen);
-            if (!isOpen) form.reset();
-          }}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingRecord(null);
+            form.reset();
+          }
+        }}>
+          {canCreate && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-outward">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Dispatch
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New Dispatch Record</DialogTitle>
-                <DialogDescription>Record outward dispatch</DialogDescription>
-              </DialogHeader>
+          )}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingRecord ? "Edit Dispatch Record" : "New Dispatch Record"}</DialogTitle>
+              <DialogDescription>{editingRecord ? "Update dispatch details" : "Record outward dispatch"}</DialogDescription>
+            </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Lot</label>
-                  <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
+                  <Select 
+                    value={form.watch("lotId")?.toString() || ""}
+                    onValueChange={(val) => form.setValue("lotId", parseInt(val))}
+                    disabled={!!editingRecord}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Lot" />
                     </SelectTrigger>
@@ -234,7 +296,10 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Destination State</label>
-                  <Select onValueChange={(val) => form.setValue("destination", val)}>
+                  <Select 
+                    value={form.watch("destination") || ""}
+                    onValueChange={(val) => form.setValue("destination", val)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select State" />
                     </SelectTrigger>
@@ -269,14 +334,13 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                   <Input type="date" {...form.register("dispatchDate")} />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Create Dispatch Record
+                <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingRecord ? "Save Changes" : "Create Dispatch Record"}
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
       <Card>
@@ -325,6 +389,11 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" onClick={() => handleEdit(record)} data-testid={`button-edit-outward-${record.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button size="icon" variant="ghost" className="text-destructive" onClick={() => setDeleteRecordId(record.id)} data-testid={`button-delete-outward-${record.id}`}>
                                 <Trash2 className="w-4 h-4" />

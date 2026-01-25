@@ -47,6 +47,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
   const canDelete = hasPermission(permissions, "processing", "delete");
 
   const [open, setOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof processingFormSchema>>({
@@ -107,6 +108,31 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/processing/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update record");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
+      toast({ title: "Success", description: "Processing record updated" });
+      setOpen(false);
+      setEditingRecord(null);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/processing/${id}`, {
@@ -148,15 +174,39 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     return new Date(dateStr).toLocaleDateString("en-IN");
   };
 
-  const onSubmit = (data: z.infer<typeof processingFormSchema>) => {
-    createMutation.mutate({
-      inputLotId: data.inputLotId,
-      inputQuantity: String(data.inputQuantity),
-      processingType: data.processingType,
-      processedBy: data.processedBy || null,
-      remarks: data.remarks || null,
-      status: "pending",
+  const handleEdit = (record: any) => {
+    setEditingRecord(record);
+    form.reset({
+      inputLotId: record.inputLotId,
+      inputQuantity: Number(record.inputQuantity),
+      processingType: record.processingType || "",
+      processedBy: record.processedBy || "",
+      remarks: record.remarks || "",
     });
+    setOpen(true);
+  };
+
+  const onSubmit = (data: z.infer<typeof processingFormSchema>) => {
+    if (editingRecord) {
+      updateMutation.mutate({
+        id: editingRecord.id,
+        data: {
+          inputQuantity: String(data.inputQuantity),
+          processingType: data.processingType,
+          processedBy: data.processedBy || null,
+          remarks: data.remarks || null,
+        }
+      });
+    } else {
+      createMutation.mutate({
+        inputLotId: data.inputLotId,
+        inputQuantity: String(data.inputQuantity),
+        processingType: data.processingType,
+        processedBy: data.processedBy || null,
+        remarks: data.remarks || null,
+        status: "pending",
+      });
+    }
   };
 
   return (
@@ -171,23 +221,27 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
             <p className="text-muted-foreground">View seed processing activities</p>
           </div>
         </div>
-        {canCreate && (
-          <Dialog open={open} onOpenChange={(isOpen) => {
-            setOpen(isOpen);
-            if (!isOpen) form.reset();
-          }}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingRecord(null);
+            form.reset();
+          }
+        }}>
+          {canCreate && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-processing">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Processing
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New Processing Record</DialogTitle>
-                <DialogDescription>Record seed processing activity</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          )}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingRecord ? "Edit Processing Record" : "New Processing Record"}</DialogTitle>
+              <DialogDescription>{editingRecord ? "Update processing details" : "Record seed processing activity"}</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Input Lot</label>
                   <Select onValueChange={(val) => form.setValue("inputLotId", parseInt(val))}>
@@ -241,14 +295,13 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
                   <Input {...form.register("remarks")} placeholder="Optional remarks" />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Create Processing Record
+                <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingRecord ? "Save Changes" : "Create Processing Record"}
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
       <Card>
@@ -297,6 +350,11 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" onClick={() => handleEdit(record)} data-testid={`button-edit-processing-${record.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button size="icon" variant="ghost" className="text-destructive" onClick={() => setDeleteRecordId(record.id)} data-testid={`button-delete-processing-${record.id}`}>
                                 <Trash2 className="w-4 h-4" />

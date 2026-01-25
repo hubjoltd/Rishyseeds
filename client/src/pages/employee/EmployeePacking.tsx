@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Boxes, Package, Plus, Trash2, Loader2 } from "lucide-react";
+import { Boxes, Package, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
 import { EmployeePermissions, hasPermission } from "./EmployeeLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
   const canDelete = hasPermission(permissions, "packaging", "delete");
 
   const [open, setOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof packingFormSchema>>({
@@ -119,6 +120,31 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/packaging-outputs/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getEmployeeAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update record");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/packaging-outputs"] });
+      toast({ title: "Success", description: "Packing record updated" });
+      setOpen(false);
+      setEditingRecord(null);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/packaging-outputs/${id}`, {
@@ -165,15 +191,40 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     return new Date(dateStr).toLocaleDateString("en-IN");
   };
 
-  const onSubmit = (data: z.infer<typeof packingFormSchema>) => {
-    createMutation.mutate({
-      lotId: data.lotId,
-      packagingSizeId: data.packagingSizeId,
-      quantity: data.quantity,
-      inputQuantity: String(data.inputQuantity),
-      wasteQuantity: String(data.wasteQuantity || 0),
-      packagingDate: data.packagingDate || new Date().toISOString().slice(0, 10),
+  const handleEdit = (record: any) => {
+    setEditingRecord(record);
+    form.reset({
+      lotId: record.lotId,
+      packagingSizeId: record.packagingSizeId,
+      quantity: record.quantity,
+      inputQuantity: Number(record.inputQuantity),
+      wasteQuantity: Number(record.wasteQuantity) || 0,
+      packagingDate: record.packagingDate || "",
     });
+    setOpen(true);
+  };
+
+  const onSubmit = (data: z.infer<typeof packingFormSchema>) => {
+    if (editingRecord) {
+      updateMutation.mutate({
+        id: editingRecord.id,
+        data: {
+          quantity: data.quantity,
+          inputQuantity: String(data.inputQuantity),
+          wasteQuantity: String(data.wasteQuantity || 0),
+          packagingDate: data.packagingDate || null,
+        }
+      });
+    } else {
+      createMutation.mutate({
+        lotId: data.lotId,
+        packagingSizeId: data.packagingSizeId,
+        quantity: data.quantity,
+        inputQuantity: String(data.inputQuantity),
+        wasteQuantity: String(data.wasteQuantity || 0),
+        packagingDate: data.packagingDate || new Date().toISOString().slice(0, 10),
+      });
+    }
   };
 
   return (
@@ -188,26 +239,34 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
             <p className="text-muted-foreground">View packaging activities</p>
           </div>
         </div>
-        {canCreate && (
-          <Dialog open={open} onOpenChange={(isOpen) => {
-            setOpen(isOpen);
-            if (!isOpen) form.reset();
-          }}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingRecord(null);
+            form.reset();
+          }
+        }}>
+          {canCreate && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-packing">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Packing
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New Packing Record</DialogTitle>
-                <DialogDescription>Record packaging output</DialogDescription>
-              </DialogHeader>
+          )}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingRecord ? "Edit Packing Record" : "New Packing Record"}</DialogTitle>
+              <DialogDescription>{editingRecord ? "Update packing details" : "Record packaging output"}</DialogDescription>
+            </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Lot</label>
-                  <Select onValueChange={(val) => form.setValue("lotId", parseInt(val))}>
+                  <Select 
+                    value={form.watch("lotId")?.toString() || ""} 
+                    onValueChange={(val) => form.setValue("lotId", parseInt(val))}
+                    disabled={!!editingRecord}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Lot" />
                     </SelectTrigger>
@@ -223,7 +282,11 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Package Size</label>
-                  <Select onValueChange={(val) => form.setValue("packagingSizeId", parseInt(val))}>
+                  <Select 
+                    value={form.watch("packagingSizeId")?.toString() || ""} 
+                    onValueChange={(val) => form.setValue("packagingSizeId", parseInt(val))}
+                    disabled={!!editingRecord}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Size" />
                     </SelectTrigger>
@@ -258,14 +321,13 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                   <Input type="date" {...form.register("packagingDate")} />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Create Packing Record
+                <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingRecord ? "Save Changes" : "Create Packing Record"}
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
       <Card>
@@ -312,6 +374,11 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                       {(canEdit || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {canEdit && (
+                              <Button size="icon" variant="ghost" onClick={() => handleEdit(record)} data-testid={`button-edit-packing-${record.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button size="icon" variant="ghost" className="text-destructive" onClick={() => setDeleteRecordId(record.id)} data-testid={`button-delete-packing-${record.id}`}>
                                 <Trash2 className="w-4 h-4" />

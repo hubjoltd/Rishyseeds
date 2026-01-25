@@ -87,7 +87,9 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
-- **Employee Portal Action Buttons**: All 5 plant operations pages (Inward, Processing, Packing, Stock Movement, Outward) now show Add/Edit/Delete buttons based on employee's role permissions
+- **Complete Employee CRUD**: All 5 plant operations pages (Inward, Processing, Packing, Stock Movement, Outward) now have complete Add/Edit/Delete functionality with working dialogs, form validation, and proper state management
+- **Edit Functionality**: Each page has handleEdit function with form pre-population, updateMutation for PUT requests, and dynamic dialog titles based on create/edit mode
+- **Employee Portal Action Buttons**: All 5 plant operations pages now show Add/Edit/Delete buttons based on employee's role permissions
 - **Role-Based Employee Portal**: Employee sidebar now displays menu items based on their role permissions (configured in Roles page)
 - **Employee Permissions API**: New endpoint `/api/employee/permissions` returns permissions based on employee's role from roles table
 - **Employee Portal Plant Operations**: Added Inward, Processing, Packing, Stock Movement, and Outward pages to employee portal with collapsible sidebar section
