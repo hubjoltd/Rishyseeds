@@ -193,6 +193,7 @@ export default function EmployeeProcessing({ employee, permissions = {} }: Emplo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/processing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Processing completed and output lot created", variant: "success" });
       setCompleteRecordId(null);
       completeForm.reset();

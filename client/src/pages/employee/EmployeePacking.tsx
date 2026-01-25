@@ -133,6 +133,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Packing record created", variant: "success" });
       setOpen(false);
       form.reset();
@@ -160,6 +161,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Packing record updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
@@ -187,6 +189,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/packaging"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Record deleted" });
       setDeleteRecordId(null);
     },

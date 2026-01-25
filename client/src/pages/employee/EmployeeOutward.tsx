@@ -129,6 +129,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Dispatch record created", variant: "success" });
       setOpen(false);
       form.reset();
@@ -155,6 +156,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Dispatch record updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
@@ -181,6 +183,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Record deleted" });
       setDeleteRecordId(null);
     },

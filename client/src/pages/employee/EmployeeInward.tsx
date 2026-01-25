@@ -117,6 +117,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Inward record created successfully" });
       setOpen(false);
       form.reset();
@@ -142,6 +143,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Lot updated successfully" });
       setOpen(false);
       setEditingLot(null);
@@ -167,6 +169,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/lots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Lot deleted successfully" });
       setDeleteLotId(null);
     },
