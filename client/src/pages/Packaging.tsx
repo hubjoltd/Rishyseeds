@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLots, useProducts, usePackagingSizes, useStockBalances, useLocations, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
+import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -51,10 +52,17 @@ export default function Packaging() {
   const { data: packagingSizes } = usePackagingSizes();
   const { data: stockBalances } = useStockBalances();
   const { data: locations } = useLocations();
+  const { data: employees } = useEmployees();
   const { mutate: createPackaging, isPending } = useCreatePackagingOutput();
   const { mutate: deletePackaging, isPending: isDeleting } = useDeletePackagingOutput();
   const { mutate: updatePackaging, isPending: isUpdating } = useUpdatePackagingOutput();
   const { canDelete, canEdit } = useAuth();
+  
+  const getCreatedByName = (createdById: number | null | undefined) => {
+    if (!createdById) return "-";
+    const emp = (employees || []).find((e: any) => e.id === createdById);
+    return emp?.fullName || emp?.employeeId || "-";
+  };
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
@@ -456,14 +464,15 @@ export default function Packaging() {
                 <TableHead className="text-right">Bags</TableHead>
                 <TableHead className="text-right">Total (KG)</TableHead>
                 <TableHead className="text-right">Waste (KG)</TableHead>
+                <TableHead>Created By</TableHead>
                 {(canEditPackaging || canDeletePackaging) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 9 : 8} className="text-center">Loading...</TableCell></TableRow>
               ) : packagingOutputs?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 8 : 7} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 9 : 8} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
               ) : (
                 packagingOutputs?.map((p) => (
                   <TableRow key={p.id}>
@@ -484,6 +493,7 @@ export default function Packaging() {
                     <TableCell className="text-right text-orange-600">
                       {Number(p.wasteQuantity || 0).toFixed(2)} kg
                     </TableCell>
+                    <TableCell>{getCreatedByName(p.createdBy)}</TableCell>
                     {(canEditPackaging || canDeletePackaging) && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">

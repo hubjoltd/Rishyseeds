@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations } from "@/hooks/use-inventory";
+import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -62,11 +63,18 @@ export default function Inward() {
   const { data: stockBalances } = useStockBalances();
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
+  const { data: employees } = useEmployees();
   const { mutate: createLot, isPending } = useCreateLot();
   const { mutate: updateLot, isPending: isUpdating } = useUpdateLot();
   const { mutate: deleteLot, isPending: isDeleting } = useDeleteLot();
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
   const { canDelete, canEdit } = useAuth();
+  
+  const getCreatedByName = (createdById: number | null | undefined) => {
+    if (!createdById) return "-";
+    const emp = (employees || []).find((e: any) => e.id === createdById);
+    return emp?.fullName || emp?.employeeId || "-";
+  };
   
   const [open, setOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
@@ -429,6 +437,7 @@ export default function Inward() {
                   <TableHead>Current Balance</TableHead>
                   <TableHead>Stock Form</TableHead>
                   <TableHead>Inward Date</TableHead>
+                  <TableHead>Created By</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -436,7 +445,7 @@ export default function Inward() {
               <TableBody>
                 {filteredLots.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No lots found. Record your first inward entry above.
                     </TableCell>
                   </TableRow>
@@ -453,6 +462,7 @@ export default function Inward() {
                         </Badge>
                       </TableCell>
                       <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
+                      <TableCell>{getCreatedByName(lot.createdBy)}</TableCell>
                       <TableCell>
                         <Badge variant={lot.status === 'active' ? 'default' : 'outline'}>
                           {lot.status}

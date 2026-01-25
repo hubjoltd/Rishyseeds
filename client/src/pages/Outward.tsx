@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useLots, useProducts, useLocations, useStockBalances } from "@/hooks/use-inventory";
+import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -65,9 +66,16 @@ export default function Outward() {
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
+  const { data: employees } = useEmployees();
   const { mutate: createRecord, isPending } = useCreateOutwardRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteOutwardRecord();
   const { canDelete } = useAuth();
+  
+  const getCreatedByName = (createdById: number | null | undefined) => {
+    if (!createdById) return "-";
+    const emp = (employees || []).find((e: any) => e.id === createdById);
+    return emp?.fullName || emp?.employeeId || "-";
+  };
   
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
@@ -352,13 +360,14 @@ export default function Outward() {
                   <TableHead>Variety</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Created By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No dispatch records found.
                     </TableCell>
                   </TableRow>
@@ -385,6 +394,7 @@ export default function Outward() {
                       <TableCell>{record.variety || '-'}</TableCell>
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
                       <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
+                      <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right">
                         {canDeleteOutward && (
                           <Button

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useProcessingRecords, useCreateProcessingRecord, useDeleteProcessingRecord, useCompleteProcessing, useLots, useProducts, useLocations } from "@/hooks/use-inventory";
+import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -62,10 +63,17 @@ export default function Processing() {
   const { data: records, isLoading } = useProcessingRecords();
   const { data: lots } = useLots();
   const { data: products } = useProducts();
+  const { data: employees } = useEmployees();
   const { mutate: createRecord, isPending } = useCreateProcessingRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteProcessingRecord();
   const { mutate: completeProcessing, isPending: isCompleting } = useCompleteProcessing();
   const { canDelete, canEdit } = useAuth();
+  
+  const getCreatedByName = (createdById: number | null | undefined) => {
+    if (!createdById) return "-";
+    const emp = (employees || []).find((e: any) => e.id === createdById);
+    return emp?.fullName || emp?.employeeId || "-";
+  };
   
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
@@ -302,13 +310,14 @@ export default function Processing() {
                   <TableHead>Waste</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Created By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No processing records found.
                     </TableCell>
                   </TableRow>
@@ -328,6 +337,7 @@ export default function Processing() {
                         </Badge>
                       </TableCell>
                       <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
+                      <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right flex gap-1 justify-end">
                         {record.status === 'pending' && canEditProcessing && (
                           <Button

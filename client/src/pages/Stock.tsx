@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances } from "@/hooks/use-inventory";
+import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -60,10 +61,17 @@ export default function Stock() {
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
+  const { data: employees } = useEmployees();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
   const { mutate: updateMovement, isPending: isUpdating } = useUpdateStockMovement();
   const { canDelete, canEdit } = useAuth();
+  
+  const getCreatedByName = (createdById: number | null | undefined) => {
+    if (!createdById) return "-";
+    const emp = (employees || []).find((e: any) => e.id === createdById);
+    return emp?.fullName || emp?.employeeId || "-";
+  };
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
@@ -396,14 +404,15 @@ export default function Stock() {
                 <TableHead>To Warehouse</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead>Person</TableHead>
+                <TableHead>Created By</TableHead>
                 {(canEditStock || canDeleteStock) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 7 : 6} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
                 movements?.map((m) => {
                   const lot = (lots as Lot[] || []).find(l => l.id === m.lotId);
@@ -433,6 +442,7 @@ export default function Stock() {
                       </TableCell>
                       <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
                       <TableCell>{m.responsiblePerson || '-'}</TableCell>
+                      <TableCell>{getCreatedByName(m.createdBy)}</TableCell>
                       {(canEditStock || canDeleteStock) && (
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
