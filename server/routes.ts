@@ -8,6 +8,7 @@ import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
+import { seedProductsAndWarehouses } from "./seed-data";
 
 const SessionStore = MemoryStore(session);
 
@@ -695,6 +696,15 @@ export async function registerRoutes(
       res.status(201).json(product);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to create product" });
+    }
+  });
+
+  app.post("/api/seed-data", async (req, res) => {
+    try {
+      await seedProductsAndWarehouses();
+      res.json({ message: "Products and warehouses seeded successfully" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to seed data" });
     }
   });
 
