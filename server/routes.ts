@@ -290,7 +290,7 @@ export async function registerRoutes(
   };
 
   // Reference data resources that all authenticated employees can view
-  const referenceDataResources: Resource[] = ['products', 'locations', 'packagingSizes', 'lots'];
+  const referenceDataResources: Resource[] = ['products', 'locations', 'packagingSizes', 'lots', 'stock'];
   
   // Granular permission check middleware
   const checkPermission = (resource: Resource, action: Action) => {

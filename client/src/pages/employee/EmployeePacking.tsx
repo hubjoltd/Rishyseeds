@@ -110,9 +110,9 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
   });
 
   const { data: stockBalances } = useQuery({
-    queryKey: ["/api/stock/balances"],
+    queryKey: ["/api/stock-balances"],
     queryFn: async () => {
-      const res = await fetch("/api/stock/balances", { headers: getEmployeeAuthHeaders() });
+      const res = await fetch("/api/stock-balances", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch stock balances");
       return res.json();
     },

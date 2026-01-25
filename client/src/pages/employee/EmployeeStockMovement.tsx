@@ -100,9 +100,9 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
   });
 
   const { data: stockBalances } = useQuery({
-    queryKey: ["/api/stock/balances"],
+    queryKey: ["/api/stock-balances"],
     queryFn: async () => {
-      const res = await fetch("/api/stock/balances", { headers: getEmployeeAuthHeaders() });
+      const res = await fetch("/api/stock-balances", { headers: getEmployeeAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch stock balances");
       return res.json();
     },
@@ -123,7 +123,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Stock movement recorded", variant: "success" });
       setOpen(false);
       form.reset();
@@ -150,7 +150,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Movement updated", variant: "success" });
       setOpen(false);
       setEditingRecord(null);
@@ -177,7 +177,7 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock/movements"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
       toast({ title: "Success", description: "Movement deleted" });
       setDeleteRecordId(null);
     },
