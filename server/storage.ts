@@ -65,6 +65,7 @@ export interface IStorage {
   getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined>;
+  deleteEmployee(id: number): Promise<boolean>;
 
   // Attendance
   markAttendance(record: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
@@ -91,6 +92,8 @@ export interface IStorage {
   getProducts(): Promise<Product[]>;
   getProduct(id: number): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: number, updates: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(id: number): Promise<boolean>;
 
   // Lots
   getLots(): Promise<Lot[]>;
@@ -347,6 +350,11 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async deleteEmployee(id: number): Promise<boolean> {
+    await db.delete(employees).where(eq(employees.id, id));
+    return true;
+  }
+
   // Attendance
   async markAttendance(att: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect> {
     const [newAttendance] = await db.insert(attendance).values(att).returning();
@@ -441,6 +449,16 @@ export class DatabaseStorage implements IStorage {
   async createProduct(product: InsertProduct): Promise<Product> {
     const [newProduct] = await db.insert(products).values(product).returning();
     return newProduct;
+  }
+
+  async updateProduct(id: number, updates: Partial<InsertProduct>): Promise<Product | undefined> {
+    const [updated] = await db.update(products).set(updates).where(eq(products.id, id)).returning();
+    return updated;
+  }
+
+  async deleteProduct(id: number): Promise<boolean> {
+    await db.delete(products).where(eq(products.id, id));
+    return true;
   }
 
   // Lots

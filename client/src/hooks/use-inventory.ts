@@ -20,6 +20,62 @@ export function useProducts() {
   });
 }
 
+export function useCreateProduct() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create product");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({ title: "Success", description: "Product created successfully" });
+    },
+  });
+}
+
+export function useUpdateProduct() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update product");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({ title: "Success", description: "Product updated successfully" });
+    },
+  });
+}
+
+export function useDeleteProduct() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to delete product");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({ title: "Success", description: "Product deleted successfully" });
+    },
+  });
+}
+
 // === LOCATIONS ===
 export function useLocations() {
   return useQuery({
@@ -58,7 +114,7 @@ export function useUpdateLocation() {
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertLocation> }) => {
       const res = await fetch(`/api/locations/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
@@ -146,7 +202,7 @@ export function useUpdateBatch() {
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertBatch> }) => {
       const res = await fetch(`/api/batches/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });

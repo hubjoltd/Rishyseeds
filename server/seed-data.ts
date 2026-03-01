@@ -33,6 +33,22 @@ export async function seedProductsAndWarehouses() {
     { crop: "Black Gram", variety: "T-9", type: "notified" },
     { crop: "Red Gram", variety: "ICPL-85063 (LAXMI)", type: "notified" },
     { crop: "Coriander", variety: "CS 4", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-111 (MH-2601)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-222 (MH-2602)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-333 (MH-2603)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-444 (MH-2604)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-555 (MH-2605)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-666 (MH-2606)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-777 (MH-2607)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-888 (MH-2608)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-999 (MH-2609)", type: "notified" },
+    { crop: "MAIZE", variety: "RCH-010 (MH-2610)", type: "notified" },
+    { crop: "PADDY", variety: "RCH-101", type: "notified" },
+    { crop: "PADDY", variety: "RCH-202", type: "notified" },
+    { crop: "PADDY", variety: "RCH-303", type: "notified" },
+    { crop: "COTTON", variety: "RCH-GOLD", type: "notified" },
+    { crop: "COTTON", variety: "RCH-SILVER", type: "notified" },
+    { crop: "COTTON", variety: "RCH-PLATINUM", type: "notified" },
   ];
 
   // Private Research Varieties

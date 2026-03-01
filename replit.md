@@ -87,35 +87,12 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### January 25, 2026 (Latest)
-- **Employee Profile Page**: New "My Profile" page in employee portal with 3 tabs:
-  - Personal Details: Shows employee info, department, contact, salary components
-  - Bank Details: Displays bank account, IFSC, PAN, and deduction information
-  - Security: Password update functionality with current/new password validation
-- **Responsive Admin Panel**: Admin sidebar now works on mobile with hamburger menu that opens a slide-out drawer. Main content has responsive padding.
-- **Notification Sound**: Admin notifications now play a sound when new notifications arrive (using Web Audio API)
-- **Lot Reference Data Access**: Employees can now view lots for selection in forms without explicit permissions
-- **Product Filter in Employee Portal**: All 4 employee plant operations pages (Stock Movement, Packing, Processing, Outward) now have Product dropdown filter before lot selection, matching admin panel UX. State management properly handles both create and edit flows with consistent reset behavior.
-- **Employee Portal Reference Data Access**: All employees can now view products, locations, and packaging sizes regardless of their role permissions (these are lookup tables needed for creating records). The `checkPermission` middleware was updated to allow read access to reference data for all authenticated employees.
-- **Admin Notifications System**: Bell icon in admin sidebar shows real-time notifications for employee activities. Tracks punch in/out, inward, processing, packing, stock movement, and outward operations. Unread count badge, mark as read, and mark all read functionality.
-- **Created By Tracking**: All plant operations records (Inward, Processing, Packing, Stock Movement, Outward) now store createdBy employee ID. Admin portal displays "Created By" column showing employee names. Employee portal automatically populates createdBy when creating new records.
-- **Complete Employee CRUD**: All 5 plant operations pages (Inward, Processing, Packing, Stock Movement, Outward) now have complete Add/Edit/Delete functionality with working dialogs, form validation, and proper state management
-- **Edit Functionality**: Each page has handleEdit function with form pre-population, updateMutation for PUT requests, and dynamic dialog titles based on create/edit mode
-- **Employee Portal Action Buttons**: All 5 plant operations pages now show Add/Edit/Delete buttons based on employee's role permissions
-- **Role-Based Employee Portal**: Employee sidebar now displays menu items based on their role permissions (configured in Roles page)
-- **Employee Permissions API**: New endpoint `/api/employee/permissions` returns permissions based on employee's role from roles table
-- **Employee Portal Plant Operations**: Added Inward, Processing, Packing, Stock Movement, and Outward pages to employee portal with collapsible sidebar section
-- **Production Database Seeding**: Script to seed Neon production database with 22 locations/warehouses and 67 product varieties from Telangana license document
-- **Responsive Employee Sidebar**: Collapsible Plant Operations section with all seed operations pages
-- **Inward Edit Fix**: Fixed edit button text to show "Save Changes" when editing and proper disabled state using `isUpdating`
-- **State-Based Destinations**: Added state codes (AP, TS, MP, UP, KA, CG) as destination types in Outward/Dispatch
-- **Variety Field in Dispatch**: Added product variety field to outward/dispatch records for better tracking
-- **Employee Portal**: Separate login page at `/employee-login` for employees to access their dashboard
-- **Punch In/Out System**: Employees can punch in/out for attendance tracking with real-time status
-- **Employee Attendance History**: Employees can view their complete attendance history
-- **Downloadable Payslips**: Employees can download payslips as HTML (with HTML sanitization for security)
-- **Role Management**: New Roles page at `/roles` for creating and managing custom roles with granular permissions
-- **Permission Matrix**: Roles can have view/create/edit/delete permissions for all resources
-- **Administration Section**: New sidebar section with Users and Roles links
+- **Product Variety Uniqueness**: Added `.unique()` constraint to `products.variety` in schema.
+- **Enhanced Seed Data**: Updated seed script with complete list of 18 Maize, 3 Paddy, and 3 Cotton varieties.
+- **Product & Employee CRUD**: Implemented full CRUD (Create, Read, Update, Delete) for Products and Employees in backend storage and routes.
+- **Frontend Inventory Hooks**: Added `useCreateProduct`, `useUpdateProduct`, and `useDeleteProduct` hooks.
+- **Location Detail Fixes**: Resolved 401 Unauthorized errors by adding auth headers to all fetch calls in `LocationDetail.tsx`.
+- **Method Consistency**: Updated location and batch update hooks to use `PATCH` method to match server routes.
 
 ### January 2026
 - **New Lot Number Format**: Lot numbers now follow format MA-[variety last 2 digits]-26-001 (e.g., MA-S5-26-001)

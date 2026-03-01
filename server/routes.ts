@@ -747,6 +747,74 @@ export async function registerRoutes(
     }
   });
 
+  // === EMPLOYEE MANAGEMENT ROUTES ===
+  app.get("/api/employees", checkPermission('employees', 'view'), async (req, res) => {
+    const employees = await storage.getEmployees();
+    res.json(employees);
+  });
+
+  app.post("/api/employees", checkPermission('employees', 'create'), async (req, res) => {
+    try {
+      const employee = await storage.createEmployee(req.body);
+      res.status(201).json(employee);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to create employee" });
+    }
+  });
+
+  app.patch("/api/employees/:id", checkPermission('employees', 'edit'), async (req, res) => {
+    try {
+      const updated = await storage.updateEmployee(Number(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "Employee not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to update employee" });
+    }
+  });
+
+  app.delete("/api/employees/:id", checkPermission('employees', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteEmployee(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to delete employee" });
+    }
+  });
+
+  // === EMPLOYEE MANAGEMENT ROUTES ===
+  app.get("/api/employees", checkPermission('employees', 'view'), async (req, res) => {
+    const employees = await storage.getEmployees();
+    res.json(employees);
+  });
+
+  app.post("/api/employees", checkPermission('employees', 'create'), async (req, res) => {
+    try {
+      const employee = await storage.createEmployee(req.body);
+      res.status(201).json(employee);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to create employee" });
+    }
+  });
+
+  app.patch("/api/employees/:id", checkPermission('employees', 'edit'), async (req, res) => {
+    try {
+      const updated = await storage.updateEmployee(Number(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "Employee not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to update employee" });
+    }
+  });
+
+  app.delete("/api/employees/:id", checkPermission('employees', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteEmployee(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to delete employee" });
+    }
+  });
+
   // === ATTENDANCE ROUTES ===
   app.post(api.attendance.mark.path, async (req, res) => {
     try {
@@ -821,18 +889,36 @@ export async function registerRoutes(
     res.json(list);
   });
 
-  // === PRODUCTS ROUTES ===
   app.get("/api/products", async (req, res) => {
     const products = await storage.getProducts();
     res.json(products);
   });
 
-  app.post("/api/products", async (req, res) => {
+  app.post("/api/products", checkPermission('products', 'create'), async (req, res) => {
     try {
       const product = await storage.createProduct(req.body);
       res.status(201).json(product);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to create product" });
+    }
+  });
+
+  app.patch("/api/products/:id", checkPermission('products', 'edit'), async (req, res) => {
+    try {
+      const updated = await storage.updateProduct(Number(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "Product not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to update product" });
+    }
+  });
+
+  app.delete("/api/products/:id", checkPermission('products', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteProduct(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to delete product" });
     }
   });
 

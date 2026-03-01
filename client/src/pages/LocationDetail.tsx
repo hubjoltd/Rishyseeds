@@ -41,6 +41,13 @@ import { format } from "date-fns";
 
 type TabType = "details" | "crops" | "movements";
 
+import { getAuthToken } from "@/lib/queryClient";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function LocationDetail() {
   const [, params] = useRoute("/locations/:id");
   const locationId = params?.id ? parseInt(params.id) : null;
@@ -59,7 +66,7 @@ export default function LocationDetail() {
   const { data: location, isLoading: locationLoading, error: locationError } = useQuery<Location>({
     queryKey: ["/api/locations", locationId],
     queryFn: async () => {
-      const res = await fetch(`/api/locations/${locationId}`);
+      const res = await fetch(`/api/locations/${locationId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch location");
       return res.json();
     },
@@ -67,14 +74,27 @@ export default function LocationDetail() {
     retry: false
   });
 
-  const { data: lots } = useLots();
-  const { data: products } = useProducts();
-  const { data: stockBalances } = useStockBalances();
-  const { data: allLocations } = useLocations();
-
   const { data: movements } = useQuery<StockMovement[]>({
     queryKey: ["/api/stock/history"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock/history", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch history");
+      return res.json();
+    }
   });
+
+  const { data: stockBalances } = useQuery<StockBalance[]>({
+    queryKey: ["/api/stock-balances"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock-balances", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch stock balances");
+      return res.json();
+    }
+  });
+
+  const { data: lots } = useLots();
+  const { data: products } = useProducts();
+  const { data: allLocations } = useLocations();
 
   const locationMovements = movements?.filter(
     m => m.fromLocationId === locationId || m.toLocationId === locationId
