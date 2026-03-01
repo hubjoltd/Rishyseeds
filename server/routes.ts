@@ -2018,21 +2018,14 @@ async function seedDatabase() {
   if (!existingUsers) {
     await storage.createUser({
       username: "admin",
-      password: "admin123", // Default password
+      password: "admin123",
       role: "admin",
       fullName: "System Administrator"
     });
     console.log("Seeded admin user");
   }
 
-  // Products already seeded via SQL, no need to seed here
-
-  const existingLocations = await storage.getLocations();
-  if (existingLocations.length === 0) {
-    await storage.createLocation({ name: "Main Storage", type: "storage", address: "Warehouse A" });
-    await storage.createLocation({ name: "Packaging Unit 1", type: "packaging", address: "Unit 1" });
-    console.log("Seeded locations");
-  }
+  await seedProductsAndWarehouses();
 
   const existingEmployees = await storage.getEmployees();
   if (existingEmployees.length === 0) {

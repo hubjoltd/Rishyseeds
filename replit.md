@@ -86,6 +86,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### March 1, 2026 (Warehouse & Product Seeding)
+- **License-Based Seeding**: Wired `seedProductsAndWarehouses()` from `server/seed-data.ts` into the startup `seedDatabase()` function so all warehouses and products from the Telangana seed dealer license are automatically seeded on app start.
+- **20 Warehouses**: Includes main office, plant, cold storage facilities (Gubba, GNR, Himalaya, etc.), and processing/packing locations across Medchal-Malkajigiri, Karimnagar, and Medak districts.
+- **80+ Products**: Seeded with correct types — `notified` for government-notified varieties and `private_research` for Rishi's proprietary hybrids.
+- **Type Fix**: Corrected product type from `private` to `private_research` to match frontend expectations in `Products.tsx`.
+- **Files Modified**: `server/routes.ts`, `server/seed-data.ts`
+
 ### March 1, 2026 (Trip Tracking)
 - **Trip Tracking & Expense Management**: Full feature with GPS capture, photo uploads, map visualization (Leaflet+OpenStreetMap), and admin approval workflow.
   - Schema: `trips` and `trip_visits` tables in `shared/schema.ts`
