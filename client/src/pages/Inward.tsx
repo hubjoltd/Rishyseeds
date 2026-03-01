@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -247,23 +248,20 @@ export default function Inward() {
               ) : (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Product (Crop/Variety)</label>
-                  <Select 
+                  <Combobox
+                    options={(products as Product[] || []).map((p: Product) => ({
+                      value: p.id.toString(),
+                      label: `${p.crop} - ${p.variety}`,
+                    }))}
+                    value={form.watch("productId")?.toString()}
                     onValueChange={(val) => {
-                      form.setValue("productId", parseInt(val));
+                      form.setValue("productId", val ? parseInt(val) : 0);
                       setGeneratedLotNumber("");
                     }}
-                  >
-                    <SelectTrigger data-testid="select-product">
-                      <SelectValue placeholder="Select Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(products as Product[] || []).map((p: Product) => (
-                        <SelectItem key={p.id} value={p.id.toString()}>
-                          {p.crop} - {p.variety}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select Product"
+                    searchPlaceholder="Search products..."
+                    data-testid="select-product"
+                  />
                 </div>
               )}
 

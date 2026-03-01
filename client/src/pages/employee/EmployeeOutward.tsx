@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Truck, MapPin, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -326,27 +327,22 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Product <span className="text-destructive">*</span></label>
-                    <Select 
-                      value={selectedProductId?.toString() || ""}
+                    <Combobox
+                      options={(products || []).map((p: any) => ({
+                        value: p.id.toString(),
+                        label: `${p.crop} - ${p.variety}`,
+                      }))}
+                      value={selectedProductId?.toString()}
                       onValueChange={(val) => {
-                        const productId = parseInt(val);
+                        const productId = val ? parseInt(val) : null;
                         setSelectedProductId(productId);
                         form.setValue("lotId", 0);
                         setSelectedLotId(null);
                       }}
+                      placeholder="Select Product"
+                      searchPlaceholder="Search products..."
                       disabled={!!editingRecord}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(products || []).map((p: any) => (
-                          <SelectItem key={p.id} value={p.id.toString()}>
-                            {p.crop} - {p.variety}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
 
                   <div className="space-y-2">
