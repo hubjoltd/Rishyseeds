@@ -652,7 +652,6 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  // Packaging Sizes Master
   async getPackagingSizes(): Promise<PackagingSize[]> {
     return await db.select().from(packagingSizes).orderBy(packagingSizes.size);
   }
