@@ -86,54 +86,18 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-### January 25, 2026 (Latest)
+### March 1, 2026
+- **Product Uniqueness**: Added `.unique()` constraint to `products.variety` in `shared/schema.ts`.
+- **Database Seeding**: Successfully seeded the database with the complete list of 262+ product varieties including Maize, Paddy, and Cotton.
+- **Project Build**: Verified project builds and starts correctly after schema changes.
+
+### January 25, 2026
 - **Product Variety Uniqueness**: Added `.unique()` constraint to `products.variety` in schema.
 - **Enhanced Seed Data**: Updated seed script with complete list of 18 Maize, 3 Paddy, and 3 Cotton varieties.
 - **Product & Employee CRUD**: Implemented full CRUD (Create, Read, Update, Delete) for Products and Employees in backend storage and routes.
 - **Frontend Inventory Hooks**: Added `useCreateProduct`, `useUpdateProduct`, and `useDeleteProduct` hooks.
 - **Location Detail Fixes**: Resolved 401 Unauthorized errors by adding auth headers to all fetch calls in `LocationDetail.tsx`.
 - **Method Consistency**: Updated location and batch update hooks to use `PATCH` method to match server routes.
-
-### January 2026
-- **New Lot Number Format**: Lot numbers now follow format MA-[variety last 2 digits]-26-001 (e.g., MA-S5-26-001)
-- **Inward Edit Feature**: Added Edit button to Inward page for updating lot details (source, quantity, dates, remarks)
-- **Stock Balance on Inward**: Creating an inward entry now automatically creates a stock_balance record with correct location
-- **Variety Display**: All pages (Stock Movement, Packaging, Processing, Outward) now show lot number with product variety
-- **Processing Dropdowns Updated**:
-  - Processing Type: Cleaning, Processing, Drying (removed Grading and Treatment)
-  - Processed By: Old Machine, New Machine (dropdown instead of text input)
-- **Stock Forms Renamed**: "Loose" renamed to "Raw Seeds", added "Cobs" as new option
-- **Stock Movement uses Lots**: Stock Movement page now uses Lot Numbers instead of Batches, with auto-display of product name and received quantity when a lot is selected
-- **Comprehensive Stock Reports**: Updated Reports page with 5 report types - Lot Stock, Variety-wise, Location-wise, Outward Log, and Processing reports with CSV export
-- **Stock Validation on Outward**: Server-side validation prevents dispatching more stock than available
-- **New Operator Roles**: Added Godown Operator, Production Operator, and Dispatch Operator roles with specific permissions
-- **Packaging Size Master**: New master data screen for managing standard package sizes (1kg, 5kg, 25kg, etc.)
-- **Plant Operations**: Renamed "Seed Operations" to "Plant Operations" in sidebar navigation
-- **Inward Enhancements**: Added Source/Supplier name field and Tons/KG quantity conversion (stored in KG)
-- **Processing Workflow**: Complete processing with input lot, output quantity, waste tracking, and auto-generation of output lot
-- **Packaging Improvements**: Uses Lots, integrates with Packaging Sizes master, shows remaining loose stock
-
-### January 2026
-- **Granular Role Privileges**: Implemented resource-based permission system (view, create, edit, delete) per role:
-  - Admin: Full access to all resources
-  - Manager: Full access to plant operations (lots, locations, stock, packaging, products); view-only for HRMS
-  - HR: Full access to HRMS (employees, attendance, payroll); view-only for plant operations
-- **Permissions API**: New `/api/auth/permissions` endpoint returns user's role and permissions matrix
-- **Permission-Based UI**: Delete buttons conditionally shown based on user's delete permission for each resource
-- **Warehouse Rename**: "Locations" renamed to "Warehouses" throughout the UI for better business context
-- **Stock Movement Delete**: Added ability to delete stock movements with confirmation dialog
-- **Packaging Delete**: Added ability to delete packaging records with confirmation dialog
-- **User Management**: Admin-only Users & Roles page with CRUD operations for managing system users and role assignments (admin/manager/hr)
-- **Products Page**: Complete product/crop management with 67 varieties (notified + private research) from license document
-- **Reports Page**: Comprehensive reporting with Stock, Movements, Locations, and Batch Summary reports with CSV export and print functionality
-- **Collapsible Sidebar**: Modern sidebar with nested navigation (Seed Operations, HRMS, Finance) that collapses from 260px to 72px
-- **Modern UI Design**: Borderless cards with subtle shadows, gradient stat cards, glassmorphism for modals
-- **Batch Management**: Full CRUD operations (Create, Read, Update, Delete) with confirmation dialogs
-- **Stock Movement Validation**: Server-side validation prevents moving more stock than available in a batch
-- **Packaging Output**: New page for recording packaging production with waste tracking
-- **Error Handling**: Improved error propagation from server to UI with toast notifications
-- **IStorage Interface**: Added updateBatch, deleteBatch, getProducts, createProduct, getUsers, updateUser, deleteUser, deleteLocation, updateStockMovement, deleteStockMovement, updatePackagingOutput, deletePackagingOutput methods
-- **Zod Validation**: User creation and update routes use Zod schemas for input validation and role enum enforcement
 
 ## Default Admin Credentials
 - Username: `admin`

@@ -233,7 +233,7 @@ export type CreatePackagingOutputRequest = z.infer<typeof insertPackagingOutputS
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   crop: text("crop").notNull(),
-  variety: text("variety").notNull(),
+  variety: text("variety").notNull().unique(),
   type: text("type").notNull().default("notified"), // notified, private_research
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
