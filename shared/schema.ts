@@ -332,6 +332,57 @@ export const insertOutwardRecordSchema = createInsertSchema(outwardRecords).omit
 export type OutwardRecord = typeof outwardRecords.$inferSelect;
 export type InsertOutwardRecord = z.infer<typeof insertOutwardRecordSchema>;
 
+// === TRIP TRACKING ===
+export const trips = pgTable("trips", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  status: text("status").notNull().default("started"),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  startLatitude: decimal("start_latitude"),
+  startLongitude: decimal("start_longitude"),
+  startLocationName: text("start_location_name"),
+  endLatitude: decimal("end_latitude"),
+  endLongitude: decimal("end_longitude"),
+  endLocationName: text("end_location_name"),
+  startMeterPhoto: text("start_meter_photo"),
+  endMeterPhoto: text("end_meter_photo"),
+  startMeterReading: decimal("start_meter_reading"),
+  endMeterReading: decimal("end_meter_reading"),
+  totalKm: decimal("total_km"),
+  expenseAmount: decimal("expense_amount"),
+  rejectionReason: text("rejection_reason"),
+  approvedBy: integer("approved_by"),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTripSchema = createInsertSchema(trips).omit({ id: true, createdAt: true });
+export type Trip = typeof trips.$inferSelect;
+export type InsertTrip = z.infer<typeof insertTripSchema>;
+
+export const tripVisits = pgTable("trip_visits", {
+  id: serial("id").primaryKey(),
+  tripId: integer("trip_id").notNull(),
+  punchInTime: timestamp("punch_in_time"),
+  punchOutTime: timestamp("punch_out_time"),
+  punchInLatitude: decimal("punch_in_latitude"),
+  punchInLongitude: decimal("punch_in_longitude"),
+  punchInLocationName: text("punch_in_location_name"),
+  punchOutLatitude: decimal("punch_out_latitude"),
+  punchOutLongitude: decimal("punch_out_longitude"),
+  punchOutLocationName: text("punch_out_location_name"),
+  punchInPhoto: text("punch_in_photo"),
+  punchOutPhoto: text("punch_out_photo"),
+  status: text("status").notNull().default("punched_in"),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTripVisitSchema = createInsertSchema(tripVisits).omit({ id: true, createdAt: true });
+export type TripVisit = typeof tripVisits.$inferSelect;
+export type InsertTripVisit = z.infer<typeof insertTripVisitSchema>;
+
 // === NOTIFICATIONS ===
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

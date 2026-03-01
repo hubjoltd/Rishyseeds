@@ -8,6 +8,18 @@ import { z } from "zod";
 import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
 import { seedProductsAndWarehouses } from "./seed-data";
 import crypto from "crypto";
+import multer from "multer";
+import path from "path";
+import express from "express";
+
+const uploadStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, "uploads/"),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+const upload = multer({ storage: uploadStorage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Simple in-memory token store (use Redis/DB in production)
 const tokenStore = new Map<string, { type: 'user' | 'employee', id: number, expiresAt: number }>();
@@ -187,6 +199,8 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  app.use("/uploads", express.static("uploads"));
+
   // Google domain verification
   app.get("/google04e2cf6bed3e661f.html", (req, res) => {
     res.send("google-site-verification: google04e2cf6bed3e661f.html");
@@ -1744,6 +1758,252 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(400).json({ message: error.message || "Failed to delete role" });
+    }
+  });
+
+  // === ADMIN TRIP ROUTES ===
+  app.get("/api/trips", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      if (!user || !["admin", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const allTrips = await storage.getTrips();
+      const employees = await storage.getEmployees();
+      const employeeMap = new Map(employees.map(e => [e.id, e]));
+      const tripsWithEmployee = allTrips.map(trip => ({
+        ...trip,
+        employeeName: employeeMap.get(trip.employeeId)?.fullName || "Unknown",
+        employeeCode: employeeMap.get(trip.employeeId)?.employeeId || "N/A",
+      }));
+      res.json(tripsWithEmployee);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch trips" });
+    }
+  });
+
+  app.get("/api/trips/:id", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      if (!user || !["admin", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const id = parseInt(req.params.id);
+      const trip = await storage.getTrip(id);
+      if (!trip) return res.status(404).json({ message: "Trip not found" });
+      const visits = await storage.getTripVisits(id);
+      const employee = await storage.getEmployee(trip.employeeId);
+      res.json({
+        ...trip,
+        employeeName: employee?.fullName || "Unknown",
+        employeeCode: employee?.employeeId || "N/A",
+        visits,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch trip" });
+    }
+  });
+
+  app.patch("/api/trips/:id/approve", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      if (!user || !["admin", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const id = parseInt(req.params.id);
+      const trip = await storage.getTrip(id);
+      if (!trip) return res.status(404).json({ message: "Trip not found" });
+      if (trip.status !== "submitted") return res.status(400).json({ message: "Trip is not submitted for approval" });
+      const updated = await storage.updateTrip(id, {
+        status: "approved",
+        approvedBy: userId,
+        approvedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to approve trip" });
+    }
+  });
+
+  app.patch("/api/trips/:id/reject", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      if (!user || !["admin", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const id = parseInt(req.params.id);
+      const { reason } = req.body;
+      const trip = await storage.getTrip(id);
+      if (!trip) return res.status(404).json({ message: "Trip not found" });
+      if (trip.status !== "submitted") return res.status(400).json({ message: "Trip is not submitted for approval" });
+      const updated = await storage.updateTrip(id, {
+        status: "rejected",
+        rejectionReason: reason || "Rejected by admin",
+        approvedBy: userId,
+        approvedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to reject trip" });
+    }
+  });
+
+  // === EMPLOYEE TRIP ROUTES ===
+  app.get("/api/employee/trips", async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const employeeTrips = await storage.getTripsByEmployee(employeeId);
+      res.json(employeeTrips);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch trips" });
+    }
+  });
+
+  app.get("/api/employee/trips/:id", async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const trip = await storage.getTrip(id);
+      if (!trip || trip.employeeId !== employeeId) return res.status(404).json({ message: "Trip not found" });
+      const visits = await storage.getTripVisits(id);
+      res.json({ ...trip, visits });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch trip" });
+    }
+  });
+
+  app.post("/api/employee/trips", upload.single("startMeterPhoto"), async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const { startLatitude, startLongitude, startLocationName, startMeterReading } = req.body;
+      const startMeterPhoto = req.file ? `/uploads/${req.file.filename}` : null;
+      const trip = await storage.createTrip({
+        employeeId,
+        status: "started",
+        startTime: new Date(),
+        startLatitude: startLatitude || null,
+        startLongitude: startLongitude || null,
+        startLocationName: startLocationName || null,
+        startMeterReading: startMeterReading || null,
+        startMeterPhoto,
+      });
+      const employee = await storage.getEmployee(employeeId);
+      if (employee) {
+        await storage.createNotification({
+          type: "trip_start",
+          message: `${employee.fullName} started a trip`,
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+        });
+      }
+      res.json(trip);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to create trip" });
+    }
+  });
+
+  app.patch("/api/employee/trips/:id/end", upload.single("endMeterPhoto"), async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const trip = await storage.getTrip(id);
+      if (!trip || trip.employeeId !== employeeId) return res.status(404).json({ message: "Trip not found" });
+      if (trip.status === "submitted" || trip.status === "approved") {
+        return res.status(400).json({ message: "Trip already ended" });
+      }
+      const { endLatitude, endLongitude, endLocationName, endMeterReading, expenseAmount } = req.body;
+      const endMeterPhoto = req.file ? `/uploads/${req.file.filename}` : null;
+      const startReading = parseFloat(trip.startMeterReading as string) || 0;
+      const endReading = parseFloat(endMeterReading) || 0;
+      const totalKm = endReading > startReading ? (endReading - startReading).toString() : "0";
+      const updated = await storage.updateTrip(id, {
+        status: "submitted",
+        endTime: new Date(),
+        endLatitude: endLatitude || null,
+        endLongitude: endLongitude || null,
+        endLocationName: endLocationName || null,
+        endMeterReading: endMeterReading || null,
+        endMeterPhoto,
+        totalKm,
+        expenseAmount: expenseAmount || null,
+      });
+      const employee = await storage.getEmployee(employeeId);
+      if (employee) {
+        await storage.createNotification({
+          type: "trip_end",
+          message: `${employee.fullName} submitted trip for approval (${totalKm} km)`,
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+        });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to end trip" });
+    }
+  });
+
+  app.post("/api/employee/trips/:id/visits", upload.single("punchInPhoto"), async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const tripId = parseInt(req.params.id);
+      const trip = await storage.getTrip(tripId);
+      if (!trip || trip.employeeId !== employeeId) return res.status(404).json({ message: "Trip not found" });
+      if (trip.status === "submitted" || trip.status === "approved") {
+        return res.status(400).json({ message: "Trip already ended" });
+      }
+      const { punchInLatitude, punchInLongitude, punchInLocationName, remarks } = req.body;
+      const punchInPhoto = req.file ? `/uploads/${req.file.filename}` : null;
+      const visit = await storage.createTripVisit({
+        tripId,
+        punchInTime: new Date(),
+        punchInLatitude: punchInLatitude || null,
+        punchInLongitude: punchInLongitude || null,
+        punchInLocationName: punchInLocationName || null,
+        punchInPhoto,
+        remarks: remarks || null,
+        status: "punched_in",
+      });
+      await storage.updateTrip(tripId, { status: "in_progress" });
+      res.json(visit);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to create visit" });
+    }
+  });
+
+  app.patch("/api/employee/trips/:id/visits/:visitId/punch-out", upload.single("punchOutPhoto"), async (req: any, res) => {
+    try {
+      const employeeId = req.employeeId;
+      if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
+      const tripId = parseInt(req.params.id);
+      const visitId = parseInt(req.params.visitId);
+      const trip = await storage.getTrip(tripId);
+      if (!trip || trip.employeeId !== employeeId) return res.status(404).json({ message: "Trip not found" });
+      const { punchOutLatitude, punchOutLongitude, punchOutLocationName } = req.body;
+      const punchOutPhoto = req.file ? `/uploads/${req.file.filename}` : null;
+      const updated = await storage.updateTripVisit(visitId, {
+        punchOutTime: new Date(),
+        punchOutLatitude: punchOutLatitude || null,
+        punchOutLongitude: punchOutLongitude || null,
+        punchOutLocationName: punchOutLocationName || null,
+        punchOutPhoto,
+        status: "completed",
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to punch out" });
     }
   });
 

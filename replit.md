@@ -86,7 +86,19 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-### March 1, 2026
+### March 1, 2026 (Trip Tracking)
+- **Trip Tracking & Expense Management**: Full feature with GPS capture, photo uploads, map visualization (Leaflet+OpenStreetMap), and admin approval workflow.
+  - Schema: `trips` and `trip_visits` tables in `shared/schema.ts`
+  - Backend: Storage methods in `server/storage.ts`, API routes with multer file uploads in `server/routes.ts`
+  - Employee Portal: `client/src/pages/employee/EmployeeTrips.tsx` - start trips, add visits, end & submit
+  - Admin Portal: `client/src/pages/Trips.tsx` - view all trips, map visualization, approve/reject
+  - Navigation: Trip links added to both admin sidebar and employee sidebar
+  - Dependencies: `leaflet`, `react-leaflet@4.2.1`, `@types/leaflet`, `multer`, `@types/multer`
+  - File uploads stored in `uploads/` directory, served statically at `/uploads/`
+  - Trip lifecycle: started → in_progress → submitted → approved/rejected
+  - Role-based auth on admin trip routes (admin/manager only)
+
+### March 1, 2026 (Earlier)
 - **Product Search (Combobox)**: Replaced standard `Select` components with a searchable `Combobox` in Stock, Processing, Packaging, and Outward pages to handle 262+ product varieties efficiently.
 - **Product Uniqueness**: Added `.unique()` constraint to `products.variety` in `shared/schema.ts`.
 - **Database Seeding**: Successfully seeded the database with the complete list of 262+ product varieties and standard packaging sizes (100g to 50kg).

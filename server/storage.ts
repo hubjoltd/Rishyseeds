@@ -4,6 +4,7 @@ import {
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
+  trips, tripVisits,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -17,7 +18,9 @@ import {
   type OutwardRecord, type InsertOutwardRecord,
   type PackagingSize, type InsertPackagingSize,
   type Role, type InsertRole,
-  type Notification, type InsertNotification
+  type Notification, type InsertNotification,
+  type Trip, type InsertTrip,
+  type TripVisit, type InsertTripVisit
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -148,6 +151,18 @@ export interface IStorage {
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: number): Promise<Notification | undefined>;
   markAllNotificationsAsRead(): Promise<void>;
+
+  // Trips
+  getTrips(): Promise<Trip[]>;
+  getTripsByEmployee(employeeId: number): Promise<Trip[]>;
+  getTrip(id: number): Promise<Trip | undefined>;
+  createTrip(trip: InsertTrip): Promise<Trip>;
+  updateTrip(id: number, updates: Partial<InsertTrip>): Promise<Trip | undefined>;
+
+  // Trip Visits
+  getTripVisits(tripId: number): Promise<TripVisit[]>;
+  createTripVisit(visit: InsertTripVisit): Promise<TripVisit>;
+  updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -728,6 +743,45 @@ export class DatabaseStorage implements IStorage {
 
   async markAllNotificationsAsRead(): Promise<void> {
     await db.update(notifications).set({ isRead: true }).where(eq(notifications.isRead, false));
+  }
+
+  // Trips
+  async getTrips(): Promise<Trip[]> {
+    return db.select().from(trips).orderBy(desc(trips.createdAt));
+  }
+
+  async getTripsByEmployee(employeeId: number): Promise<Trip[]> {
+    return db.select().from(trips).where(eq(trips.employeeId, employeeId)).orderBy(desc(trips.createdAt));
+  }
+
+  async getTrip(id: number): Promise<Trip | undefined> {
+    const [trip] = await db.select().from(trips).where(eq(trips.id, id));
+    return trip;
+  }
+
+  async createTrip(trip: InsertTrip): Promise<Trip> {
+    const [created] = await db.insert(trips).values(trip).returning();
+    return created;
+  }
+
+  async updateTrip(id: number, updates: Partial<InsertTrip>): Promise<Trip | undefined> {
+    const [updated] = await db.update(trips).set(updates).where(eq(trips.id, id)).returning();
+    return updated;
+  }
+
+  // Trip Visits
+  async getTripVisits(tripId: number): Promise<TripVisit[]> {
+    return db.select().from(tripVisits).where(eq(tripVisits.tripId, tripId)).orderBy(tripVisits.createdAt);
+  }
+
+  async createTripVisit(visit: InsertTripVisit): Promise<TripVisit> {
+    const [created] = await db.insert(tripVisits).values(visit).returning();
+    return created;
+  }
+
+  async updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined> {
+    const [updated] = await db.update(tripVisits).set(updates).where(eq(tripVisits.id, id)).returning();
+    return updated;
   }
 }
 

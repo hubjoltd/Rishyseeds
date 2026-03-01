@@ -28,6 +28,7 @@ import PackagingSizes from "@/pages/PackagingSizes";
 import EmployeeLogin from "@/pages/EmployeeLogin";
 import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
+import Trips from "@/pages/Trips";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -114,6 +115,9 @@ function Router() {
       </Route>
       <Route path="/packaging-sizes">
         <ProtectedRoute component={PackagingSizes} />
+      </Route>
+      <Route path="/trips">
+        <ProtectedRoute component={Trips} />
       </Route>
 
       <Route component={NotFound} />
