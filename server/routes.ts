@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
-import { seedProductsAndWarehouses, seedEmployees } from "./seed-data";
+import { seedProductsAndWarehouses, seedEmployees, seedRoles } from "./seed-data";
 import crypto from "crypto";
 import multer from "multer";
 import path from "path";
@@ -2026,5 +2026,6 @@ async function seedDatabase() {
   }
 
   await seedProductsAndWarehouses();
+  await seedRoles();
   await seedEmployees();
 }

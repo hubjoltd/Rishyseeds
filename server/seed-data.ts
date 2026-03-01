@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { products, locations, employees } from "@shared/schema";
+import { products, locations, employees, roles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 export async function seedProductsAndWarehouses() {
@@ -267,4 +267,277 @@ export async function seedEmployees() {
     }
   }
   console.log(`Inserted ${inserted} employees`);
+}
+
+export async function seedRoles() {
+  const existing = await db.select({ id: roles.id }).from(roles);
+  if (existing.length > 0) {
+    console.log(`Roles already seeded (${existing.length} found), skipping.`);
+    return;
+  }
+
+  const viewOnly = {
+    dashboard: ["view"],
+    batches: ["view"],
+    locations: ["view"],
+    stock: ["view"],
+    packaging: ["view"],
+    products: ["view"],
+    employees: [],
+    attendance: [],
+    payroll: [],
+    users: [],
+    reports: ["view"],
+    lots: ["view"],
+    processing: ["view"],
+    outward: ["view"],
+    packagingSizes: ["view"],
+  };
+
+  const roleData = [
+    {
+      name: "Managing Director",
+      description: "Full access to all modules",
+      permissions: {
+        dashboard: ["view"], batches: ["view", "create", "edit", "delete"],
+        locations: ["view", "create", "edit", "delete"], stock: ["view", "create", "edit", "delete"],
+        packaging: ["view", "create", "edit", "delete"], products: ["view", "create", "edit", "delete"],
+        employees: ["view", "create", "edit", "delete"], attendance: ["view", "create", "edit", "delete"],
+        payroll: ["view", "create", "edit", "delete"], users: ["view", "create", "edit", "delete"],
+        reports: ["view"], lots: ["view", "create", "edit", "delete"],
+        processing: ["view", "create", "edit", "delete"], outward: ["view", "create", "edit", "delete"],
+        packagingSizes: ["view", "create", "edit", "delete"],
+      },
+    },
+    {
+      name: "Adm Plant",
+      description: "Plant administration with full operational access",
+      permissions: {
+        dashboard: ["view"], batches: ["view", "create", "edit"],
+        locations: ["view", "create", "edit"], stock: ["view", "create", "edit"],
+        packaging: ["view", "create", "edit"], products: ["view", "create", "edit"],
+        employees: ["view", "create", "edit"], attendance: ["view", "create", "edit"],
+        payroll: ["view"], users: [],
+        reports: ["view"], lots: ["view", "create", "edit"],
+        processing: ["view", "create", "edit"], outward: ["view", "create", "edit"],
+        packagingSizes: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant Accounts",
+      description: "Plant accounts and financial operations",
+      permissions: {
+        dashboard: ["view"], batches: ["view"],
+        locations: ["view"], stock: ["view"],
+        packaging: ["view"], products: ["view"],
+        employees: ["view"], attendance: ["view"],
+        payroll: ["view", "create", "edit"], users: [],
+        reports: ["view"], lots: ["view"],
+        processing: ["view"], outward: ["view"],
+        packagingSizes: ["view"],
+      },
+    },
+    {
+      name: "Auditor",
+      description: "Read-only audit access to all modules",
+      permissions: {
+        dashboard: ["view"], batches: ["view"],
+        locations: ["view"], stock: ["view"],
+        packaging: ["view"], products: ["view"],
+        employees: ["view"], attendance: ["view"],
+        payroll: ["view"], users: [],
+        reports: ["view"], lots: ["view"],
+        processing: ["view"], outward: ["view"],
+        packagingSizes: ["view"],
+      },
+    },
+    {
+      name: "Plant Quality Executive",
+      description: "Quality control and inspection",
+      permissions: {
+        ...viewOnly,
+        stock: ["view", "create", "edit"],
+        lots: ["view", "create", "edit"],
+        processing: ["view", "create", "edit"],
+        packaging: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant SR. Production",
+      description: "Senior production management",
+      permissions: {
+        ...viewOnly,
+        stock: ["view", "create", "edit"],
+        lots: ["view", "create", "edit"],
+        processing: ["view", "create", "edit"],
+        packaging: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Processing & Packing Incharge",
+      description: "Processing and packing operations management",
+      permissions: {
+        ...viewOnly,
+        stock: ["view", "create", "edit"],
+        lots: ["view", "create", "edit"],
+        processing: ["view", "create", "edit"],
+        packaging: ["view", "create", "edit"],
+        packagingSizes: ["view", "create"],
+      },
+    },
+    {
+      name: "Plant Operator",
+      description: "Plant production operations",
+      permissions: {
+        ...viewOnly,
+        stock: ["view", "create"],
+        lots: ["view", "create"],
+        processing: ["view", "create"],
+        packaging: ["view", "create"],
+      },
+    },
+    {
+      name: "Production",
+      description: "Production department operations",
+      permissions: {
+        ...viewOnly,
+        stock: ["view", "create", "edit"],
+        lots: ["view", "create", "edit"],
+        processing: ["view", "create", "edit"],
+        packaging: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Veg Packing Incharge",
+      description: "Vegetable seed packing operations",
+      permissions: {
+        ...viewOnly,
+        packaging: ["view", "create", "edit"],
+        packagingSizes: ["view", "create"],
+        lots: ["view"],
+        stock: ["view"],
+      },
+    },
+    {
+      name: "PO (Research Associate)",
+      description: "Research and product development",
+      permissions: {
+        ...viewOnly,
+        products: ["view", "create", "edit"],
+        lots: ["view", "create"],
+        processing: ["view", "create"],
+      },
+    },
+    {
+      name: "Plant RM",
+      description: "Regional Manager - sales territory management",
+      permissions: {
+        ...viewOnly,
+        stock: ["view"],
+        lots: ["view"],
+        outward: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant TSM",
+      description: "Territory Sales Manager",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant ASM",
+      description: "Area Sales Manager",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant Sales Officer",
+      description: "Sales operations at plant level",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Plant Sales",
+      description: "Sales operations",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create"],
+      },
+    },
+    {
+      name: "Plant SEM",
+      description: "Sales Executive Manager",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create"],
+      },
+    },
+    {
+      name: "Plant SO",
+      description: "Sales Officer",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create"],
+      },
+    },
+    {
+      name: "Sales Officer",
+      description: "Field sales officer",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create", "edit"],
+      },
+    },
+    {
+      name: "Sales",
+      description: "Sales team member",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create"],
+      },
+    },
+    {
+      name: "Field Associate",
+      description: "Field operations and farmer coordination",
+      permissions: {
+        ...viewOnly,
+        outward: ["view", "create"],
+      },
+    },
+    {
+      name: "Driver",
+      description: "Transport and logistics",
+      permissions: {
+        dashboard: ["view"],
+        batches: [], locations: ["view"],
+        stock: ["view"], packaging: [],
+        products: [], employees: [],
+        attendance: [], payroll: [],
+        users: [], reports: [],
+        lots: ["view"], processing: [],
+        outward: ["view"], packagingSizes: [],
+      },
+    },
+  ];
+
+  let inserted = 0;
+  for (const role of roleData) {
+    try {
+      await db.insert(roles).values({
+        name: role.name,
+        description: role.description,
+        permissions: role.permissions,
+      }).onConflictDoNothing();
+      inserted++;
+    } catch (e) {
+      // Skip duplicates
+    }
+  }
+  console.log(`Inserted ${inserted} roles`);
 }
