@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -164,25 +165,24 @@ export default function Outward() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Product</label>
-                  <Select onValueChange={(val) => {
-                    const productId = parseInt(val);
-                    setSelectedProductId(productId);
-                    const product = (products as Product[] || []).find((p: Product) => p.id === productId);
-                    if (product) {
-                      form.setValue("variety", product.variety || "");
-                    }
-                  }}>
-                    <SelectTrigger data-testid="select-product">
-                      <SelectValue placeholder="Select Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(products as Product[] || []).map((product: Product) => (
-                        <SelectItem key={product.id} value={product.id.toString()}>
-                          {product.crop} - {product.variety}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={(products as Product[] || []).map((p: Product) => ({
+                      value: p.id.toString(),
+                      label: `${p.crop} - ${p.variety}`,
+                    }))}
+                    value={selectedProductId?.toString()}
+                    onValueChange={(val) => {
+                      const productId = val ? parseInt(val) : null;
+                      setSelectedProductId(productId);
+                      const product = (products as Product[] || []).find((p: Product) => p.id === productId);
+                      if (product) {
+                        form.setValue("variety", product.variety || "");
+                      }
+                    }}
+                    placeholder="Select Product"
+                    searchPlaceholder="Search products..."
+                    data-testid="select-product"
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Lot</label>

@@ -87,6 +87,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### March 1, 2026
+- **Product Search (Combobox)**: Replaced standard `Select` components with a searchable `Combobox` in Stock, Processing, Packaging, and Outward pages to handle 262+ product varieties efficiently.
 - **Product Uniqueness**: Added `.unique()` constraint to `products.variety` in `shared/schema.ts`.
 - **Database Seeding**: Successfully seeded the database with the complete list of 262+ product varieties and standard packaging sizes (100g to 50kg).
 - **Backend Enhancements**: Implemented full CRUD for Packaging Sizes in `IStorage` and verified API routes with role-based permission checks.

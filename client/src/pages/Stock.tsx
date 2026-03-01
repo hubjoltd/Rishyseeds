@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRightLeft, History, AlertCircle, Trash2, Pencil, Package } from "lucide-react";
 import { format } from "date-fns";
@@ -250,21 +251,20 @@ export default function Stock() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Product (Variety) <span className="text-destructive">*</span></label>
-                <Select onValueChange={(val) => {
-                  setSelectedProductId(parseInt(val));
-                  form.setValue("lotId", 0);
-                }}>
-                  <SelectTrigger data-testid="select-product">
-                    <SelectValue placeholder="Select Product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(products as Product[] || []).map((p: Product) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.crop} - {p.variety}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={(products as Product[] || []).map((p: Product) => ({
+                    value: p.id.toString(),
+                    label: `${p.crop} - ${p.variety}`,
+                  }))}
+                  value={selectedProductId?.toString()}
+                  onValueChange={(val) => {
+                    setSelectedProductId(val ? parseInt(val) : null);
+                    form.setValue("lotId", 0);
+                  }}
+                  placeholder="Select Product"
+                  searchPlaceholder="Search products..."
+                  data-testid="select-product"
+                />
               </div>
 
               <div className="space-y-2">
