@@ -56,7 +56,7 @@ export default function LocationDetail() {
     defaultValues: { name: "", type: "", capacity: undefined, address: "", isActive: true }
   });
 
-  const { data: location, isLoading: locationLoading } = useQuery<Location>({
+  const { data: location, isLoading: locationLoading, error: locationError } = useQuery<Location>({
     queryKey: ["/api/locations", locationId],
     queryFn: async () => {
       const res = await fetch(`/api/locations/${locationId}`);
@@ -64,6 +64,7 @@ export default function LocationDetail() {
       return res.json();
     },
     enabled: !!locationId,
+    retry: false
   });
 
   const { data: lots } = useLots();
@@ -150,8 +151,18 @@ export default function LocationDetail() {
     return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
   }
 
-  if (!location) {
-    return <div className="p-8 text-center text-muted-foreground">Warehouse not found</div>;
+  if (locationError || !location) {
+    return (
+      <div className="p-8 text-center space-y-4">
+        <p className="text-muted-foreground">Warehouse not found (ID: {locationId})</p>
+        <Link href="/locations">
+          <Button variant="outline">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Warehouses
+          </Button>
+        </Link>
+      </div>
+    );
   }
 
   const getLocationIcon = (type: string) => {

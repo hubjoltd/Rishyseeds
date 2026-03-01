@@ -480,7 +480,7 @@ export async function registerRoutes(
     res.json(location);
   });
 
-  app.put("/api/locations/:id", async (req, res) => {
+  app.patch("/api/locations/:id", checkPermission('locations', 'edit'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const updates = req.body;
@@ -527,7 +527,7 @@ export async function registerRoutes(
     res.json(batch);
   });
 
-  app.put(api.batches.update.path, async (req, res) => {
+  app.patch("/api/batches/:id", checkPermission('batches', 'edit'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const input = api.batches.update.input.parse(req.body);
@@ -539,7 +539,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.batches.delete.path, checkPermission('batches', 'delete'), async (req, res) => {
+  app.delete("/api/batches/:id", checkPermission('batches', 'delete'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const batch = await storage.getBatch(id);
