@@ -1,0 +1,134 @@
+Here is the updated requirement including **Map Visualization**, written in a clear system format 👇
+
+---
+
+## 1️⃣ Trip Start (Employee App)
+
+* Employee clicks **Start Trip**
+* System captures:
+
+  * Start time (auto)
+  * GPS location (auto)
+* Employee uploads:
+
+  * Starting bike meter photo
+* Trip ID generated
+* Status = **Trip Started**
+
+---
+
+## 2️⃣ Visit Punch-In
+
+* Employee clicks **Punch In**
+* System captures:
+
+  * Time
+  * GPS coordinates
+  * Location name (via reverse geocoding)
+* Upload location photo
+* Status = **Punch In Recorded**
+
+---
+
+## 3️⃣ Visit Punch-Out
+
+* Employee clicks **Punch Out**
+* System captures:
+
+  * Time
+  * GPS coordinates
+  * Location name
+* Upload exit photo
+* Status = **Visit Completed**
+
+---
+
+## 4️⃣ Trip End & Expense Submission
+
+* Employee uploads:
+
+  * Ending bike meter photo
+* System calculates:
+
+  * Total KM travelled
+* Employee enters:
+
+  * Expense amount
+* Status = **Submitted for Approval**
+
+---
+
+## 5️⃣ Admin Panel – Approval Workflow
+
+Admin can see:
+
+* Start & End meter photos
+* Punch-in & Punch-out photos
+* GPS locations
+* Location names
+* KM calculation
+* Expense details
+
+Admin Actions:
+
+* ✅ Approve → Status = Approved
+* ❌ Reject → Status = Rejected (reason mandatory)
+
+---
+
+## 6️⃣ Map Visualization (Important Feature)
+
+Each trip should be displayed on a **Map View** in both Employee & Admin panel.
+
+### 📍 Map Requirements:
+
+* Show complete trip route (polyline)
+* Show markers for:
+
+  * 🟢 Trip Start (Green)
+  * 🔵 Punch In (Blue)
+  * 🟠 Punch Out (Orange)
+  * 🔴 Trip End (Red)
+* Each marker should display:
+
+  * Time (HH:MM)
+  * Location name
+  * KM reading (if applicable)
+* Clicking marker opens popup:
+
+  * Photo preview
+  * Address
+  * Timestamp
+
+---
+
+## 🎯 System Logic for Map
+
+* Store GPS latitude & longitude at every action
+* Use map API (Google Maps / Mapbox)
+* Draw route using GPS coordinates
+* Color-coded markers based on activity type
+* Show trip summary:
+
+  * Total distance
+  * Total duration
+  * Total visits
+
+---
+
+## 🔐 Validation Rules
+
+* GPS accuracy threshold (e.g., < 50 meters)
+* Punch-out must be near punch-in location
+* Cannot submit expense without trip end
+* Map data cannot be edited manually
+
+---
+
+If you want next level clarity, I can give:
+
+* Database table structure
+* API design flow
+* LLD format document
+* UI screen breakdown
+* Technical architecture suggestion 🚀
