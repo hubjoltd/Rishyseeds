@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
-import { seedProductsAndWarehouses } from "./seed-data";
+import { seedProductsAndWarehouses, seedEmployees } from "./seed-data";
 import crypto from "crypto";
 import multer from "multer";
 import path from "path";
@@ -2026,20 +2026,5 @@ async function seedDatabase() {
   }
 
   await seedProductsAndWarehouses();
-
-  const existingEmployees = await storage.getEmployees();
-  if (existingEmployees.length === 0) {
-    await storage.createEmployee({
-      employeeId: "EMP001",
-      fullName: "Ramesh Kumar",
-      role: "Supervisor",
-      department: "Operations",
-      salaryType: "monthly",
-      basicSalary: "25000",
-      workLocation: "Main Storage",
-      status: "active",
-      joinDate: "2025-01-01"
-    });
-    console.log("Seeded employees");
-  }
+  await seedEmployees();
 }

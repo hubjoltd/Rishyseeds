@@ -1,5 +1,6 @@
 import { db } from "./db";
-import { products, locations } from "@shared/schema";
+import { products, locations, employees } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export async function seedProductsAndWarehouses() {
   console.log("Seeding products and warehouses from license document...");
@@ -154,4 +155,116 @@ export async function seedProductsAndWarehouses() {
   console.log(`Inserted ${warehousesInserted} warehouses`);
 
   console.log("Seeding complete!");
+}
+
+export async function seedEmployees() {
+  const existing = await db.select({ employeeId: employees.employeeId }).from(employees);
+  if (existing.length > 1) {
+    console.log(`Employees already seeded (${existing.length} found), skipping.`);
+    return;
+  }
+
+  if (existing.length === 1 && existing[0].employeeId === "EMP001") {
+    await db.delete(employees).where(eq(employees.employeeId, "EMP001"));
+  }
+
+  const stateMap: Record<string, string> = {
+    "TS": "Telangana", "Ts": "Telangana", "ts": "Telangana",
+    "MP": "Madhya Pradesh", "Mp": "Madhya Pradesh",
+    "UP": "Uttar Pradesh", "Up": "Uttar Pradesh",
+    "CG": "Chhattisgarh", "Cg": "Chhattisgarh", "cg": "Chhattisgarh",
+    "Rs": "Telangana",
+  };
+
+  const departmentMap: Record<string, string> = {
+    "Managing Director": "Management",
+    "Adm Plant": "Administration",
+    "Plant Accounts": "Accounts",
+    "Plant Quality executive": "Quality",
+    "Plant SR.Production": "Production",
+    "Plant SEM": "Sales",
+    "Plant Sales Officer": "Sales",
+    "Plant TSM": "Sales",
+    "Plant RM": "Sales",
+    "Plant ASM": "Sales",
+    "Plant Sales": "Sales",
+    "Plant So": "Sales",
+    "Plant PROCESSING & PACKING INCHARGE": "Production",
+    "PLANT OPERATOR": "Production",
+    "Auditer": "Accounts",
+    "PO(research associate)": "Research",
+    "Veg Packing Incharge": "Packaging",
+    "F/A": "Field",
+    "F/a": "Field",
+    "SO": "Sales",
+    "So": "Sales",
+    "Sales": "Sales",
+    "Production": "Production",
+    "Driver": "Operations",
+    "Plant RM": "Sales",
+  };
+
+  const employeeData = [
+    { employeeId: "EMP001", fullName: "V. Prathap Reddy", role: "Managing Director", department: "Management", salaryType: "monthly", basicSalary: "44568", hra: "38997", otherAllowances: "22856", workLocation: "Hyderabad", phone: "", email: "", status: "active" },
+    { employeeId: "EMP002", fullName: "Avula Krupakar", role: "Adm Plant", department: "Administration", salaryType: "monthly", basicSalary: "44575", hra: "39003", otherAllowances: "22660", workLocation: "Hyderabad", phone: "", email: "", status: "active" },
+    { employeeId: "EMP003", fullName: "Katta Gopi", role: "Plant Accounts", department: "Accounts", salaryType: "monthly", basicSalary: "11000", hra: "9625", otherAllowances: "2130", workLocation: "Hyderabad", phone: "9177058951", email: "kattagopi1996@gmail.com", status: "active" },
+    { employeeId: "EMP004", fullName: "Siripothula Naresh", role: "Plant Quality Executive", department: "Quality", salaryType: "monthly", basicSalary: "12320", hra: "10780", otherAllowances: "3342", workLocation: "Hyderabad", phone: "8008699646", email: "nareshsiripothula9@gmail.com", status: "active" },
+    { employeeId: "EMP005", fullName: "Boddu Sandeep", role: "Plant SR. Production", department: "Production", salaryType: "monthly", basicSalary: "12760", hra: "11165", otherAllowances: "3496", workLocation: "Karimnagar", phone: "9700352457", email: "boddu.sandeep143@gmail.com", status: "active" },
+    { employeeId: "EMP006", fullName: "Sikke Purushotham", role: "Plant SEM", department: "Sales", salaryType: "monthly", basicSalary: "11000", hra: "9625", otherAllowances: "3188", workLocation: "Siddipet", phone: "9908140108", email: "purushotham.sikke@gmail.com", status: "active" },
+    { employeeId: "EMP007", fullName: "Tekulapally Anil Reddy", role: "Plant Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "12000", hra: "10500", otherAllowances: "7500", workLocation: "Gajwel", phone: "8885726608", email: "anilreddy121212tekulapally@gmail.com", status: "active" },
+    { employeeId: "EMP008", fullName: "Mahendra Kumar Baghel", role: "Plant TSM", department: "Sales", salaryType: "monthly", basicSalary: "10920", hra: "9555", otherAllowances: "6825", workLocation: "Seoni", phone: "9131056815", email: "mahendrakhusi1983@gmail.com", status: "active" },
+    { employeeId: "EMP009", fullName: "Raj Kumar Singh", role: "Plant RM", department: "Sales", salaryType: "monthly", basicSalary: "22464", hra: "19656", otherAllowances: "5806", workLocation: "Shadool", phone: "9981411847", email: "rk3612@gmail.com", status: "active" },
+    { employeeId: "EMP010", fullName: "Amit Singh Baghel", role: "Plant ASM", department: "Sales", salaryType: "monthly", basicSalary: "12320", hra: "10780", otherAllowances: "3650", workLocation: "Katni", phone: "9644101304", email: "amitsingh1994.baghel@gmail.com", status: "active" },
+    { employeeId: "EMP011", fullName: "Dinesh Kumar Thakur", role: "Plant Sales", department: "Sales", salaryType: "monthly", basicSalary: "8800", hra: "7700", otherAllowances: "2194", workLocation: "Ramanujanagar", phone: "9753757177", email: "dineshthakur9753@gmail.com", status: "active" },
+    { employeeId: "EMP012", fullName: "Dharmendra Kumar", role: "Plant SEM", department: "Sales", salaryType: "monthly", basicSalary: "6560", hra: "5740", otherAllowances: "1596", workLocation: "Bahjoi", phone: "9105942637", email: "shivafourmulation@gmail.com", status: "active" },
+    { employeeId: "EMP013", fullName: "Rahul Kumar", role: "Plant SEM", department: "Sales", salaryType: "monthly", basicSalary: "7176", hra: "6279", otherAllowances: "1606", workLocation: "Auriya", phone: "9897635990", email: "9897635990r@gmail.com", status: "active" },
+    { employeeId: "EMP014", fullName: "Babaloo Kumar", role: "Plant SO", department: "Sales", salaryType: "monthly", basicSalary: "6760", hra: "5915", otherAllowances: "1596", workLocation: "Lakhimpur", phone: "9889024859", email: "rahulnverma1991@gmail.com", status: "active" },
+    { employeeId: "EMP015", fullName: "Shailender Singh", role: "Plant RM", department: "Sales", salaryType: "monthly", basicSalary: "24000", hra: "21000", otherAllowances: "13300", workLocation: "Agra", phone: "9719144955", email: "shailendra.rishiseeds@gmail.com", status: "active" },
+    { employeeId: "EMP016", fullName: "Viswanatha Reddy", role: "Auditor", department: "Accounts", salaryType: "monthly", basicSalary: "3600", hra: "3150", otherAllowances: "2250", workLocation: "Hyderabad", phone: "", email: "", status: "active" },
+    { employeeId: "EMP017", fullName: "Bolli Divya", role: "PO (Research Associate)", department: "Research", salaryType: "monthly", basicSalary: "6800", hra: "5950", otherAllowances: "4250", workLocation: "Hyderabad", phone: "9640855645", email: "bollidivya18@gmail.com", status: "active" },
+    { employeeId: "EMP018", fullName: "Mudunuri Swathi", role: "Veg Packing Incharge", department: "Packaging", salaryType: "monthly", basicSalary: "6000", hra: "5250", otherAllowances: "3750", workLocation: "Hyderabad", phone: "63032361969", email: "kashukashu1111@gmail.com", status: "active" },
+    { employeeId: "EMP019", fullName: "Chinthala Praveen", role: "Processing & Packing Incharge", department: "Production", salaryType: "monthly", basicSalary: "12400", hra: "10850", otherAllowances: "7750", workLocation: "Konaipally", phone: "9908036812", email: "chpraveenps143@gmail.com", status: "active" },
+    { employeeId: "EMP020", fullName: "Ravelli Devender", role: "Plant Operator", department: "Production", salaryType: "monthly", basicSalary: "9600", hra: "8400", otherAllowances: "6000", workLocation: "Konaipally", phone: "9959731825", email: "ravellidevender123@gmail.com", status: "active" },
+    { employeeId: "EMP021", fullName: "K Rajkumar", role: "Field Associate", department: "Field", salaryType: "monthly", basicSalary: "6000", hra: "5250", otherAllowances: "3750", workLocation: "Gopalraopet", phone: "6302587459", email: "naniprince6302@gmail.com", status: "active" },
+    { employeeId: "EMP022", fullName: "Dharmani Mahesh", role: "Plant Operator", department: "Production", salaryType: "monthly", basicSalary: "6000", hra: "5250", otherAllowances: "3750", workLocation: "Hyderabad", phone: "9908008836", email: "maheshdharmani62642@gmail.com", status: "active" },
+    { employeeId: "EMP023", fullName: "Birendra Kumar Tandi", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "6400", hra: "5600", otherAllowances: "4000", workLocation: "Saraipali", phone: "6265149504", email: "tandibirendra993@gmail.com", status: "active" },
+    { employeeId: "EMP024", fullName: "Vikas Mishra", role: "Sales", department: "Sales", salaryType: "monthly", basicSalary: "7200", hra: "6300", otherAllowances: "4500", workLocation: "Sidhi", phone: "8090245256", email: "Mishravikas5434@gmail.com", status: "active" },
+    { employeeId: "EMP025", fullName: "Suneel Sahu", role: "Field Associate", department: "Field", salaryType: "monthly", basicSalary: "7200", hra: "6300", otherAllowances: "4500", workLocation: "Gadasarai", phone: "9575235447", email: "sahuji7434@gmail.com", status: "active" },
+    { employeeId: "EMP026", fullName: "Abhishek Singh Parihar", role: "Field Associate", department: "Field", salaryType: "monthly", basicSalary: "6400", hra: "5600", otherAllowances: "4000", workLocation: "Satna", phone: "8878096675", email: "abhiparihar326@gmail.com", status: "active" },
+    { employeeId: "EMP027", fullName: "Anil Sharma", role: "Field Associate", department: "Field", salaryType: "monthly", basicSalary: "7200", hra: "6300", otherAllowances: "4500", workLocation: "Beohari", phone: "9826481067", email: "Sharmaa38079@gmail.com", status: "active" },
+    { employeeId: "EMP028", fullName: "Guna Shekar", role: "Driver", department: "Operations", salaryType: "monthly", basicSalary: "6800", hra: "5950", otherAllowances: "4250", workLocation: "Hyderabad", phone: "8522077311", email: "gunasekhar4236@gmail.com", status: "active" },
+    { employeeId: "EMP029", fullName: "Gajje Narsimha", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "8800", hra: "7700", otherAllowances: "5500", workLocation: "Amangal", phone: "9705942135", email: "narsimhagoud7748@gmail.com", status: "active" },
+    { employeeId: "EMP030", fullName: "Kavuri Dinesh Babu", role: "Production", department: "Production", salaryType: "monthly", basicSalary: "16000", hra: "14000", otherAllowances: "10000", workLocation: "Hyderabad", phone: "9849581838", email: "dinukavuri@gmail.com", status: "active" },
+    { employeeId: "EMP031", fullName: "Lalit Kumar Choudhary", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "7000", hra: "6125", otherAllowances: "4375", workLocation: "Balaghat", phone: "9165744720", email: "lalitchoudhary3892@gmail.com", status: "active" },
+    { employeeId: "EMP032", fullName: "Vivek Singh", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "8800", hra: "7700", otherAllowances: "5500", workLocation: "Rewa", phone: "9589466784", email: "viveksingh9589466784@gmail.com", status: "active" },
+    { employeeId: "EMP033", fullName: "Horil Singh", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "7600", hra: "6650", otherAllowances: "4750", workLocation: "Deosar, Singrauli", phone: "6266974681", email: "horilsingh1989@gmail.com", status: "active" },
+    { employeeId: "EMP034", fullName: "Shovit Kumar Pandey", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "6400", hra: "5600", otherAllowances: "4000", workLocation: "Bareilly", phone: "8126553341", email: "shovitpandey777@gmail.com", status: "active" },
+    { employeeId: "EMP035", fullName: "Krishna Kumar", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "8480", hra: "7420", otherAllowances: "5300", workLocation: "Pathalgaon", phone: "8795843192", email: "krishnakumaryadav3458@gmail.com", status: "active" },
+    { employeeId: "EMP036", fullName: "Mahamad Gulsher Ansari", role: "Sales Officer", department: "Sales", salaryType: "monthly", basicSalary: "7200", hra: "6300", otherAllowances: "4500", workLocation: "Balarampur", phone: "9340644510", email: "mg6733482@gmail.com", status: "active" },
+  ];
+
+  let inserted = 0;
+  for (const emp of employeeData) {
+    try {
+      await db.insert(employees).values({
+        employeeId: emp.employeeId,
+        fullName: emp.fullName,
+        role: emp.role,
+        department: emp.department,
+        salaryType: emp.salaryType,
+        basicSalary: emp.basicSalary,
+        hra: emp.hra,
+        otherAllowances: emp.otherAllowances,
+        workLocation: emp.workLocation,
+        phone: emp.phone || undefined,
+        email: emp.email || undefined,
+        status: emp.status,
+        password: emp.employeeId,
+      }).onConflictDoNothing();
+      inserted++;
+    } catch (e) {
+      // Skip duplicates
+    }
+  }
+  console.log(`Inserted ${inserted} employees`);
 }

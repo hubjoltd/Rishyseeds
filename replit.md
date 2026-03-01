@@ -91,6 +91,7 @@ Preferred communication style: Simple, everyday language.
 - **20 Warehouses**: Includes main office, plant, cold storage facilities (Gubba, GNR, Himalaya, etc.), and processing/packing locations across Medchal-Malkajigiri, Karimnagar, and Medak districts.
 - **80+ Products**: Seeded with correct types — `notified` for government-notified varieties and `private_research` for Rishi's proprietary hybrids.
 - **Type Fix**: Corrected product type from `private` to `private_research` to match frontend expectations in `Products.tsx`.
+- **36 Employees Seeded**: All real employee data from the December 2025 salary sheet, with EMP001-EMP036 IDs, proper roles, departments, salary breakdowns (Basic+DA, HRA, other allowances), work locations, phone numbers, and email addresses. Departments include Management, Administration, Accounts, Quality, Production, Sales, Research, Packaging, Field, and Operations.
 - **Files Modified**: `server/routes.ts`, `server/seed-data.ts`
 
 ### March 1, 2026 (Trip Tracking)
