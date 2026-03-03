@@ -40,12 +40,15 @@ async function requestLocationPermission(): Promise<boolean> {
 
 async function captureLocation(): Promise<{ latitude: string; longitude: string; locationName: string } | null> {
   try {
-    if (!navigator.geolocation) return null;
+    if (!navigator.geolocation) {
+      console.warn("Geolocation API not available");
+      return null;
+    }
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
+        timeout: 20000,
+        maximumAge: 60000,
       });
     });
     const lat = position.coords.latitude;
@@ -68,7 +71,12 @@ async function captureLocation(): Promise<{ latitude: string; longitude: string;
       }
     } catch {}
     return { latitude: lat.toString(), longitude: lng.toString(), locationName };
-  } catch {
+  } catch (err: any) {
+    const code = err?.code;
+    if (code === 1) console.warn("Location permission denied by user");
+    else if (code === 2) console.warn("Location unavailable (GPS off or no signal)");
+    else if (code === 3) console.warn("Location request timed out");
+    else console.warn("Location capture failed:", err?.message || err);
     return null;
   }
 }
@@ -117,8 +125,11 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     });
   }, []);
 
+  const pendingLocationRef = useRef<Promise<{ latitude: string; longitude: string; locationName: string } | null> | null>(null);
+
   const openCameraForPunch = (type: "in" | "out") => {
     pendingPunchType.current = type;
+    pendingLocationRef.current = captureLocation();
     if (cameraInputRef.current) {
       cameraInputRef.current.value = "";
       cameraInputRef.current.click();
@@ -152,10 +163,11 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     setIsUploading(true);
     toast({ title: "Processing...", description: "Capturing location and uploading photo..." });
 
-    const locationPromise = captureLocation();
+    const locationPromise = pendingLocationRef.current || captureLocation();
+    pendingLocationRef.current = null;
     const uploadPromise = uploadPhotoToServer(file);
-    const location = await locationPromise;
-    const serverUrl = await uploadPromise;
+
+    const [location, serverUrl] = await Promise.all([locationPromise, uploadPromise]);
 
     setPhotoServerUrl(serverUrl);
     if (location) {
