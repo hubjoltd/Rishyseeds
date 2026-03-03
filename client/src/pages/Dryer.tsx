@@ -474,6 +474,7 @@ export default function Dryer() {
                         <TableHeader>
                           <TableRow className="bg-muted/50">
                             <TableHead className="w-[50px]">S.No</TableHead>
+                            <TableHead>Bin</TableHead>
                             <TableHead>Organiser</TableHead>
                             <TableHead>Variety</TableHead>
                             <TableHead>Intake Qty</TableHead>
@@ -494,6 +495,9 @@ export default function Dryer() {
                             return (
                               <TableRow key={entry.id} className={isOverdue ? "bg-destructive/5" : ""} data-testid={`row-dryer-${entry.id}`}>
                                 <TableCell>{idx + 1}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="font-bold">Bin {entry.binNo}</Badge>
+                                </TableCell>
                                 <TableCell>{entry.organiser || "-"}</TableCell>
                                 <TableCell>{entry.variety || "-"}</TableCell>
                                 <TableCell>{entry.intakeQuantity ? `${Number(entry.intakeQuantity).toLocaleString()} Kg` : "-"}</TableCell>
