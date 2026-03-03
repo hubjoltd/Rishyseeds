@@ -108,6 +108,7 @@ export default function Employees() {
         phone: editingEmployee.phone || "",
         email: editingEmployee.email || "",
         address: editingEmployee.address || "",
+        password: "",
       });
     }
   }, [editingEmployee, editForm]);
@@ -124,7 +125,11 @@ export default function Employees() {
 
   const onEditSubmit = (data: z.infer<typeof insertEmployeeSchema>) => {
     if (!editingEmployee) return;
-    updateEmployee({ id: editingEmployee.id, data }, {
+    const updates = { ...data };
+    if (!updates.password) {
+      delete (updates as any).password;
+    }
+    updateEmployee({ id: editingEmployee.id, data: updates }, {
       onSuccess: () => {
         setEditOpen(false);
         setEditingEmployee(null);

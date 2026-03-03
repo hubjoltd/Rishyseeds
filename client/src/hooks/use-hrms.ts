@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertEmployee, type InsertAttendance, type InsertPayroll } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthToken } from "@/lib/queryClient";
+import { getAuthToken, clearAuthToken } from "@/lib/queryClient";
 
 function getAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
@@ -50,6 +50,11 @@ export function useUpdateEmployee() {
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(data),
       });
+      if (res.status === 401) {
+        clearAuthToken();
+        window.location.href = "/login";
+        throw new Error("Session expired. Please log in again.");
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to update employee");
