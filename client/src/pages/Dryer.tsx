@@ -130,7 +130,7 @@ export default function Dryer() {
       const payload = {
         ...data,
         fiveDayDueDate: addDays(data.dateOfIntake, 5),
-        status: data.shellingDate ? "done" : "pending",
+        status: data.status || (data.shellingDate ? "done" : "pending"),
       };
       const res = await fetch("/api/dryer", {
         method: "POST",
@@ -154,7 +154,7 @@ export default function Dryer() {
       const payload = {
         ...data,
         fiveDayDueDate: addDays(data.dateOfIntake, 5),
-        status: data.status === "not_done" ? "not_done" : (data.shellingDate ? "done" : "pending"),
+        status: data.status || (data.shellingDate ? "done" : "pending"),
       };
       const res = await fetch(`/api/dryer/${id}`, {
         method: "PATCH",
@@ -303,10 +303,25 @@ export default function Dryer() {
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Remarks {editingEntry?.status === "not_done" ? <span className="text-destructive">*</span> : ""}</label>
-                <Textarea {...form.register("remarks")} placeholder="Add any notes or remarks" data-testid="input-remarks" />
-                {editingEntry?.status === "not_done" && <p className="text-xs text-destructive">Remarks are required for overdue entries</p>}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Status</label>
+                  <Select value={form.watch("status") || "pending"} onValueChange={(v) => form.setValue("status", v)}>
+                    <SelectTrigger data-testid="select-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                      <SelectItem value="not_done">Not Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Remarks {form.watch("status") === "not_done" ? <span className="text-destructive">*</span> : ""}</label>
+                  <Textarea {...form.register("remarks")} placeholder="Add any notes or remarks" data-testid="input-remarks" />
+                  {form.watch("status") === "not_done" && <p className="text-xs text-destructive">Remarks required for Not Done</p>}
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-submit-entry">
                 {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : (editingEntry ? "Update Entry" : "Create Entry")}
