@@ -101,60 +101,29 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
-  const handleShare = useCallback(async () => {
-    const text = getShareText();
-
-    if (originalPhotoFile && navigator.share) {
-      try {
-        const canShareFiles = navigator.canShare && navigator.canShare({ files: [originalPhotoFile] });
-        if (canShareFiles) {
-          await navigator.share({ text, files: [originalPhotoFile] });
-          return;
-        }
-      } catch (err: any) {
-        if (err?.name === "AbortError") return;
-      }
-    }
-
-    if (originalPhotoFile) {
-      try {
-        const blobUrl = URL.createObjectURL(originalPhotoFile);
-        const link = document.createElement("a");
-        link.href = blobUrl;
-        link.download = originalPhotoFile.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-        toast({ title: "Photo saved!", description: "Now open WhatsApp, pick a chat, and attach the downloaded photo. The text details have been copied." });
-        try { await navigator.clipboard.writeText(text.replace(/\*/g, "")); } catch {}
-        return;
-      } catch {}
-    }
-
-    const encoded = encodeURIComponent(text.replace(/\*/g, ""));
-    window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [getShareText, originalPhotoFile, toast]);
-
   const handleDownloadImage = useCallback(() => {
-    if (originalPhotoFile) {
-      const blobUrl = URL.createObjectURL(originalPhotoFile);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = originalPhotoFile.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-      toast({ title: "Photo saved!", description: "Photo downloaded to your device." });
+    if (photoServerUrl) {
+      window.open(photoServerUrl, "_blank");
+      toast({ title: "Photo opened", description: "Long-press the photo to save it to your device." });
       return;
     }
-    if (photoServerUrl) {
-      window.open(`${window.location.origin}${photoServerUrl}`, "_blank");
+    if (originalPhotoFile) {
+      const blobUrl = URL.createObjectURL(originalPhotoFile);
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      toast({ title: "Photo opened", description: "Long-press the photo to save it to your device." });
       return;
     }
     toast({ title: "Error", description: "Photo not available", variant: "destructive" });
   }, [originalPhotoFile, photoServerUrl, toast]);
+
+  const handleShareWhatsApp = useCallback(() => {
+    const text = getShareText();
+    const photoUrl = photoServerUrl ? `${window.location.origin}${photoServerUrl}` : "";
+    const fullText = photoUrl ? `${text}\n\nPhoto: ${photoUrl}` : text;
+    const encoded = encodeURIComponent(fullText);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+  }, [getShareText, photoServerUrl]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -407,15 +376,18 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleShare} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
-              <Share2 className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading Photo..." : "Share Photo + Details"}
-            </Button>
-            <Button variant="outline" onClick={handleDownloadImage} disabled={isUploading} className="w-full" data-testid="button-download-screenshot">
+            <Button onClick={handleDownloadImage} disabled={isUploading || !photoServerUrl} className="w-full" data-testid="button-download-screenshot">
               <Download className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading..." : "Save Photo to Device"}
+              {isUploading ? "Uploading Photo..." : "Step 1: View & Save Photo"}
+            </Button>
+            <Button onClick={handleShareWhatsApp} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
+              <Share2 className="w-4 h-4 mr-2" />
+              {isUploading ? "Uploading..." : "Step 2: Send Details to WhatsApp"}
             </Button>
           </div>
+          <p className="text-xs text-center text-muted-foreground">
+            Tap Step 1 to save the photo, then Step 2 to send details on WhatsApp. Attach the saved photo in WhatsApp chat.
+          </p>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-close-share">Close</AlertDialogCancel>
           </AlertDialogFooter>
