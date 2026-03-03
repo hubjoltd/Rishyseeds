@@ -96,67 +96,28 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
-  const [shareStatus, setShareStatus] = useState<string>("");
+  const [photoSaved, setPhotoSaved] = useState(false);
 
-  const handleShareWithPhoto = useCallback(async () => {
-    const text = getShareText();
-    setShareStatus("Preparing...");
-
-    try {
-      if (!navigator.share) {
-        setShareStatus("Share not supported on this browser. Use Save Photo + WhatsApp buttons below.");
-        return;
-      }
-
-      let fileToShare: File | null = null;
-
-      if (originalPhotoFile) {
-        fileToShare = originalPhotoFile;
-        setShareStatus("Using camera photo...");
-      } else if (photoServerUrl) {
-        setShareStatus("Fetching photo from server...");
-        const resp = await fetch(photoServerUrl);
-        const blob = await resp.blob();
-        fileToShare = new File([blob], "punch_photo.jpg", { type: "image/jpeg" });
-      }
-
-      if (fileToShare) {
-        const canShare = navigator.canShare ? navigator.canShare({ files: [fileToShare] }) : false;
-        if (canShare) {
-          setShareStatus("Opening share menu...");
-          await navigator.share({ text, files: [fileToShare] });
-          setShareStatus("Shared!");
-          return;
-        } else {
-          setShareStatus("Your browser doesn't support sharing photos. Use the buttons below instead.");
-        }
-      } else {
-        setShareStatus("No photo available. Sending text only...");
-        await navigator.share({ text });
-        setShareStatus("Shared text only.");
-      }
-    } catch (err: any) {
-      if (err?.name === "AbortError") {
-        setShareStatus("Share cancelled.");
-        return;
-      }
-      setShareStatus(`Share failed: ${err?.message || "Unknown error"}. Use the buttons below.`);
-    }
-  }, [getShareText, originalPhotoFile, photoServerUrl]);
-
-  const handleDownloadImage = useCallback(() => {
-    if (photoServerUrl) {
-      window.open(photoServerUrl, "_blank");
+  const handleSaveAndShare = useCallback(async () => {
+    if (!photoServerUrl) {
+      toast({ title: "Error", description: "Photo is still uploading, please wait.", variant: "destructive" });
       return;
     }
-    if (originalPhotoFile) {
-      const blobUrl = URL.createObjectURL(originalPhotoFile);
-      window.open(blobUrl, "_blank");
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-      return;
-    }
-    toast({ title: "Error", description: "Photo not available", variant: "destructive" });
-  }, [originalPhotoFile, photoServerUrl, toast]);
+
+    const filename = photoServerUrl.split("/").pop();
+    const downloadUrl = `/api/download/${filename}`;
+
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyyMMdd_HHmm")}.jpg`;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setPhotoSaved(true);
+    toast({ title: "Photo downloading!", description: "Check your Downloads folder. Then tap 'Send Details to WhatsApp'." });
+  }, [photoServerUrl, shareType, employee, toast]);
 
   const handleSendWhatsApp = useCallback(() => {
     const text = getShareText();
@@ -393,7 +354,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); setShareStatus(""); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); setPhotoSaved(false); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -415,26 +376,19 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleShareWithPhoto} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
-              <Share2 className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading Photo..." : "Share Photo + Details"}
+            <Button onClick={handleSaveAndShare} disabled={isUploading || !photoServerUrl} className="w-full bg-blue-600 hover:bg-blue-700" data-testid="button-save-photo">
+              <Download className="w-4 h-4 mr-2" />
+              {isUploading ? "Uploading Photo..." : "1. Save Photo to Phone"}
             </Button>
-            {shareStatus && (
-              <p className="text-xs text-center p-2 bg-blue-50 rounded text-blue-700" data-testid="text-share-status">{shareStatus}</p>
+            <Button onClick={handleSendWhatsApp} disabled={isUploading} className={`w-full ${photoSaved ? "bg-green-600 hover:bg-green-700 animate-pulse" : "bg-green-600 hover:bg-green-700 opacity-60"}`} data-testid="button-share-whatsapp">
+              <Share2 className="w-4 h-4 mr-2" />
+              2. Send Details to WhatsApp
+            </Button>
+            {photoSaved && (
+              <p className="text-xs text-center p-2 bg-green-50 rounded text-green-700" data-testid="text-share-hint">
+                Photo saved! Tap "Send Details to WhatsApp" above, then attach the saved photo using the 📎 button in WhatsApp.
+              </p>
             )}
-            <div className="border-t pt-2 mt-1">
-              <p className="text-xs text-muted-foreground mb-2 text-center">If share button doesn't work:</p>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={handleDownloadImage} disabled={isUploading} className="flex-1 text-xs" data-testid="button-download-screenshot">
-                  <Download className="w-3 h-3 mr-1" />
-                  Save Photo
-                </Button>
-                <Button variant="outline" onClick={handleSendWhatsApp} disabled={isUploading} className="flex-1 text-xs" data-testid="button-whatsapp-text">
-                  <Share2 className="w-3 h-3 mr-1" />
-                  WhatsApp Text
-                </Button>
-              </div>
-            </div>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-close-share">Close</AlertDialogCancel>

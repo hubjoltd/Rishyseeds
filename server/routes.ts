@@ -215,6 +215,16 @@ export async function registerRoutes(
     res.json({ url: photoUrl });
   });
 
+  app.get("/api/download/:filename", (req, res) => {
+    const filePath = path.join(uploadsDir, req.params.filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found" });
+    }
+    res.setHeader("Content-Disposition", `attachment; filename="${req.params.filename}"`);
+    res.setHeader("Content-Type", "image/jpeg");
+    res.sendFile(filePath);
+  });
+
   // Google domain verification
   app.get("/google04e2cf6bed3e661f.html", (req, res) => {
     res.send("google-site-verification: google04e2cf6bed3e661f.html");
