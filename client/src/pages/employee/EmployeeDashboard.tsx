@@ -46,6 +46,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [, setLocation] = useLocation();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [employeePhoto, setEmployeePhoto] = useState<string | null>(null);
+  const [originalPhotoFile, setOriginalPhotoFile] = useState<File | null>(null);
   const [photoServerUrl, setPhotoServerUrl] = useState<string | null>(null);
   const [shareType, setShareType] = useState<"in" | "out">("in");
   const [punchTime, setPunchTime] = useState<string>("");
@@ -78,6 +79,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     const file = e.target.files?.[0];
     if (!file || !pendingPunchType.current) return;
     const type = pendingPunchType.current;
+    const renamedFile = new File(
+      [file],
+      `punch_${type}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`,
+      { type: file.type || "image/jpeg" }
+    );
+    setOriginalPhotoFile(renamedFile);
     const reader = new FileReader();
     reader.onload = () => {
       setEmployeePhoto(reader.result as string);
@@ -94,53 +101,60 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
-  const getFullPhotoUrl = useCallback(() => {
-    if (!photoServerUrl) return null;
-    return `${window.location.origin}${photoServerUrl}`;
-  }, [photoServerUrl]);
-
   const handleShare = useCallback(async () => {
     const text = getShareText();
-    const fullUrl = getFullPhotoUrl();
-    const shareText = fullUrl ? `${text}\n\nPhoto: ${fullUrl}` : text;
-    try {
-      if (fullUrl && navigator.share) {
-        const response = await fetch(fullUrl);
-        const blob = await response.blob();
-        const file = new File([blob], `punch_${shareType}_${employee.employeeId}.jpg`, { type: "image/jpeg" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ text, files: [file] });
+
+    if (originalPhotoFile && navigator.share) {
+      try {
+        const canShareFiles = navigator.canShare && navigator.canShare({ files: [originalPhotoFile] });
+        if (canShareFiles) {
+          await navigator.share({ text, files: [originalPhotoFile] });
           return;
         }
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
     }
-    const encoded = encodeURIComponent(shareText);
-    window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [getShareText, getFullPhotoUrl, shareType, employee]);
 
-  const handleDownloadImage = useCallback(async () => {
-    const fullUrl = getFullPhotoUrl();
-    if (!fullUrl) {
-      toast({ title: "Error", description: "Photo not available for download", variant: "destructive" });
-      return;
+    if (originalPhotoFile) {
+      try {
+        const blobUrl = URL.createObjectURL(originalPhotoFile);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = originalPhotoFile.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        toast({ title: "Photo saved!", description: "Now open WhatsApp, pick a chat, and attach the downloaded photo. The text details have been copied." });
+        try { await navigator.clipboard.writeText(text.replace(/\*/g, "")); } catch {}
+        return;
+      } catch {}
     }
-    try {
-      const response = await fetch(fullUrl);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
+
+    const encoded = encodeURIComponent(text.replace(/\*/g, ""));
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+  }, [getShareText, originalPhotoFile, toast]);
+
+  const handleDownloadImage = useCallback(() => {
+    if (originalPhotoFile) {
+      const blobUrl = URL.createObjectURL(originalPhotoFile);
       const link = document.createElement("a");
       link.href = blobUrl;
-      link.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`;
+      link.download = originalPhotoFile.name;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    } catch {
-      window.open(fullUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+      toast({ title: "Photo saved!", description: "Photo downloaded to your device." });
+      return;
     }
-  }, [getFullPhotoUrl, shareType, employee, toast]);
+    if (photoServerUrl) {
+      window.open(`${window.location.origin}${photoServerUrl}`, "_blank");
+      return;
+    }
+    toast({ title: "Error", description: "Photo not available", variant: "destructive" });
+  }, [originalPhotoFile, photoServerUrl, toast]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -371,7 +385,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setPhotoServerUrl(null); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
