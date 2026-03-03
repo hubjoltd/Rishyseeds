@@ -117,9 +117,12 @@ function SidebarContent({
 }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const [expandedSections, setExpandedSections] = useState<string[]>(["Master Data", "Plant Operations", "HRMS", "Finance", "Administration"]);
-  
   const userRole = user?.role || "admin";
+
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    return location.startsWith(href);
+  };
   
   const menuItems = allMenuItems.filter(item => 
     !item.roles || item.roles.includes(userRole)
@@ -130,18 +133,17 @@ function SidebarContent({
     )
   }));
 
-  const toggleSection = (label: string) => {
-    setExpandedSections(prev => 
-      prev.includes(label) ? prev.filter(s => s !== label) : [...prev, label]
-    );
-  };
+  const activeParent = menuItems.find(item =>
+    item.children?.some(child => isActive(child.href))
+  );
+  const [expandedSection, setExpandedSection] = useState<string | null>(activeParent?.label || null);
 
-  const isActive = (href: string) => {
-    if (href === "/") return location === "/";
-    return location.startsWith(href);
+  const toggleSection = (label: string) => {
+    setExpandedSection(prev => prev === label ? null : label);
   };
 
   const handleNavClick = () => {
+    setExpandedSection(null);
     onNavigate?.();
   };
 
@@ -212,16 +214,16 @@ function SidebarContent({
                         <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
                         <ChevronDown className={cn(
                           "w-4 h-4 transition-transform duration-200",
-                          expandedSections.includes(item.label) && "rotate-180"
+                          expandedSection === item.label && "rotate-180"
                         )} />
                       </>
                     )}
                   </button>
-                  {!collapsed && expandedSections.includes(item.label) && item.children && (
+                  {!collapsed && expandedSection === item.label && item.children && (
                     <ul className="mt-1 ml-4 space-y-1 border-l border-primary/20 pl-3">
                       {item.children.map((child) => (
                         <li key={child.href}>
-                          <Link href={child.href} onClick={handleNavClick}>
+                          <Link href={child.href} onClick={() => onNavigate?.()}>
                             <div
                               className={cn(
                                 "flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 text-sm",
