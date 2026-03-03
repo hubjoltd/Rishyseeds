@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,13 +18,33 @@ function getEmployeeAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function requestLocationPermission(): Promise<boolean> {
+  try {
+    if (!navigator.geolocation) return false;
+    if (navigator.permissions) {
+      const status = await navigator.permissions.query({ name: "geolocation" });
+      if (status.state === "granted") return true;
+      if (status.state === "denied") return false;
+    }
+    return new Promise<boolean>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        () => resolve(true),
+        () => resolve(false),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function captureLocation(): Promise<{ latitude: string; longitude: string; locationName: string } | null> {
   try {
     if (!navigator.geolocation) return null;
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 15000,
         maximumAge: 0,
       });
     });
@@ -87,8 +107,15 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [punchTime, setPunchTime] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [punchLocation, setPunchLocation] = useState<string | null>(null);
+  const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pendingPunchType = useRef<"in" | "out" | null>(null);
+
+  useEffect(() => {
+    requestLocationPermission().then((granted) => {
+      setLocationGranted(granted);
+    });
+  }, []);
 
   const openCameraForPunch = (type: "in" | "out") => {
     pendingPunchType.current = type;
@@ -123,13 +150,18 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     reader.readAsDataURL(file);
 
     setIsUploading(true);
-    const [serverUrl, location] = await Promise.all([
-      uploadPhotoToServer(file),
-      captureLocation(),
-    ]);
+    toast({ title: "Processing...", description: "Capturing location and uploading photo..." });
+
+    const locationPromise = captureLocation();
+    const uploadPromise = uploadPhotoToServer(file);
+    const location = await locationPromise;
+    const serverUrl = await uploadPromise;
+
     setPhotoServerUrl(serverUrl);
     if (location) {
       setPunchLocation(location.locationName);
+    } else {
+      toast({ title: "Location not captured", description: "Could not get your GPS location. Please allow location access in browser settings.", variant: "destructive" });
     }
     setIsUploading(false);
     punchMutation.mutate({ type, location });
@@ -378,6 +410,16 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             </Button>
           </div>
           <p className="text-xs text-center text-muted-foreground">Take a selfie to punch in/out. Photo will be shared to WhatsApp.</p>
+          {locationGranted === false && (
+            <p className="text-xs text-center text-red-500 flex items-center justify-center gap-1" data-testid="text-location-warning">
+              <MapPin className="w-3 h-3" /> Location access denied. Please enable it in your browser settings for attendance tracking.
+            </p>
+          )}
+          {locationGranted === true && (
+            <p className="text-xs text-center text-green-600 flex items-center justify-center gap-1" data-testid="text-location-ready">
+              <MapPin className="w-3 h-3" /> Location ready
+            </p>
+          )}
 
           <div className="p-4 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-between mb-2">
