@@ -331,7 +331,7 @@ export default function Dryer() {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {BINS.map(bin => {
           const occupied = binOccupancy(bin);
           const intakeInBin = occupied.filter(e => e.status === "intake");
@@ -339,22 +339,69 @@ export default function Dryer() {
           const hasIntake = intakeInBin.length > 0;
           const hasPending = occupied.some(e => e.status === "pending");
           const hasEntries = occupied.length > 0;
+          const statusPriority: Record<string, number> = { intake: 0, pending: 1, outtake: 2 };
+          const sorted = [...occupied].sort((a, b) => {
+            const sp = (statusPriority[a.status] ?? 3) - (statusPriority[b.status] ?? 3);
+            if (sp !== 0) return sp;
+            return new Date(b.dateOfIntake).getTime() - new Date(a.dateOfIntake).getTime();
+          });
+          const latestEntry = sorted.length > 0 ? sorted[0] : null;
           return (
             <Card
               key={bin}
-              className={`cursor-pointer transition-all hover:shadow-md ${
+              className={`cursor-pointer transition-all hover:shadow-md min-h-[140px] ${
                 selectedBin === bin ? "ring-2 ring-primary" : ""
-              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasIntake ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : hasPending ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : hasEntries ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}
+              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasIntake ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : hasPending ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : hasEntries ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-muted bg-muted/10"}`}
               onClick={() => setSelectedBin(selectedBin === bin ? null : bin)}
               data-testid={`card-bin-${bin}`}
             >
-              <CardContent className="p-3 text-center">
-                <Fan className={`h-6 w-6 mx-auto mb-1 ${hasOverdue ? "text-destructive" : hasIntake ? "text-blue-500" : hasPending ? "text-amber-500" : hasEntries ? "text-green-500" : "text-muted-foreground"}`} />
-                <p className="text-sm font-bold">Bin {bin}</p>
-                <p className="text-xs text-muted-foreground">
-                  {occupied.length > 0 ? `${occupied.length} entr${occupied.length === 1 ? "y" : "ies"}` : "Empty"}
-                </p>
-                {hasOverdue && <AlertTriangle className="h-3 w-3 mx-auto mt-1 text-destructive" />}
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Fan className={`h-5 w-5 ${hasOverdue ? "text-destructive" : hasIntake ? "text-blue-500" : hasPending ? "text-amber-500" : hasEntries ? "text-green-500" : "text-muted-foreground"}`} />
+                    <span className="font-bold text-base">Bin {bin}</span>
+                  </div>
+                  {hasOverdue && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                  {!hasOverdue && hasEntries && (
+                    <span className="text-xs text-muted-foreground">{occupied.length} entr{occupied.length === 1 ? "y" : "ies"}</span>
+                  )}
+                </div>
+                {latestEntry ? (
+                  <div className="space-y-1.5 text-sm">
+                    {latestEntry.organiser && (
+                      <div className="flex items-start gap-1">
+                        <span className="text-muted-foreground font-medium min-w-[36px]">Org:</span>
+                        <span className="truncate">{latestEntry.organiser}</span>
+                      </div>
+                    )}
+                    {latestEntry.variety && (
+                      <div className="flex items-start gap-1">
+                        <span className="text-muted-foreground font-medium min-w-[36px]">Var:</span>
+                        <span className="truncate">{latestEntry.variety}</span>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-1">
+                      <span className="text-muted-foreground font-medium min-w-[36px]">In:</span>
+                      <span>{latestEntry.dateOfIntake}</span>
+                    </div>
+                    {latestEntry.intakeQuantity && (
+                      <div className="flex items-start gap-1">
+                        <span className="text-muted-foreground font-medium min-w-[36px]">Qty:</span>
+                        <span>{latestEntry.intakeQuantity}</span>
+                      </div>
+                    )}
+                    <div className="mt-2">
+                      {getStatusBadge(latestEntry)}
+                    </div>
+                    {occupied.length > 1 && (
+                      <p className="text-xs text-muted-foreground mt-1">+{occupied.length - 1} more entr{occupied.length - 1 === 1 ? "y" : "ies"}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-[70px] text-muted-foreground">
+                    <p className="text-sm">Empty</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
