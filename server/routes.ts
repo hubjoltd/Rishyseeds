@@ -735,11 +735,15 @@ export async function registerRoutes(
 
   app.post(api.employees.create.path, async (req, res) => {
     try {
-      const input = api.employees.create.input.parse(req.body);
+      const body = { ...req.body };
+      if (body.joinDate === "") body.joinDate = null;
+      if (body.password === "") delete body.password;
+      const input = api.employees.create.input.parse(body);
       const employee = await storage.createEmployee(input);
       res.status(201).json(employee);
-    } catch (e) {
-      res.status(400).json({ message: "Validation failed" });
+    } catch (e: any) {
+      console.error("Employee create error:", e.message || e);
+      res.status(400).json({ message: e.message || "Validation failed" });
     }
   });
 
@@ -753,6 +757,8 @@ export async function registerRoutes(
     try {
       const id = Number(req.params.id);
       const { id: _id, createdAt, ...updates } = req.body;
+      if (updates.joinDate === "" || updates.joinDate === undefined) updates.joinDate = null;
+      if (updates.password === "" || updates.password === undefined) delete updates.password;
       const updated = await storage.updateEmployee(id, updates);
       if (!updated) return res.status(404).json({ message: "Employee not found" });
       res.json(updated);
@@ -770,54 +776,28 @@ export async function registerRoutes(
 
   app.post("/api/employees", checkPermission('employees', 'create'), async (req, res) => {
     try {
-      const employee = await storage.createEmployee(req.body);
+      const body = { ...req.body };
+      if (body.joinDate === "") body.joinDate = null;
+      if (body.password === "") delete body.password;
+      const employee = await storage.createEmployee(body);
       res.status(201).json(employee);
-    } catch (e) {
-      res.status(400).json({ message: "Failed to create employee" });
+    } catch (e: any) {
+      console.error("Employee create error:", e.message || e);
+      res.status(400).json({ message: e.message || "Failed to create employee" });
     }
   });
 
   app.patch("/api/employees/:id", checkPermission('employees', 'edit'), async (req, res) => {
     try {
-      const updated = await storage.updateEmployee(Number(req.params.id), req.body);
+      const { id: _id, createdAt, ...body } = req.body;
+      if (body.joinDate === "") body.joinDate = null;
+      if (body.password === "" || body.password === undefined) delete body.password;
+      const updated = await storage.updateEmployee(Number(req.params.id), body);
       if (!updated) return res.status(404).json({ message: "Employee not found" });
       res.json(updated);
-    } catch (e) {
-      res.status(400).json({ message: "Failed to update employee" });
-    }
-  });
-
-  app.delete("/api/employees/:id", checkPermission('employees', 'delete'), async (req, res) => {
-    try {
-      await storage.deleteEmployee(Number(req.params.id));
-      res.json({ success: true });
-    } catch (e) {
-      res.status(400).json({ message: "Failed to delete employee" });
-    }
-  });
-
-  // === EMPLOYEE MANAGEMENT ROUTES ===
-  app.get("/api/employees", checkPermission('employees', 'view'), async (req, res) => {
-    const employees = await storage.getEmployees();
-    res.json(employees);
-  });
-
-  app.post("/api/employees", checkPermission('employees', 'create'), async (req, res) => {
-    try {
-      const employee = await storage.createEmployee(req.body);
-      res.status(201).json(employee);
-    } catch (e) {
-      res.status(400).json({ message: "Failed to create employee" });
-    }
-  });
-
-  app.patch("/api/employees/:id", checkPermission('employees', 'edit'), async (req, res) => {
-    try {
-      const updated = await storage.updateEmployee(Number(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ message: "Employee not found" });
-      res.json(updated);
-    } catch (e) {
-      res.status(400).json({ message: "Failed to update employee" });
+    } catch (e: any) {
+      console.error("Employee update error:", e.message || e);
+      res.status(400).json({ message: e.message || "Failed to update employee" });
     }
   });
 
