@@ -177,6 +177,12 @@ export const attendance = pgTable("attendance", {
   shift: text("shift"), // day, night, packaging
   checkIn: text("check_in"),
   checkOut: text("check_out"),
+  checkInLatitude: text("check_in_latitude"),
+  checkInLongitude: text("check_in_longitude"),
+  checkInLocation: text("check_in_location"),
+  checkOutLatitude: text("check_out_latitude"),
+  checkOutLongitude: text("check_out_longitude"),
+  checkOutLocation: text("check_out_location"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

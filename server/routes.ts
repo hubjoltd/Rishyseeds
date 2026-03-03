@@ -227,7 +227,7 @@ export async function registerRoutes(
 
   app.get("/punch-share/:filename", (req, res) => {
     const { filename } = req.params;
-    const { name, id, type, time, date } = req.query;
+    const { name, id, type, time, date, location } = req.query;
     const filePath = path.join(uploadsDir, filename);
     if (!fs.existsSync(filePath)) {
       return res.status(404).send("Not found");
@@ -238,7 +238,8 @@ export async function registerRoutes(
     const imageUrl = `${baseUrl}/uploads/${filename}`;
     const punchType = type === "in" ? "Punch In" : "Punch Out";
     const title = `${punchType} - ${name || "Employee"}`;
-    const description = `ID: ${id || ""} | Time: ${time || ""} | Date: ${date || ""} | Rishi Hybrid Seeds Pvt. Ltd.`;
+    const locStr = location ? ` | Location: ${location}` : "";
+    const description = `ID: ${id || ""} | Time: ${time || ""} | Date: ${date || ""}${locStr} | Rishi Hybrid Seeds Pvt. Ltd.`;
 
     res.send(`<!DOCTYPE html>
 <html>
@@ -276,7 +277,7 @@ export async function registerRoutes(
     <div class="info">
       <strong>${name || ""}</strong> (${id || ""})<br>
       Time: ${time || ""}<br>
-      Date: ${date || ""}
+      Date: ${date || ""}${location ? `<br>Location: ${location}` : ""}
     </div>
   </div>
 </div>
@@ -1660,6 +1661,7 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
+      const { latitude, longitude, locationName } = req.body || {};
       const today = getISTDate();
       const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
       
@@ -1670,28 +1672,37 @@ export async function registerRoutes(
       const now = getISTTime();
       
       if (existingAttendance) {
-        await storage.updateAttendance(existingAttendance.id, { checkIn: now, status: "present" });
+        await storage.updateAttendance(existingAttendance.id, {
+          checkIn: now,
+          status: "present",
+          checkInLatitude: latitude || null,
+          checkInLongitude: longitude || null,
+          checkInLocation: locationName || null,
+        });
       } else {
         await storage.markAttendance({
           employeeId,
           date: today,
           status: "present",
           checkIn: now,
+          checkInLatitude: latitude || null,
+          checkInLongitude: longitude || null,
+          checkInLocation: locationName || null,
         });
       }
       
-      // Create notification for admin
       const employee = await storage.getEmployee(employeeId);
+      const locStr = locationName ? ` from ${locationName}` : "";
       if (employee) {
         await storage.createNotification({
           type: "punch_in",
-          message: `${employee.fullName} punched in at ${now}`,
+          message: `${employee.fullName} punched in at ${now}${locStr}`,
           employeeId: employee.id,
           employeeName: employee.fullName,
         });
       }
       
-      res.json({ message: "Punched in successfully", time: now });
+      res.json({ message: "Punched in successfully", time: now, location: locationName || null });
     } catch (error) {
       res.status(400).json({ message: "Punch in failed" });
     }
@@ -1702,6 +1713,7 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       
+      const { latitude, longitude, locationName } = req.body || {};
       const today = getISTDate();
       const existingAttendance = await storage.getAttendanceByEmployeeAndDate(employeeId, today);
       
@@ -1714,20 +1726,25 @@ export async function registerRoutes(
       }
       
       const now = getISTTime();
-      await storage.updateAttendance(existingAttendance.id, { checkOut: now });
+      await storage.updateAttendance(existingAttendance.id, {
+        checkOut: now,
+        checkOutLatitude: latitude || null,
+        checkOutLongitude: longitude || null,
+        checkOutLocation: locationName || null,
+      });
       
-      // Create notification for admin
       const employee = await storage.getEmployee(employeeId);
+      const locStr = locationName ? ` from ${locationName}` : "";
       if (employee) {
         await storage.createNotification({
           type: "punch_out",
-          message: `${employee.fullName} punched out at ${now}`,
+          message: `${employee.fullName} punched out at ${now}${locStr}`,
           employeeId: employee.id,
           employeeName: employee.fullName,
         });
       }
       
-      res.json({ message: "Punched out successfully", time: now });
+      res.json({ message: "Punched out successfully", time: now, location: locationName || null });
     } catch (error) {
       res.status(400).json({ message: "Punch out failed" });
     }

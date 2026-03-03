@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Loader2 } from "lucide-react";
+import { Calendar, Clock, Loader2, MapPin } from "lucide-react";
 import { format, differenceInMinutes } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
 
@@ -139,6 +139,7 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
                     <TableHead>Date</TableHead>
                     <TableHead>Punch In</TableHead>
                     <TableHead>Punch Out</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
@@ -154,6 +155,11 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
                       </TableCell>
                       <TableCell>
                         {formatTimeString(record.checkOut)}
+                      </TableCell>
+                      <TableCell>
+                        {record.checkInLocation ? (
+                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkin-location-${record.id}`}><MapPin className="w-3 h-3 text-green-600" /> {record.checkInLocation}</span>
+                        ) : '-'}
                       </TableCell>
                       <TableCell>
                         {formatDuration(record.checkIn, record.checkOut)}

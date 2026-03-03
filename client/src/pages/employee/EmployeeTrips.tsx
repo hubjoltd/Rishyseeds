@@ -226,9 +226,17 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       toast({ title: "Location Captured", description: "GPS coordinates captured successfully" });
       return { lat: position.coords.latitude, lng: position.coords.longitude };
     } catch (err: any) {
+      let description = err.message || "Failed to capture location";
+      if (err.code === 1) {
+        description = "Location permission denied. Please enable Location in your browser/phone settings and try again.";
+      } else if (err.code === 2) {
+        description = "Location unavailable. Please check your GPS/internet connection.";
+      } else if (err.code === 3) {
+        description = "Location request timed out. Please try again.";
+      }
       toast({
         title: "GPS Error",
-        description: err.message || "Failed to capture location",
+        description,
         variant: "destructive",
       });
       return null;

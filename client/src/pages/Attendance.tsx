@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserCheck, Clock } from "lucide-react";
+import { UserCheck, Clock, MapPin } from "lucide-react";
 
 export default function Attendance() {
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -56,14 +56,16 @@ export default function Attendance() {
                   <TableHead>Status</TableHead>
                   <TableHead>Shift</TableHead>
                   <TableHead>Check In</TableHead>
+                  <TableHead>Check In Location</TableHead>
                   <TableHead>Check Out</TableHead>
+                  <TableHead>Check Out Location</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center">Loading...</TableCell></TableRow>
                 ) : attendanceData?.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">No attendance records for this date.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No attendance records for this date.</TableCell></TableRow>
                 ) : (
                   attendanceData?.map((record) => (
                     <TableRow key={record.id}>
@@ -81,7 +83,17 @@ export default function Attendance() {
                          {record.checkIn ? <><Clock className="w-3 h-3 text-muted-foreground"/> {record.checkIn}</> : '-'}
                       </TableCell>
                       <TableCell>
+                        {record.checkInLocation ? (
+                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkin-location-${record.id}`}><MapPin className="w-3 h-3 text-green-600" /> {record.checkInLocation}</span>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell>
                         {record.checkOut ? <><Clock className="w-3 h-3 text-muted-foreground"/> {record.checkOut}</> : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {record.checkOutLocation ? (
+                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkout-location-${record.id}`}><MapPin className="w-3 h-3 text-red-600" /> {record.checkOutLocation}</span>
+                        ) : '-'}
                       </TableCell>
                     </TableRow>
                   ))

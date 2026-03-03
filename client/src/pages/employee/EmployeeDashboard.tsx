@@ -7,7 +7,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { Clock, Calendar, FileText, CheckCircle, XCircle, Loader2, Share2, Download, Camera } from "lucide-react";
+import { Clock, Calendar, FileText, CheckCircle, XCircle, Loader2, Share2, Download, Camera, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
@@ -16,6 +16,41 @@ import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function captureLocation(): Promise<{ latitude: string; longitude: string; locationName: string } | null> {
+  try {
+    if (!navigator.geolocation) return null;
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      });
+    });
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    let locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+        headers: { "Accept-Language": "en" },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const addr = data.address || {};
+        const parts = [
+          addr.road || addr.hamlet || addr.neighbourhood || "",
+          addr.suburb || addr.village || addr.town || "",
+          addr.city || addr.county || addr.state_district || "",
+          addr.state || "",
+        ].filter(Boolean);
+        if (parts.length > 0) locationName = parts.join(", ");
+      }
+    } catch {}
+    return { latitude: lat.toString(), longitude: lng.toString(), locationName };
+  } catch {
+    return null;
+  }
 }
 
 function formatTimeString(timeStr: string | null | undefined): string {
@@ -51,6 +86,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [shareType, setShareType] = useState<"in" | "out">("in");
   const [punchTime, setPunchTime] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
+  const [punchLocation, setPunchLocation] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pendingPunchType = useRef<"in" | "out" | null>(null);
 
@@ -85,16 +121,27 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       setEmployeePhoto(reader.result as string);
     };
     reader.readAsDataURL(file);
+
     setIsUploading(true);
-    const serverUrl = await uploadPhotoToServer(file);
+    const [serverUrl, location] = await Promise.all([
+      uploadPhotoToServer(file),
+      captureLocation(),
+    ]);
     setPhotoServerUrl(serverUrl);
+    if (location) {
+      setPunchLocation(location.locationName);
+    }
     setIsUploading(false);
-    punchMutation.mutate(type);
+    punchMutation.mutate({ type, location });
   };
 
   const getShareText = useCallback(() => {
-    return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
-  }, [shareType, punchTime, employee]);
+    let text = `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
+    if (punchLocation) {
+      text += `\nLocation: ${punchLocation}`;
+    }
+    return text;
+  }, [shareType, punchTime, employee, punchLocation]);
 
   const handleShareToWhatsApp = useCallback(() => {
     if (!photoServerUrl) {
@@ -103,18 +150,21 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     }
 
     const filename = photoServerUrl.split("/").pop();
-    const params = new URLSearchParams({
+    const paramObj: Record<string, string> = {
       name: employee.fullName,
       id: employee.employeeId,
       type: shareType,
       time: punchTime,
       date: format(new Date(), "dd MMM yyyy, EEEE"),
-    });
+    };
+    if (punchLocation) paramObj.location = punchLocation;
+    const params = new URLSearchParams(paramObj);
     const shareUrl = `${window.location.origin}/punch-share/${filename}?${params.toString()}`;
-    const text = `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}\n\n${shareUrl}`;
+    const locLine = punchLocation ? `\nLocation: ${punchLocation}` : "";
+    const text = `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}${locLine}\n\n${shareUrl}`;
     const encoded = encodeURIComponent(text);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [photoServerUrl, employee, shareType, punchTime, toast]);
+  }, [photoServerUrl, employee, shareType, punchTime, punchLocation, toast]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -157,10 +207,15 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   });
 
   const punchMutation = useMutation({
-    mutationFn: async (type: "in" | "out") => {
+    mutationFn: async ({ type, location }: { type: "in" | "out"; location: { latitude: string; longitude: string; locationName: string } | null }) => {
       const res = await fetch(`/api/employee/punch-${type}`, {
         method: "POST",
-        headers: getEmployeeAuthHeaders(),
+        headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude: location?.latitude || null,
+          longitude: location?.longitude || null,
+          locationName: location?.locationName || null,
+        }),
       });
       if (res.status === 401) {
         clearEmployeeToken();
@@ -174,15 +229,18 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       }
       return res.json();
     },
-    onSuccess: (_, type) => {
+    onSuccess: (data, { type }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance/today"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance"] });
       const time = format(new Date(), "h:mm a");
       setPunchTime(time);
       setShareType(type);
+      if (data.location) {
+        setPunchLocation(data.location);
+      }
       toast({
         title: type === "in" ? "Punched In" : "Punched Out",
-        description: `Successfully punched ${type} at ${time}`,
+        description: `Successfully punched ${type} at ${time}${data.location ? ` from ${data.location}` : ""}`,
         variant: type === "in" ? "success" : "destructive",
       });
       setShareDialogOpen(true);
@@ -332,12 +390,24 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                 <span className="ml-2 font-medium">
                   {formatTimeString(todayAttendance?.checkIn)}
                 </span>
+                {todayAttendance?.checkInLocation && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                    <MapPin className="w-3 h-3" />
+                    <span data-testid="text-checkin-location">{todayAttendance.checkInLocation}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <span className="text-muted-foreground">Punch Out:</span>
                 <span className="ml-2 font-medium">
                   {formatTimeString(todayAttendance?.checkOut)}
                 </span>
+                {todayAttendance?.checkOutLocation && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                    <MapPin className="w-3 h-3" />
+                    <span data-testid="text-checkout-location">{todayAttendance.checkOutLocation}</span>
+                  </div>
+                )}
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">{format(new Date(), "EEEE, dd MMMM yyyy")}</p>
@@ -345,7 +415,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); setPunchLocation(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -365,6 +435,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="font-semibold">{employee.fullName} ({employee.employeeId})</p>
             <p>Punch {shareType === "in" ? "In" : "Out"} at <span className="font-medium">{punchTime}</span></p>
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
+            {punchLocation && (
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <MapPin className="w-3 h-3" />
+                <span data-testid="text-punch-location">{punchLocation}</span>
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <Button onClick={handleShareToWhatsApp} disabled={isUploading || !photoServerUrl} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">

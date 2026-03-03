@@ -86,6 +86,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### March 3, 2026 (Location in Punch Sharing & Attendance)
+- **Location in WhatsApp Share**: Punch in/out WhatsApp share messages and Open Graph share pages now include the GPS location captured during punch.
+- **Employee Attendance Location Column**: Employee's own attendance history page now shows a Location column with the check-in location for each record.
+- **Share Page Location**: The `/punch-share/:filename` OG preview page includes location in both the meta description and visible body text.
+- **data-testid attributes**: Added to location display elements in Attendance and EmployeeAttendance pages.
+- **Files Modified**: `client/src/pages/employee/EmployeeDashboard.tsx`, `client/src/pages/employee/EmployeeAttendance.tsx`, `client/src/pages/Attendance.tsx`, `server/routes.ts`
+
 ### March 1, 2026 (Warehouse & Product Seeding)
 - **License-Based Seeding**: Wired `seedProductsAndWarehouses()` from `server/seed-data.ts` into the startup `seedDatabase()` function so all warehouses and products from the Telangana seed dealer license are automatically seeded on app start.
 - **20 Warehouses**: Includes main office, plant, cold storage facilities (Gubba, GNR, Himalaya, etc.), and processing/packing locations across Medchal-Malkajigiri, Karimnagar, and Medak districts.
