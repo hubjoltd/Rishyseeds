@@ -46,6 +46,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [, setLocation] = useLocation();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [employeePhoto, setEmployeePhoto] = useState<string | null>(null);
+  const [combinedImage, setCombinedImage] = useState<string | null>(null);
   const [shareType, setShareType] = useState<"in" | "out">("in");
   const [punchTime, setPunchTime] = useState<string>("");
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -71,65 +72,79 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     reader.readAsDataURL(file);
   };
 
-  const handleShareToWhatsApp = useCallback(() => {
+  const buildCombinedImage = useCallback((photoDataUrl: string, type: "in" | "out", time: string): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(null); return; }
+        const cardW = 600;
+        const photoH = Math.round((img.height / img.width) * cardW);
+        const detailsH = 180;
+        canvas.width = cardW;
+        canvas.height = photoH + detailsH;
+        ctx.drawImage(img, 0, 0, cardW, photoH);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, photoH, cardW, detailsH);
+        ctx.fillStyle = type === "in" ? "#16a34a" : "#dc2626";
+        ctx.fillRect(0, photoH, cardW, 4);
+        ctx.font = "bold 24px sans-serif";
+        ctx.fillStyle = "#111827";
+        ctx.fillText(`Punch ${type === "in" ? "In" : "Out"} - ${employee.fullName}`, 20, photoH + 35);
+        ctx.font = "16px sans-serif";
+        ctx.fillStyle = "#6b7280";
+        ctx.fillText(`Employee ID: ${employee.employeeId}`, 20, photoH + 65);
+        ctx.fillText(`Time: ${time}`, 20, photoH + 95);
+        ctx.fillText(`Date: ${format(new Date(), "dd MMM yyyy, EEEE")}`, 20, photoH + 125);
+        ctx.fillText(`Rishi Hybrid Seeds Pvt. Ltd.`, 20, photoH + 160);
+        setCombinedImage(canvas.toDataURL("image/png"));
+        canvas.toBlob((blob) => resolve(blob), "image/png");
+      };
+      img.onerror = () => resolve(null);
+      img.src = photoDataUrl;
+    });
+  }, [employee]);
+
+  const handleShareToWhatsApp = useCallback(async () => {
     if (!employeePhoto) return;
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const img = new Image();
-    img.onload = () => {
-      const cardW = 600;
-      const photoH = Math.round((img.height / img.width) * cardW);
-      const detailsH = 180;
-      canvas.width = cardW;
-      canvas.height = photoH + detailsH;
-
-      ctx.drawImage(img, 0, 0, cardW, photoH);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, photoH, cardW, detailsH);
-
-      ctx.fillStyle = shareType === "in" ? "#16a34a" : "#dc2626";
-      ctx.fillRect(0, photoH, cardW, 4);
-
-      ctx.font = "bold 24px sans-serif";
-      ctx.fillStyle = "#111827";
-      ctx.fillText(`Punch ${shareType === "in" ? "In" : "Out"} - ${employee.fullName}`, 20, photoH + 35);
-
-      ctx.font = "16px sans-serif";
-      ctx.fillStyle = "#6b7280";
-      ctx.fillText(`Employee ID: ${employee.employeeId}`, 20, photoH + 65);
-      ctx.fillText(`Time: ${punchTime}`, 20, photoH + 95);
-      ctx.fillText(`Date: ${format(new Date(), "dd MMM yyyy, EEEE")}`, 20, photoH + 125);
-      ctx.fillText(`Rishi Hybrid Seeds Pvt. Ltd.`, 20, photoH + 160);
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const shareFile = new File([blob], `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd")}.png`, { type: "image/png" });
-        if (navigator.share && navigator.canShare?.({ files: [shareFile] })) {
-          try {
-            await navigator.share({
-              title: `Punch ${shareType === "in" ? "In" : "Out"} - ${employee.fullName}`,
-              text: `${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${punchTime} on ${format(new Date(), "dd MMM yyyy")}`,
-              files: [shareFile],
-            });
-            return;
-          } catch {}
+    const blob = await buildCombinedImage(employeePhoto, shareType, punchTime);
+    if (!blob) {
+      toast({ title: "Error", description: "Failed to create image", variant: "destructive" });
+      return;
+    }
+    const shareFile = new File([blob], `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd")}.png`, { type: "image/png" });
+    if (navigator.share) {
+      try {
+        const shareData: ShareData = {
+          text: `${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${punchTime} on ${format(new Date(), "dd MMM yyyy")}`,
+        };
+        if (navigator.canShare?.({ files: [shareFile] })) {
+          shareData.files = [shareFile];
         }
-        const text = encodeURIComponent(`${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${punchTime} on ${format(new Date(), "dd MMM yyyy")}`);
-        window.open(`https://wa.me/?text=${text}`, "_blank");
-      }, "image/png");
-    };
-    img.src = employeePhoto;
-  }, [employeePhoto, shareType, punchTime, employee]);
-
-  const handleDownloadImage = () => {
-    if (!employeePhoto) return;
+        await navigator.share(shareData);
+        return;
+      } catch {}
+    }
     const a = document.createElement("a");
-    a.href = employeePhoto;
+    a.href = URL.createObjectURL(blob);
+    a.download = shareFile.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast({ title: "Image Downloaded", description: "Open WhatsApp and attach the downloaded image to share it." });
+  }, [employeePhoto, shareType, punchTime, employee, buildCombinedImage, toast]);
+
+  const handleDownloadImage = useCallback(async () => {
+    if (!employeePhoto) return;
+    const blob = await buildCombinedImage(employeePhoto, shareType, punchTime);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd")}.png`;
     a.click();
-  };
+    URL.revokeObjectURL(url);
+  }, [employeePhoto, shareType, punchTime, employee, buildCombinedImage]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -360,14 +375,14 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setCombinedImage(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {shareType === "in" ? "Punched In Successfully" : "Punched Out Successfully"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Share your attendance photo to WhatsApp.
+              Your photo with punch details is ready to share.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {employeePhoto && (
@@ -383,13 +398,14 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <div className="flex flex-col gap-2">
             <Button onClick={handleShareToWhatsApp} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
               <Share2 className="w-4 h-4 mr-2" />
-              Share to WhatsApp
+              Share (Photo + Details)
             </Button>
             <Button variant="outline" onClick={handleDownloadImage} className="w-full" data-testid="button-download-screenshot">
               <Download className="w-4 h-4 mr-2" />
-              Download Photo
+              Download Image
             </Button>
           </div>
+          <p className="text-xs text-center text-muted-foreground">Image includes your photo with punch details. Download first if share doesn't include the image.</p>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-close-share">Close</AlertDialogCancel>
           </AlertDialogFooter>
