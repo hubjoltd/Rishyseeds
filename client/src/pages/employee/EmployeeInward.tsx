@@ -322,7 +322,7 @@ export default function EmployeeInward({ employee, permissions = {} }: EmployeeP
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Lot Number</label>
                   <div className="flex gap-2">
-                    <Input value={generatedLotNumber} readOnly placeholder="Auto-generated" className="bg-muted" />
+                    <Input value={generatedLotNumber} onChange={(e) => setGeneratedLotNumber(e.target.value)} placeholder="Auto-generated or enter manually" />
                     {!editingLot && (
                       <Button type="button" variant="outline" onClick={handleGenerateLotNumber} disabled={!selectedProductId || generateLotMutation.isPending}>
                         <RefreshCw className={`h-4 w-4 ${generateLotMutation.isPending ? 'animate-spin' : ''}`} />

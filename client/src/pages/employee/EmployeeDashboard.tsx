@@ -7,12 +7,11 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { Clock, Calendar, FileText, CheckCircle, XCircle, Loader2, Share2, Download } from "lucide-react";
+import { Clock, Calendar, FileText, CheckCircle, XCircle, Loader2, Share2, Download, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
-import html2canvas from "html2canvas";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -45,55 +44,91 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const attendanceCardRef = useRef<HTMLDivElement>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [shareImage, setShareImage] = useState<string | null>(null);
+  const [employeePhoto, setEmployeePhoto] = useState<string | null>(null);
   const [shareType, setShareType] = useState<"in" | "out">("in");
-  const [capturing, setCapturing] = useState(false);
+  const [punchTime, setPunchTime] = useState<string>("");
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const pendingPunchType = useRef<"in" | "out" | null>(null);
 
-  const captureAndShare = useCallback(async (type: "in" | "out") => {
-    setShareType(type);
-    setCapturing(true);
-    await new Promise(r => setTimeout(r, 500));
-    try {
-      const el = attendanceCardRef.current;
-      if (!el) return;
-      const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
-      const dataUrl = canvas.toDataURL("image/png");
-      setShareImage(dataUrl);
-      setShareDialogOpen(true);
+  const openCameraForPunch = (type: "in" | "out") => {
+    pendingPunchType.current = type;
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = "";
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !pendingPunchType.current) return;
+    const type = pendingPunchType.current;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEmployeePhoto(reader.result as string);
+      punchMutation.mutate(type);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleShareToWhatsApp = useCallback(() => {
+    if (!employeePhoto) return;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = new Image();
+    img.onload = () => {
+      const cardW = 600;
+      const photoH = Math.round((img.height / img.width) * cardW);
+      const detailsH = 180;
+      canvas.width = cardW;
+      canvas.height = photoH + detailsH;
+
+      ctx.drawImage(img, 0, 0, cardW, photoH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, photoH, cardW, detailsH);
+
+      ctx.fillStyle = shareType === "in" ? "#16a34a" : "#dc2626";
+      ctx.fillRect(0, photoH, cardW, 4);
+
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillStyle = "#111827";
+      ctx.fillText(`Punch ${shareType === "in" ? "In" : "Out"} - ${employee.fullName}`, 20, photoH + 35);
+
+      ctx.font = "16px sans-serif";
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(`Employee ID: ${employee.employeeId}`, 20, photoH + 65);
+      ctx.fillText(`Time: ${punchTime}`, 20, photoH + 95);
+      ctx.fillText(`Date: ${format(new Date(), "dd MMM yyyy, EEEE")}`, 20, photoH + 125);
+      ctx.fillText(`Rishi Hybrid Seeds Pvt. Ltd.`, 20, photoH + 160);
 
       canvas.toBlob(async (blob) => {
         if (!blob) return;
-        const file = new File([blob], `attendance_${type}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.png`, { type: "image/png" });
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        const shareFile = new File([blob], `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd")}.png`, { type: "image/png" });
+        if (navigator.share && navigator.canShare?.({ files: [shareFile] })) {
           try {
             await navigator.share({
-              title: `Attendance Punch ${type === "in" ? "In" : "Out"} - ${employee.fullName}`,
-              text: `${employee.fullName} punched ${type} at ${format(new Date(), "h:mm a")} on ${format(new Date(), "dd MMM yyyy")}`,
-              files: [file],
+              title: `Punch ${shareType === "in" ? "In" : "Out"} - ${employee.fullName}`,
+              text: `${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${punchTime} on ${format(new Date(), "dd MMM yyyy")}`,
+              files: [shareFile],
             });
+            return;
           } catch {}
         }
+        const text = encodeURIComponent(`${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${punchTime} on ${format(new Date(), "dd MMM yyyy")}`);
+        window.open(`https://wa.me/?text=${text}`, "_blank");
       }, "image/png");
-    } catch {
-      toast({ title: "Error", description: "Could not capture screenshot", variant: "destructive" });
-    } finally {
-      setCapturing(false);
-    }
-  }, [employee.fullName, toast]);
+    };
+    img.src = employeePhoto;
+  }, [employeePhoto, shareType, punchTime, employee]);
 
   const handleDownloadImage = () => {
-    if (!shareImage) return;
+    if (!employeePhoto) return;
     const a = document.createElement("a");
-    a.href = shareImage;
-    a.download = `attendance_${shareType}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.png`;
+    a.href = employeePhoto;
+    a.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd")}.png`;
     a.click();
-  };
-
-  const handleWhatsAppShare = () => {
-    const text = encodeURIComponent(`${employee.fullName} (${employee.employeeId}) - Punch ${shareType === "in" ? "In" : "Out"} at ${format(new Date(), "h:mm a")} on ${format(new Date(), "dd MMM yyyy")}`);
-    window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
   const handleAuthError = (res: Response) => {
@@ -157,12 +192,15 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     onSuccess: (_, type) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance/today"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance"] });
+      const time = format(new Date(), "h:mm a");
+      setPunchTime(time);
+      setShareType(type);
       toast({
         title: type === "in" ? "Punched In" : "Punched Out",
-        description: `Successfully punched ${type} at ${format(new Date(), "h:mm a")}`,
+        description: `Successfully punched ${type} at ${time}`,
         variant: type === "in" ? "success" : "destructive",
       });
-      captureAndShare(type);
+      setShareDialogOpen(true);
     },
     onError: (error: Error) => {
       if (error.message !== "Session expired. Please login again.") {
@@ -247,7 +285,17 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </Card>
       </div>
 
-      <Card ref={attendanceCardRef}>
+      <input
+        type="file"
+        accept="image/*"
+        capture="user"
+        ref={cameraInputRef}
+        onChange={handlePhotoCapture}
+        className="hidden"
+        data-testid="input-camera"
+      />
+
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-primary" />
@@ -258,34 +306,35 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <div className="flex flex-col sm:flex-row gap-4">
             <Button
               size="lg"
-              onClick={() => punchMutation.mutate("in")}
-              disabled={punchMutation.isPending || capturing || !!todayAttendance?.checkIn}
+              onClick={() => openCameraForPunch("in")}
+              disabled={punchMutation.isPending || !!todayAttendance?.checkIn}
               className="flex-1 bg-green-600 hover:bg-green-700"
               data-testid="button-punch-in"
             >
-              {punchMutation.isPending || capturing ? (
+              {punchMutation.isPending && pendingPunchType.current === "in" ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <CheckCircle className="w-4 h-4 mr-2" />
+                <Camera className="w-4 h-4 mr-2" />
               )}
               Punch In
             </Button>
             <Button
               size="lg"
               variant="destructive"
-              onClick={() => punchMutation.mutate("out")}
-              disabled={punchMutation.isPending || capturing || !todayAttendance?.checkIn || !!todayAttendance?.checkOut}
+              onClick={() => openCameraForPunch("out")}
+              disabled={punchMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut}
               className="flex-1"
               data-testid="button-punch-out"
             >
-              {punchMutation.isPending || capturing ? (
+              {punchMutation.isPending && pendingPunchType.current === "out" ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <XCircle className="w-4 h-4 mr-2" />
+                <Camera className="w-4 h-4 mr-2" />
               )}
               Punch Out
             </Button>
           </div>
+          <p className="text-xs text-center text-muted-foreground">Take a selfie to punch in/out. Photo will be shared to WhatsApp.</p>
 
           <div className="p-4 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-between mb-2">
@@ -311,29 +360,34 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {shareType === "in" ? "Punched In Successfully" : "Punched Out Successfully"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Screenshot captured. Share it to WhatsApp or download it.
+              Share your attendance photo to WhatsApp.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {shareImage && (
+          {employeePhoto && (
             <div className="border rounded-lg overflow-hidden my-2">
-              <img src={shareImage} alt="Attendance screenshot" className="w-full" data-testid="img-attendance-screenshot" />
+              <img src={employeePhoto} alt="Employee photo" className="w-full max-h-64 object-cover" data-testid="img-employee-photo" />
             </div>
           )}
+          <div className="p-3 bg-gray-50 rounded-lg text-sm space-y-1">
+            <p className="font-semibold">{employee.fullName} ({employee.employeeId})</p>
+            <p>Punch {shareType === "in" ? "In" : "Out"} at <span className="font-medium">{punchTime}</span></p>
+            <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
+          </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleWhatsAppShare} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
+            <Button onClick={handleShareToWhatsApp} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
               <Share2 className="w-4 h-4 mr-2" />
               Share to WhatsApp
             </Button>
             <Button variant="outline" onClick={handleDownloadImage} className="w-full" data-testid="button-download-screenshot">
               <Download className="w-4 h-4 mr-2" />
-              Download Image
+              Download Photo
             </Button>
           </div>
           <AlertDialogFooter>

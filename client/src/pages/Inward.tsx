@@ -270,9 +270,8 @@ export default function Inward() {
                 <div className="flex gap-2">
                   <Input 
                     value={generatedLotNumber} 
-                    readOnly 
-                    placeholder="Auto-generated"
-                    className="bg-muted"
+                    onChange={(e) => setGeneratedLotNumber(e.target.value)}
+                    placeholder="Auto-generated or enter manually"
                     data-testid="input-lot-number"
                   />
                   {!editingLot && (
