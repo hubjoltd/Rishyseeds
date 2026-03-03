@@ -264,6 +264,16 @@ export default function Dryer() {
                   <Input type="date" {...form.register("dateOfIntake")} data-testid="input-date-intake" />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium">5 Days Due Date (Auto)</label>
+                  <Input
+                    type="date"
+                    readOnly
+                    value={form.watch("dateOfIntake") ? addDays(form.watch("dateOfIntake"), 5) : ""}
+                    className="bg-muted/50 cursor-not-allowed"
+                    data-testid="input-five-day-due"
+                  />
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm font-medium">Organiser</label>
                   <Input {...form.register("organiser")} placeholder="e.g., Kotireddy" data-testid="input-organiser" />
                 </div>
