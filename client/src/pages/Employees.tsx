@@ -31,7 +31,13 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, UserPlus, Briefcase, Users, Search, Building2, Banknote, Phone, Mail, CreditCard, IndianRupee, Pencil } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, UserPlus, Briefcase, Users, Search, Building2, Banknote, Phone, Mail, CreditCard, IndianRupee, Pencil, Eye, KeyRound } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { getAuthToken } from "@/lib/queryClient";
 
 type FormTab = "basic" | "salary" | "bank";
 
@@ -47,6 +53,49 @@ export default function Employees() {
   const [editTab, setEditTab] = useState<FormTab>("basic");
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
+  const [viewPasswordEmp, setViewPasswordEmp] = useState<Employee | null>(null);
+  const [viewPasswordValue, setViewPasswordValue] = useState<string | null>(null);
+  const [changePasswordEmp, setChangePasswordEmp] = useState<Employee | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const { toast } = useToast();
+
+  const handleViewPassword = async (emp: Employee) => {
+    setViewPasswordEmp(emp);
+    setViewPasswordValue(null);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/employees/${emp.id}/password`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Failed to fetch password");
+      const data = await res.json();
+      setViewPasswordValue(data.password);
+    } catch {
+      setViewPasswordValue("Error loading password");
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!changePasswordEmp || !newPassword) return;
+    setPasswordLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/employees/${changePasswordEmp.id}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed"); }
+      toast({ title: "Success", description: `Password updated for ${changePasswordEmp.fullName}` });
+      setChangePasswordEmp(null);
+      setNewPassword("");
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
 
   const form = useForm<z.infer<typeof insertEmployeeSchema>>({
     resolver: zodResolver(insertEmployeeSchema),
@@ -739,14 +788,34 @@ export default function Employees() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => handleEditClick(emp)}
-                        data-testid={`button-edit-employee-${emp.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleViewPassword(emp)}
+                          title="View Password"
+                          data-testid={`button-view-password-${emp.id}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => { setChangePasswordEmp(emp); setNewPassword(""); }}
+                          title="Change Password"
+                          data-testid={`button-change-password-${emp.id}`}
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleEditClick(emp)}
+                          data-testid={`button-edit-employee-${emp.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -755,6 +824,60 @@ export default function Employees() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!viewPasswordEmp} onOpenChange={() => setViewPasswordEmp(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Employee Password</AlertDialogTitle>
+            <AlertDialogDescription>
+              Password for <span className="font-semibold">{viewPasswordEmp?.fullName}</span> ({viewPasswordEmp?.employeeId})
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            {viewPasswordValue === null ? (
+              <p className="text-muted-foreground text-sm">Loading...</p>
+            ) : (
+              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                <KeyRound className="h-5 w-5 text-primary" />
+                <span className="font-mono text-lg font-bold tracking-wider" data-testid="text-employee-password">{viewPasswordValue}</span>
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-close-view-password">Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!changePasswordEmp} onOpenChange={() => { setChangePasswordEmp(null); setNewPassword(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Password</AlertDialogTitle>
+            <AlertDialogDescription>
+              Set a new password for <span className="font-semibold">{changePasswordEmp?.fullName}</span> ({changePasswordEmp?.employeeId})
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Input
+              type="text"
+              placeholder="Enter new password (min 4 characters)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              data-testid="input-new-password"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-change-password">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleChangePassword}
+              disabled={passwordLoading || newPassword.length < 4}
+              data-testid="button-confirm-change-password"
+            >
+              {passwordLoading ? "Updating..." : "Update Password"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

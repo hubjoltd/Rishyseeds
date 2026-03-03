@@ -810,6 +810,29 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/employees/:id/password", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const employee = await storage.getEmployee(Number(req.params.id));
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      res.json({ password: employee.password || employee.employeeId });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to get password" });
+    }
+  });
+
+  app.patch("/api/employees/:id/password", checkPermission('employees', 'edit'), async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (!password || password.length < 4) return res.status(400).json({ message: "Password must be at least 4 characters" });
+      const employee = await storage.getEmployee(Number(req.params.id));
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      await storage.updateEmployee(Number(req.params.id), { password });
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch (e) {
+      res.status(400).json({ message: "Failed to update password" });
+    }
+  });
+
   // === DRYER ROUTES ===
   app.get("/api/dryer", async (req: any, res) => {
     try {
