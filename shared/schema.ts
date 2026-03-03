@@ -413,7 +413,7 @@ export const dryerEntries = pgTable("dryer_entries", {
   shellingDate: date("shelling_date"),
   shellingQty: decimal("shelling_qty"),
   intakeMoisture: decimal("intake_moisture"),
-  status: text("status").notNull().default("pending"),
+  status: text("status").notNull().default("pending"), // pending, intake, outtake
   remarks: text("remarks"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

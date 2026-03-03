@@ -64,19 +64,19 @@ function getDaysSinceIntake(dateOfIntake: string): number {
 
 function getStatusBadge(entry: DryerEntry) {
   const days = getDaysSinceIntake(entry.dateOfIntake);
-  if (entry.status === "done") {
-    return <Badge className="bg-green-500 text-white" data-testid={`badge-status-${entry.id}`}><CheckCircle className="h-3 w-3 mr-1" />Done</Badge>;
+  if (entry.status === "outtake") {
+    return <Badge className="bg-green-500 text-white" data-testid={`badge-status-${entry.id}`}><CheckCircle className="h-3 w-3 mr-1" />Out Take</Badge>;
   }
-  if (entry.status === "not_done") {
-    return <Badge variant="destructive" data-testid={`badge-status-${entry.id}`}><XCircle className="h-3 w-3 mr-1" />Not Done</Badge>;
+  if (entry.status === "intake") {
+    if (days >= 5) {
+      return <Badge variant="destructive" data-testid={`badge-status-${entry.id}`}><AlertTriangle className="h-3 w-3 mr-1" />Intake (Overdue {days}d)</Badge>;
+    }
+    if (days >= 4) {
+      return <Badge className="bg-orange-500 text-white" data-testid={`badge-status-${entry.id}`}><Clock className="h-3 w-3 mr-1" />Intake (Due Tomorrow)</Badge>;
+    }
+    return <Badge className="bg-blue-500 text-white" data-testid={`badge-status-${entry.id}`}><Clock className="h-3 w-3 mr-1" />Intake (Day {days + 1}/5)</Badge>;
   }
-  if (days >= 5) {
-    return <Badge variant="destructive" data-testid={`badge-status-${entry.id}`}><AlertTriangle className="h-3 w-3 mr-1" />Overdue ({days}d)</Badge>;
-  }
-  if (days >= 4) {
-    return <Badge className="bg-orange-500 text-white" data-testid={`badge-status-${entry.id}`}><Clock className="h-3 w-3 mr-1" />Due Tomorrow</Badge>;
-  }
-  return <Badge className="bg-blue-500 text-white" data-testid={`badge-status-${entry.id}`}><Clock className="h-3 w-3 mr-1" />Day {days + 1}/5</Badge>;
+  return <Badge className="bg-amber-500 text-white" data-testid={`badge-status-${entry.id}`}><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
 }
 
 export default function Dryer() {
@@ -94,14 +94,14 @@ export default function Dryer() {
 
   useEffect(() => {
     if (entries && entries.length > 0) {
-      const hasOverdue = entries.some(e => e.status === "pending" && getDaysSinceIntake(e.dateOfIntake) >= 5);
+      const hasOverdue = entries.some(e => e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5);
       if (hasOverdue) {
         fetch("/api/dryer/auto-expire", { method: "POST", headers: getAuthHeaders() })
           .then(res => res.json())
           .then(data => {
             if (data.expired > 0) {
               queryClient.invalidateQueries({ queryKey: ["/api/dryer"] });
-              toast({ title: "Auto-Expiry", description: `${data.expired} entries marked as 'Not Done' — 5 days exceeded`, variant: "destructive" });
+              toast({ title: "Overdue Alert", description: `${data.expired} intake entries have exceeded 5 days!`, variant: "destructive" });
             }
           })
           .catch(() => {});
@@ -130,7 +130,7 @@ export default function Dryer() {
       const payload = {
         ...data,
         fiveDayDueDate: addDays(data.dateOfIntake, 5),
-        status: data.status || (data.shellingDate ? "done" : "pending"),
+        status: data.status || "pending",
       };
       const res = await fetch("/api/dryer", {
         method: "POST",
@@ -154,7 +154,7 @@ export default function Dryer() {
       const payload = {
         ...data,
         fiveDayDueDate: addDays(data.dateOfIntake, 5),
-        status: data.status || (data.shellingDate ? "done" : "pending"),
+        status: data.status || "pending",
       };
       const res = await fetch(`/api/dryer/${id}`, {
         method: "PATCH",
@@ -214,21 +214,22 @@ export default function Dryer() {
   };
 
   const binOccupancy = (bin: number) => {
-    return entries?.filter(e => e.binNo === bin && (e.status === "pending" || e.status === "done")) || [];
+    return entries?.filter(e => e.binNo === bin && (e.status === "pending" || e.status === "intake" || e.status === "outtake")) || [];
   };
 
   const filteredEntries = (entries || []).filter(e => {
     if (selectedBin && e.binNo !== selectedBin) return false;
     if (filterStatus === "pending") return e.status === "pending";
-    if (filterStatus === "done") return e.status === "done";
-    if (filterStatus === "not_done") return e.status === "not_done";
-    if (filterStatus === "overdue") return e.status === "pending" && getDaysSinceIntake(e.dateOfIntake) >= 5;
+    if (filterStatus === "intake") return e.status === "intake";
+    if (filterStatus === "outtake") return e.status === "outtake";
+    if (filterStatus === "overdue") return e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5;
     return true;
   });
 
-  const overdueCount = (entries || []).filter(e => e.status === "pending" && getDaysSinceIntake(e.dateOfIntake) >= 5).length;
+  const overdueCount = (entries || []).filter(e => e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5).length;
   const pendingCount = (entries || []).filter(e => e.status === "pending").length;
-  const doneCount = (entries || []).filter(e => e.status === "done").length;
+  const intakeCount = (entries || []).filter(e => e.status === "intake").length;
+  const outtakeCount = (entries || []).filter(e => e.status === "outtake").length;
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -312,15 +313,14 @@ export default function Dryer() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="done">Done</SelectItem>
-                      <SelectItem value="not_done">Not Done</SelectItem>
+                      <SelectItem value="intake">Intake</SelectItem>
+                      <SelectItem value="outtake">Out Take</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Remarks {form.watch("status") === "not_done" ? <span className="text-destructive">*</span> : ""}</label>
+                  <label className="text-sm font-medium">Remarks</label>
                   <Textarea {...form.register("remarks")} placeholder="Add any notes or remarks" data-testid="input-remarks" />
-                  {form.watch("status") === "not_done" && <p className="text-xs text-destructive">Remarks required for Not Done</p>}
                 </div>
               </div>
               <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-submit-entry">
@@ -334,21 +334,22 @@ export default function Dryer() {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {BINS.map(bin => {
           const occupied = binOccupancy(bin);
-          const pendingInBin = occupied.filter(e => e.status === "pending");
-          const hasOverdue = pendingInBin.some(e => getDaysSinceIntake(e.dateOfIntake) >= 5);
-          const hasPending = pendingInBin.length > 0;
+          const intakeInBin = occupied.filter(e => e.status === "intake");
+          const hasOverdue = intakeInBin.some(e => getDaysSinceIntake(e.dateOfIntake) >= 5);
+          const hasIntake = intakeInBin.length > 0;
+          const hasPending = occupied.some(e => e.status === "pending");
           const hasEntries = occupied.length > 0;
           return (
             <Card
               key={bin}
               className={`cursor-pointer transition-all hover:shadow-md ${
                 selectedBin === bin ? "ring-2 ring-primary" : ""
-              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasPending ? "border-orange-400 bg-orange-50 dark:bg-orange-950/20" : hasEntries ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}
+              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasIntake ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : hasPending ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : hasEntries ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}
               onClick={() => setSelectedBin(selectedBin === bin ? null : bin)}
               data-testid={`card-bin-${bin}`}
             >
               <CardContent className="p-3 text-center">
-                <Fan className={`h-6 w-6 mx-auto mb-1 ${hasOverdue ? "text-destructive" : hasPending ? "text-orange-500" : hasEntries ? "text-green-500" : "text-muted-foreground"}`} />
+                <Fan className={`h-6 w-6 mx-auto mb-1 ${hasOverdue ? "text-destructive" : hasIntake ? "text-blue-500" : hasPending ? "text-amber-500" : hasEntries ? "text-green-500" : "text-muted-foreground"}`} />
                 <p className="text-sm font-bold">Bin {bin}</p>
                 <p className="text-xs text-muted-foreground">
                   {occupied.length > 0 ? `${occupied.length} entr${occupied.length === 1 ? "y" : "ies"}` : "Empty"}
@@ -367,8 +368,11 @@ export default function Dryer() {
         <Badge variant={filterStatus === "pending" ? "default" : "outline"} className="cursor-pointer" onClick={() => setFilterStatus("pending")} data-testid="filter-pending">
           <Clock className="h-3 w-3 mr-1" /> Pending ({pendingCount})
         </Badge>
-        <Badge variant={filterStatus === "done" ? "default" : "outline"} className="cursor-pointer bg-green-500" onClick={() => setFilterStatus("done")} data-testid="filter-done">
-          <CheckCircle className="h-3 w-3 mr-1" /> Done ({doneCount})
+        <Badge variant={filterStatus === "intake" ? "default" : "outline"} className="cursor-pointer bg-blue-500" onClick={() => setFilterStatus("intake")} data-testid="filter-intake">
+          <Clock className="h-3 w-3 mr-1" /> Intake ({intakeCount})
+        </Badge>
+        <Badge variant={filterStatus === "outtake" ? "default" : "outline"} className="cursor-pointer bg-green-500" onClick={() => setFilterStatus("outtake")} data-testid="filter-outtake">
+          <CheckCircle className="h-3 w-3 mr-1" /> Out Take ({outtakeCount})
         </Badge>
         <Badge variant={filterStatus === "overdue" ? "default" : "outline"} className="cursor-pointer" onClick={() => setFilterStatus("overdue")} data-testid="filter-overdue">
           <AlertTriangle className="h-3 w-3 mr-1" /> Overdue ({overdueCount})
@@ -434,7 +438,7 @@ export default function Dryer() {
                   ) : (
                     filteredEntries.map((entry, idx) => {
                       const days = getDaysSinceIntake(entry.dateOfIntake);
-                      const isOverdue = entry.status === "pending" && days >= 5;
+                      const isOverdue = entry.status === "intake" && days >= 5;
                       return (
                         <TableRow key={entry.id} className={isOverdue ? "bg-destructive/5" : ""} data-testid={`row-dryer-${entry.id}`}>
                           <TableCell>{idx + 1}</TableCell>

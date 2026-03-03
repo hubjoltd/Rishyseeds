@@ -880,14 +880,10 @@ export async function registerRoutes(
       today.setHours(0, 0, 0, 0);
       let expired = 0;
       for (const entry of entries) {
-        if (entry.status === "pending" && !entry.shellingDate) {
+        if (entry.status === "intake") {
           const dueDate = new Date(entry.fiveDayDueDate);
           dueDate.setHours(0, 0, 0, 0);
           if (today > dueDate) {
-            await storage.updateDryerEntry(entry.id, {
-              status: "not_done",
-              remarks: entry.remarks || `Auto-expired: 5 days exceeded since intake on ${entry.dateOfIntake}`,
-            });
             expired++;
           }
         }

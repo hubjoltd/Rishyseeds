@@ -44,7 +44,7 @@ export default function OverdueDryerAlert() {
   });
 
   const overdueEntries = (entries || []).filter(
-    (e) => e.status === "pending" && getDaysSinceIntake(e.dateOfIntake) >= 5
+    (e) => e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5
   );
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function OverdueDryerAlert() {
           <AlertDialogDescription asChild>
             <div className="space-y-3">
               <p className="text-sm">
-                {overdueEntries.length} dryer {overdueEntries.length === 1 ? "entry has" : "entries have"} exceeded the 5-day drying period and {overdueEntries.length === 1 ? "is" : "are"} still pending.
+                {overdueEntries.length} dryer {overdueEntries.length === 1 ? "entry has" : "entries have"} exceeded the 5-day drying period and {overdueEntries.length === 1 ? "is" : "are"} still in Intake.
               </p>
               <div className="max-h-48 overflow-y-auto space-y-2">
                 {overdueEntries.map((entry) => {
