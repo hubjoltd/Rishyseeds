@@ -21,16 +21,18 @@ function getEmployeeAuthHeaders(): Record<string, string> {
 async function requestLocationPermission(): Promise<boolean> {
   try {
     if (!navigator.geolocation) return false;
-    if (navigator.permissions) {
-      const status = await navigator.permissions.query({ name: "geolocation" });
-      if (status.state === "granted") return true;
-      if (status.state === "denied") return false;
-    }
+    try {
+      if (navigator.permissions) {
+        const status = await navigator.permissions.query({ name: "geolocation" });
+        if (status.state === "granted") return true;
+        if (status.state === "denied") return false;
+      }
+    } catch {}
     return new Promise<boolean>((resolve) => {
       navigator.geolocation.getCurrentPosition(
         () => resolve(true),
         () => resolve(false),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
       );
     });
   } catch {
@@ -38,19 +40,29 @@ async function requestLocationPermission(): Promise<boolean> {
   }
 }
 
+function getPosition(highAccuracy: boolean, timeout: number): Promise<GeolocationPosition> {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: highAccuracy,
+      timeout,
+      maximumAge: 60000,
+    });
+  });
+}
+
 async function captureLocation(): Promise<{ latitude: string; longitude: string; locationName: string } | null> {
   try {
     if (!navigator.geolocation) {
-      console.warn("Geolocation API not available");
+      console.warn("Geolocation API not available in this browser/webview");
       return null;
     }
-    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 60000,
-      });
-    });
+    let position: GeolocationPosition;
+    try {
+      position = await getPosition(true, 15000);
+    } catch {
+      console.warn("High accuracy GPS failed, trying low accuracy...");
+      position = await getPosition(false, 15000);
+    }
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     let locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -73,9 +85,9 @@ async function captureLocation(): Promise<{ latitude: string; longitude: string;
     return { latitude: lat.toString(), longitude: lng.toString(), locationName };
   } catch (err: any) {
     const code = err?.code;
-    if (code === 1) console.warn("Location permission denied by user");
-    else if (code === 2) console.warn("Location unavailable (GPS off or no signal)");
-    else if (code === 3) console.warn("Location request timed out");
+    if (code === 1) console.warn("Location permission denied — the app webview may not have location permission enabled");
+    else if (code === 2) console.warn("Location unavailable — GPS may be off or no signal");
+    else if (code === 3) console.warn("Location request timed out — GPS took too long");
     else console.warn("Location capture failed:", err?.message || err);
     return null;
   }
@@ -424,7 +436,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <p className="text-xs text-center text-muted-foreground">Take a selfie to punch in/out. Photo will be shared to WhatsApp.</p>
           {locationGranted === false && (
             <p className="text-xs text-center text-red-500 flex items-center justify-center gap-1" data-testid="text-location-warning">
-              <MapPin className="w-3 h-3" /> Location access denied. Please enable it in your browser settings for attendance tracking.
+              <MapPin className="w-3 h-3" /> Location access not available. Please enable Location permission for this app in your phone Settings and turn on GPS.
             </p>
           )}
           {locationGranted === true && (
