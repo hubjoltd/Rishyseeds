@@ -443,7 +443,7 @@ export default function Dryer() {
           <div className="flex items-center gap-2">
             <Fan className="h-5 w-5 text-primary" />
             <CardTitle>
-              {selectedBin ? `Bin ${selectedBin} Entries` : "All Entries"}
+              {selectedBin ? `Bin ${selectedBin} Entries` : "All Bin Entries"}
             </CardTitle>
             {selectedBin && (
               <Button variant="ghost" size="sm" onClick={() => setSelectedBin(null)} data-testid="button-clear-bin-filter">
@@ -455,75 +455,80 @@ export default function Dryer() {
         <CardContent className="pt-4">
           {isLoading ? (
             <p className="text-muted-foreground">Loading...</p>
+          ) : filteredEntries.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No entries found. Add a new dryer entry above.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>S.No</TableHead>
-                    <TableHead>Bin</TableHead>
-                    <TableHead>Organiser</TableHead>
-                    <TableHead>Variety</TableHead>
-                    <TableHead>Intake Qty</TableHead>
-                    <TableHead>Date of Intake</TableHead>
-                    <TableHead>5-Day Due</TableHead>
-                    <TableHead>Shelling Date</TableHead>
-                    <TableHead>Shelling Qty</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Remarks</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredEntries.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
-                        No entries found. Add a new dryer entry above.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredEntries.map((entry, idx) => {
-                      const days = getDaysSinceIntake(entry.dateOfIntake);
-                      const isOverdue = entry.status === "intake" && days >= 5;
-                      return (
-                        <TableRow key={entry.id} className={isOverdue ? "bg-destructive/5" : ""} data-testid={`row-dryer-${entry.id}`}>
-                          <TableCell>{idx + 1}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="font-bold">Bin {entry.binNo}</Badge>
-                          </TableCell>
-                          <TableCell>{entry.organiser || "-"}</TableCell>
-                          <TableCell>{entry.variety || "-"}</TableCell>
-                          <TableCell>{entry.intakeQuantity ? `${Number(entry.intakeQuantity).toLocaleString()} Kg` : "-"}</TableCell>
-                          <TableCell>{entry.dateOfIntake}</TableCell>
-                          <TableCell className={isOverdue ? "text-destructive font-semibold" : ""}>{entry.fiveDayDueDate}</TableCell>
-                          <TableCell>{entry.shellingDate || "-"}</TableCell>
-                          <TableCell>{entry.shellingQty ? `${Number(entry.shellingQty).toLocaleString()} Kg` : "-"}</TableCell>
-                          <TableCell>
-                            <span className={days >= 5 ? "text-destructive font-bold" : days >= 4 ? "text-orange-500 font-semibold" : ""}>
-                              {days}
-                            </span>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(entry)}</TableCell>
-                          <TableCell className="max-w-[150px] truncate text-xs" title={entry.remarks || ""}>
-                            {entry.remarks || "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => handleEdit(entry)} data-testid={`button-edit-dryer-${entry.id}`}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setDeleteId(entry.id)} data-testid={`button-delete-dryer-${entry.id}`}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
+            <div className="space-y-4">
+              {(selectedBin ? [selectedBin] : BINS).map(bin => {
+                const binEntries = filteredEntries.filter(e => e.binNo === bin);
+                if (binEntries.length === 0) return null;
+                return (
+                  <div key={bin} data-testid={`section-bin-${bin}`}>
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      <Fan className="h-4 w-4 text-primary" />
+                      <h3 className="font-bold text-sm text-primary">Bin {bin}</h3>
+                      <Badge variant="outline" className="text-xs">{binEntries.length} entr{binEntries.length === 1 ? "y" : "ies"}</Badge>
+                    </div>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50">
+                            <TableHead className="w-[50px]">S.No</TableHead>
+                            <TableHead>Organiser</TableHead>
+                            <TableHead>Variety</TableHead>
+                            <TableHead>Intake Qty</TableHead>
+                            <TableHead>Date of Intake</TableHead>
+                            <TableHead>5-Day Due</TableHead>
+                            <TableHead>Shelling Date</TableHead>
+                            <TableHead>Shelling Qty</TableHead>
+                            <TableHead>Days</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Remarks</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {binEntries.map((entry, idx) => {
+                            const days = getDaysSinceIntake(entry.dateOfIntake);
+                            const isOverdue = entry.status === "intake" && days >= 5;
+                            return (
+                              <TableRow key={entry.id} className={isOverdue ? "bg-destructive/5" : ""} data-testid={`row-dryer-${entry.id}`}>
+                                <TableCell>{idx + 1}</TableCell>
+                                <TableCell>{entry.organiser || "-"}</TableCell>
+                                <TableCell>{entry.variety || "-"}</TableCell>
+                                <TableCell>{entry.intakeQuantity ? `${Number(entry.intakeQuantity).toLocaleString()} Kg` : "-"}</TableCell>
+                                <TableCell>{entry.dateOfIntake}</TableCell>
+                                <TableCell className={isOverdue ? "text-destructive font-semibold" : ""}>{entry.fiveDayDueDate}</TableCell>
+                                <TableCell>{entry.shellingDate || "-"}</TableCell>
+                                <TableCell>{entry.shellingQty ? `${Number(entry.shellingQty).toLocaleString()} Kg` : "-"}</TableCell>
+                                <TableCell>
+                                  <span className={days >= 5 ? "text-destructive font-bold" : days >= 4 ? "text-orange-500 font-semibold" : ""}>
+                                    {days}
+                                  </span>
+                                </TableCell>
+                                <TableCell>{getStatusBadge(entry)}</TableCell>
+                                <TableCell className="max-w-[150px] truncate text-xs" title={entry.remarks || ""}>
+                                  {entry.remarks || "-"}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button variant="ghost" size="icon" onClick={() => handleEdit(entry)} data-testid={`button-edit-dryer-${entry.id}`}>
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => setDeleteId(entry.id)} data-testid={`button-delete-dryer-${entry.id}`}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
