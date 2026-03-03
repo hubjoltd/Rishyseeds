@@ -89,6 +89,7 @@ export default function Employees() {
         fullName: editingEmployee.fullName,
         role: editingEmployee.role || "",
         department: editingEmployee.department || "",
+        workLocation: editingEmployee.workLocation || "",
         joinDate: editingEmployee.joinDate || "",
         status: editingEmployee.status || "active",
         salaryType: editingEmployee.salaryType || "monthly",
@@ -102,6 +103,7 @@ export default function Employees() {
         esiDeduction: editingEmployee.esiDeduction || "0",
         tdsDeduction: editingEmployee.tdsDeduction || "0",
         otherDeductions: editingEmployee.otherDeductions || "0",
+        bankName: editingEmployee.bankName || "",
         bankAccountNumber: editingEmployee.bankAccountNumber || "",
         ifscCode: editingEmployee.ifscCode || "",
         panNumber: editingEmployee.panNumber || "",
@@ -501,6 +503,10 @@ export default function Employees() {
                     <Input {...editForm.register("department")} data-testid="input-edit-employee-department" />
                   </div>
                   <div className="space-y-2">
+                    <label className="text-sm font-medium">Work Location</label>
+                    <Input {...editForm.register("workLocation")} placeholder="Main Office" data-testid="input-edit-work-location" />
+                  </div>
+                  <div className="space-y-2">
                     <label className="text-sm font-medium">Joining Date</label>
                     <Input type="date" {...editForm.register("joinDate")} data-testid="input-edit-employee-joining-date" />
                   </div>
@@ -518,45 +524,80 @@ export default function Employees() {
                 </div>
               )}
               {editTab === "salary" && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Salary Type</label>
-                    <Select value={editForm.watch("salaryType")} onValueChange={(val) => editForm.setValue("salaryType", val)}>
-                      <SelectTrigger data-testid="select-edit-salary-type"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="daily">Daily</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-semibold text-primary mb-3">Basic Salary</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Salary Type *</label>
+                        <Select value={editForm.watch("salaryType")} onValueChange={(val) => editForm.setValue("salaryType", val)}>
+                          <SelectTrigger data-testid="select-edit-salary-type"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                            <SelectItem value="daily">Daily</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Basic Salary (₹) *</label>
+                        <Input type="number" {...editForm.register("basicSalary")} data-testid="input-edit-basic-salary" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Basic Salary (₹)</label>
-                    <Input {...editForm.register("basicSalary")} data-testid="input-edit-basic-salary" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-primary mb-3">Allowances</h4>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">HRA</label>
+                        <Input type="number" {...editForm.register("hra")} placeholder="0" data-testid="input-edit-hra" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">DA</label>
+                        <Input type="number" {...editForm.register("da")} placeholder="0" data-testid="input-edit-da" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Travel</label>
+                        <Input type="number" {...editForm.register("travelAllowance")} placeholder="0" data-testid="input-edit-travel" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Medical</label>
+                        <Input type="number" {...editForm.register("medicalAllowance")} placeholder="0" data-testid="input-edit-medical" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Other Allowances</label>
+                        <Input type="number" {...editForm.register("otherAllowances")} placeholder="0" data-testid="input-edit-other-allowances" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">HRA (₹)</label>
-                    <Input {...editForm.register("hra")} data-testid="input-edit-hra" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">DA (₹)</label>
-                    <Input {...editForm.register("da")} data-testid="input-edit-da" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">PF Deduction (₹)</label>
-                    <Input {...editForm.register("pfDeduction")} data-testid="input-edit-pf" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">ESI Deduction (₹)</label>
-                    <Input {...editForm.register("esiDeduction")} data-testid="input-edit-esi" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">TDS Deduction (₹)</label>
-                    <Input {...editForm.register("tdsDeduction")} data-testid="input-edit-tds" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-destructive mb-3">Deductions</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">PF Deduction</label>
+                        <Input type="number" {...editForm.register("pfDeduction")} placeholder="0" data-testid="input-edit-pf" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">ESI Deduction</label>
+                        <Input type="number" {...editForm.register("esiDeduction")} placeholder="0" data-testid="input-edit-esi" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">TDS Deduction</label>
+                        <Input type="number" {...editForm.register("tdsDeduction")} placeholder="0" data-testid="input-edit-tds" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Other Deductions</label>
+                        <Input type="number" {...editForm.register("otherDeductions")} placeholder="0" data-testid="input-edit-other-deductions" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
               {editTab === "bank" && (
                 <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Bank Name</label>
+                    <Input {...editForm.register("bankName")} placeholder="State Bank of India" data-testid="input-edit-bank-name" />
+                  </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Bank Account Number</label>
                     <Input {...editForm.register("bankAccountNumber")} data-testid="input-edit-bank-account" />
