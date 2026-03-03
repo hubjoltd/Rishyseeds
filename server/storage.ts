@@ -4,7 +4,7 @@ import {
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
-  trips, tripVisits,
+  trips, tripVisits, dryerEntries,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -20,7 +20,8 @@ import {
   type Role, type InsertRole,
   type Notification, type InsertNotification,
   type Trip, type InsertTrip,
-  type TripVisit, type InsertTripVisit
+  type TripVisit, type InsertTripVisit,
+  type DryerEntry, type InsertDryerEntry
 } from "@shared/schema";
 import { eq, desc, sql, and, or } from "drizzle-orm";
 
@@ -164,6 +165,13 @@ export interface IStorage {
   getTripVisits(tripId: number): Promise<TripVisit[]>;
   createTripVisit(visit: InsertTripVisit): Promise<TripVisit>;
   updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined>;
+
+  // Dryer
+  getDryerEntries(): Promise<DryerEntry[]>;
+  getDryerEntry(id: number): Promise<DryerEntry | undefined>;
+  createDryerEntry(entry: InsertDryerEntry): Promise<DryerEntry>;
+  updateDryerEntry(id: number, updates: Partial<InsertDryerEntry>): Promise<DryerEntry | undefined>;
+  deleteDryerEntry(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -790,6 +798,30 @@ export class DatabaseStorage implements IStorage {
   async updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined> {
     const [updated] = await db.update(tripVisits).set(updates).where(eq(tripVisits.id, id)).returning();
     return updated;
+  }
+
+  async getDryerEntries(): Promise<DryerEntry[]> {
+    return db.select().from(dryerEntries).orderBy(desc(dryerEntries.createdAt));
+  }
+
+  async getDryerEntry(id: number): Promise<DryerEntry | undefined> {
+    const [entry] = await db.select().from(dryerEntries).where(eq(dryerEntries.id, id));
+    return entry;
+  }
+
+  async createDryerEntry(entry: InsertDryerEntry): Promise<DryerEntry> {
+    const [created] = await db.insert(dryerEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateDryerEntry(id: number, updates: Partial<InsertDryerEntry>): Promise<DryerEntry | undefined> {
+    const [updated] = await db.update(dryerEntries).set({ ...updates, updatedAt: new Date() }).where(eq(dryerEntries.id, id)).returning();
+    return updated;
+  }
+
+  async deleteDryerEntry(id: number): Promise<boolean> {
+    await db.delete(dryerEntries).where(eq(dryerEntries.id, id));
+    return true;
   }
 }
 

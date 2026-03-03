@@ -810,6 +810,94 @@ export async function registerRoutes(
     }
   });
 
+  // === DRYER ROUTES ===
+  app.get("/api/dryer", async (req: any, res) => {
+    try {
+      const entries = await storage.getDryerEntries();
+      res.json(entries);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to fetch dryer entries" });
+    }
+  });
+
+  app.get("/api/dryer/:id", async (req: any, res) => {
+    try {
+      const entry = await storage.getDryerEntry(Number(req.params.id));
+      if (!entry) return res.status(404).json({ message: "Entry not found" });
+      res.json(entry);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to fetch dryer entry" });
+    }
+  });
+
+  app.post("/api/dryer", async (req: any, res) => {
+    try {
+      const body = { ...req.body };
+      const nullableStrFields = ['shellingDate'];
+      const nullableNumFields = ['intakeQuantity', 'shellingQty', 'intakeMoisture'];
+      nullableStrFields.forEach(f => { if (body[f] === "") body[f] = null; });
+      nullableNumFields.forEach(f => { if (body[f] === "" || body[f] === undefined) body[f] = null; });
+      if (body.remarks === "") body.remarks = null;
+      const entry = await storage.createDryerEntry(body);
+      res.status(201).json(entry);
+    } catch (e: any) {
+      console.error("Dryer create error:", e.message || e);
+      res.status(400).json({ message: e.message || "Failed to create dryer entry" });
+    }
+  });
+
+  app.patch("/api/dryer/:id", async (req: any, res) => {
+    try {
+      const body = { ...req.body };
+      const nullableStrFields = ['shellingDate'];
+      const nullableNumFields = ['intakeQuantity', 'shellingQty', 'intakeMoisture'];
+      nullableStrFields.forEach(f => { if (body[f] === "") body[f] = null; });
+      nullableNumFields.forEach(f => { if (body[f] === "") body[f] = null; });
+      if (body.remarks === "") body.remarks = null;
+      const { id: _id, createdAt, updatedAt, ...updates } = body;
+      const updated = await storage.updateDryerEntry(Number(req.params.id), updates);
+      if (!updated) return res.status(404).json({ message: "Entry not found" });
+      res.json(updated);
+    } catch (e: any) {
+      console.error("Dryer update error:", e.message || e);
+      res.status(400).json({ message: e.message || "Failed to update dryer entry" });
+    }
+  });
+
+  app.delete("/api/dryer/:id", async (req: any, res) => {
+    try {
+      await storage.deleteDryerEntry(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete dryer entry" });
+    }
+  });
+
+  app.post("/api/dryer/auto-expire", async (req: any, res) => {
+    try {
+      const entries = await storage.getDryerEntries();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let expired = 0;
+      for (const entry of entries) {
+        if (entry.status === "pending" && !entry.shellingDate) {
+          const dueDate = new Date(entry.fiveDayDueDate);
+          dueDate.setHours(0, 0, 0, 0);
+          if (today > dueDate) {
+            await storage.updateDryerEntry(entry.id, {
+              status: "not_done",
+              remarks: entry.remarks || `Auto-expired: 5 days exceeded since intake on ${entry.dateOfIntake}`,
+            });
+            expired++;
+          }
+        }
+      }
+      res.json({ expired, message: `${expired} entries auto-expired` });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Auto-expire failed" });
+    }
+  });
+
   // === ATTENDANCE ROUTES ===
   app.post(api.attendance.mark.path, async (req, res) => {
     try {

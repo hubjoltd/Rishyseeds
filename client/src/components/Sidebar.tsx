@@ -24,7 +24,8 @@ import {
   Cog,
   Truck,
   Menu,
-  X
+  X,
+  Fan
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -65,6 +66,7 @@ const allMenuItems: MenuItem[] = [
       { icon: Truck, label: "Outward", href: "/outward", roles: ["admin", "manager", "dispatch_operator"] },
     ]
   },
+  { icon: Fan, label: "Dryer", href: "/dryer", roles: ["admin", "manager", "production_operator"] },
   {
     label: "HRMS",
     icon: Users,

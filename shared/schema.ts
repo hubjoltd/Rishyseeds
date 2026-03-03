@@ -401,6 +401,28 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
+// === DRYER / SHELLING ===
+export const dryerEntries = pgTable("dryer_entries", {
+  id: serial("id").primaryKey(),
+  binNo: integer("bin_no").notNull(),
+  organiser: text("organiser"),
+  variety: text("variety"),
+  intakeQuantity: decimal("intake_quantity"),
+  dateOfIntake: date("date_of_intake").notNull(),
+  fiveDayDueDate: date("five_day_due_date").notNull(),
+  shellingDate: date("shelling_date"),
+  shellingQty: decimal("shelling_qty"),
+  intakeMoisture: decimal("intake_moisture"),
+  status: text("status").notNull().default("pending"),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDryerEntrySchema = createInsertSchema(dryerEntries).omit({ id: true, createdAt: true, updatedAt: true });
+export type DryerEntry = typeof dryerEntries.$inferSelect;
+export type InsertDryerEntry = z.infer<typeof insertDryerEntrySchema>;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;
