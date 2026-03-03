@@ -752,12 +752,13 @@ export async function registerRoutes(
   app.put("/api/employees/:id", async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const updates = req.body;
+      const { id: _id, createdAt, ...updates } = req.body;
       const updated = await storage.updateEmployee(id, updates);
       if (!updated) return res.status(404).json({ message: "Employee not found" });
       res.json(updated);
-    } catch (e) {
-      res.status(400).json({ message: "Update failed" });
+    } catch (e: any) {
+      console.error("Employee update error:", e.message || e);
+      res.status(400).json({ message: e.message || "Update failed" });
     }
   });
 
