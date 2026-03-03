@@ -214,7 +214,7 @@ export default function Dryer() {
   };
 
   const binOccupancy = (bin: number) => {
-    return entries?.filter(e => e.binNo === bin && e.status === "pending") || [];
+    return entries?.filter(e => e.binNo === bin && (e.status === "pending" || e.status === "done")) || [];
   };
 
   const filteredEntries = (entries || []).filter(e => {
@@ -319,22 +319,24 @@ export default function Dryer() {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {BINS.map(bin => {
           const occupied = binOccupancy(bin);
-          const hasOverdue = occupied.some(e => getDaysSinceIntake(e.dateOfIntake) >= 5);
-          const hasPending = occupied.length > 0;
+          const pendingInBin = occupied.filter(e => e.status === "pending");
+          const hasOverdue = pendingInBin.some(e => getDaysSinceIntake(e.dateOfIntake) >= 5);
+          const hasPending = pendingInBin.length > 0;
+          const hasEntries = occupied.length > 0;
           return (
             <Card
               key={bin}
               className={`cursor-pointer transition-all hover:shadow-md ${
                 selectedBin === bin ? "ring-2 ring-primary" : ""
-              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasPending ? "border-orange-400 bg-orange-50 dark:bg-orange-950/20" : "border-muted"}`}
+              } ${hasOverdue ? "border-destructive bg-destructive/5" : hasPending ? "border-orange-400 bg-orange-50 dark:bg-orange-950/20" : hasEntries ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}
               onClick={() => setSelectedBin(selectedBin === bin ? null : bin)}
               data-testid={`card-bin-${bin}`}
             >
               <CardContent className="p-3 text-center">
-                <Fan className={`h-6 w-6 mx-auto mb-1 ${hasOverdue ? "text-destructive" : hasPending ? "text-orange-500" : "text-muted-foreground"}`} />
+                <Fan className={`h-6 w-6 mx-auto mb-1 ${hasOverdue ? "text-destructive" : hasPending ? "text-orange-500" : hasEntries ? "text-green-500" : "text-muted-foreground"}`} />
                 <p className="text-sm font-bold">Bin {bin}</p>
                 <p className="text-xs text-muted-foreground">
-                  {occupied.length > 0 ? `${occupied.length} active` : "Empty"}
+                  {occupied.length > 0 ? `${occupied.length} entr${occupied.length === 1 ? "y" : "ies"}` : "Empty"}
                 </p>
                 {hasOverdue && <AlertTriangle className="h-3 w-3 mx-auto mt-1 text-destructive" />}
               </CardContent>
