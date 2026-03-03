@@ -96,34 +96,25 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
-  const [photoSaved, setPhotoSaved] = useState(false);
-
-  const handleSaveAndShare = useCallback(async () => {
+  const handleShareToWhatsApp = useCallback(() => {
     if (!photoServerUrl) {
       toast({ title: "Error", description: "Photo is still uploading, please wait.", variant: "destructive" });
       return;
     }
 
     const filename = photoServerUrl.split("/").pop();
-    const downloadUrl = `/api/download/${filename}`;
-
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyyMMdd_HHmm")}.jpg`;
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setPhotoSaved(true);
-    toast({ title: "Photo downloading!", description: "Check your Downloads folder. Then tap 'Send Details to WhatsApp'." });
-  }, [photoServerUrl, shareType, employee, toast]);
-
-  const handleSendWhatsApp = useCallback(() => {
-    const text = getShareText();
+    const params = new URLSearchParams({
+      name: employee.fullName,
+      id: employee.employeeId,
+      type: shareType,
+      time: punchTime,
+      date: format(new Date(), "dd MMM yyyy, EEEE"),
+    });
+    const shareUrl = `${window.location.origin}/punch-share/${filename}?${params.toString()}`;
+    const text = `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}\n\n${shareUrl}`;
     const encoded = encodeURIComponent(text);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [getShareText]);
+  }, [photoServerUrl, employee, shareType, punchTime, toast]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -354,7 +345,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); setPhotoSaved(false); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -376,19 +367,13 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleSaveAndShare} disabled={isUploading || !photoServerUrl} className="w-full bg-blue-600 hover:bg-blue-700" data-testid="button-save-photo">
-              <Download className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading Photo..." : "1. Save Photo to Phone"}
-            </Button>
-            <Button onClick={handleSendWhatsApp} disabled={isUploading} className={`w-full ${photoSaved ? "bg-green-600 hover:bg-green-700 animate-pulse" : "bg-green-600 hover:bg-green-700 opacity-60"}`} data-testid="button-share-whatsapp">
+            <Button onClick={handleShareToWhatsApp} disabled={isUploading || !photoServerUrl} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
               <Share2 className="w-4 h-4 mr-2" />
-              2. Send Details to WhatsApp
+              {isUploading ? "Uploading Photo..." : "Share to WhatsApp"}
             </Button>
-            {photoSaved && (
-              <p className="text-xs text-center p-2 bg-green-50 rounded text-green-700" data-testid="text-share-hint">
-                Photo saved! Tap "Send Details to WhatsApp" above, then attach the saved photo using the 📎 button in WhatsApp.
-              </p>
-            )}
+            <p className="text-xs text-center text-muted-foreground">
+              Opens WhatsApp with punch details and a photo preview link.
+            </p>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-close-share">Close</AlertDialogCancel>

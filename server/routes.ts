@@ -225,6 +225,65 @@ export async function registerRoutes(
     res.sendFile(filePath);
   });
 
+  app.get("/punch-share/:filename", (req, res) => {
+    const { filename } = req.params;
+    const { name, id, type, time, date } = req.query;
+    const filePath = path.join(uploadsDir, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send("Not found");
+    }
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const baseUrl = `${protocol}://${host}`;
+    const imageUrl = `${baseUrl}/uploads/${filename}`;
+    const punchType = type === "in" ? "Punch In" : "Punch Out";
+    const title = `${punchType} - ${name || "Employee"}`;
+    const description = `ID: ${id || ""} | Time: ${time || ""} | Date: ${date || ""} | Rishi Hybrid Seeds Pvt. Ltd.`;
+
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${imageUrl}">
+<meta property="og:image:width" content="600">
+<meta property="og:image:height" content="600">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${baseUrl}/punch-share/${filename}?${new URLSearchParams(req.query as any).toString()}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${title}">
+<meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${imageUrl}">
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 20px; background: #f9fafb; display: flex; justify-content: center; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; width: 100%; overflow: hidden; }
+  .photo { width: 100%; max-height: 400px; object-fit: cover; }
+  .details { padding: 16px; }
+  .company { color: #2563eb; font-weight: bold; font-size: 14px; margin-bottom: 8px; }
+  .punch-type { font-size: 20px; font-weight: bold; color: ${type === "in" ? "#16a34a" : "#dc2626"}; margin-bottom: 4px; }
+  .info { color: #374151; font-size: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="card">
+  <img src="${imageUrl}" class="photo" alt="Punch photo">
+  <div class="details">
+    <div class="company">Rishi Hybrid Seeds Pvt. Ltd.</div>
+    <div class="punch-type">${punchType}</div>
+    <div class="info">
+      <strong>${name || ""}</strong> (${id || ""})<br>
+      Time: ${time || ""}<br>
+      Date: ${date || ""}
+    </div>
+  </div>
+</div>
+</body>
+</html>`);
+  });
+
   // Google domain verification
   app.get("/google04e2cf6bed3e661f.html", (req, res) => {
     res.send("google-site-verification: google04e2cf6bed3e661f.html");
