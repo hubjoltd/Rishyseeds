@@ -26,7 +26,7 @@ export function clearEmployeeToken(): void {
 }
 
 const employeeLoginSchema = z.object({
-  employeeId: z.string().min(1, "Employee ID is required"),
+  employeeId: z.string().min(1, "Email, mobile number, or Employee ID is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -88,12 +88,12 @@ export default function EmployeeLogin() {
         <CardContent className="pt-6 pb-8 px-8">
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="employeeId">Employee ID</Label>
+              <Label htmlFor="employeeId">Email / Mobile Number / Employee ID</Label>
               <Input
                 id="employeeId"
                 {...form.register("employeeId")}
                 className="h-11"
-                placeholder="EMP001"
+                placeholder="Enter email, mobile number, or Employee ID"
                 data-testid="input-employee-id"
               />
               {form.formState.errors.employeeId && (

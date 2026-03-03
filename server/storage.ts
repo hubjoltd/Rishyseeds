@@ -22,7 +22,7 @@ import {
   type Trip, type InsertTrip,
   type TripVisit, type InsertTripVisit
 } from "@shared/schema";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // User
@@ -66,6 +66,7 @@ export interface IStorage {
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
   getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined>;
+  getEmployeeByEmailOrPhone(identifier: string): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: number, updates: Partial<InsertEmployee>): Promise<Employee | undefined>;
   deleteEmployee(id: number): Promise<boolean>;
@@ -352,6 +353,13 @@ export class DatabaseStorage implements IStorage {
 
   async getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined> {
     const [employee] = await db.select().from(employees).where(eq(employees.employeeId, employeeId));
+    return employee;
+  }
+
+  async getEmployeeByEmailOrPhone(identifier: string): Promise<Employee | undefined> {
+    const [employee] = await db.select().from(employees).where(
+      or(eq(employees.email, identifier), eq(employees.phone, identifier))
+    );
     return employee;
   }
 

@@ -1375,16 +1375,19 @@ export async function registerRoutes(
       const { employeeId, password } = req.body;
       
       if (!employeeId || !password) {
-        return res.status(400).json({ message: "Employee ID and password are required" });
+        return res.status(400).json({ message: "Email, mobile number, or Employee ID and password are required" });
       }
       
-      const employee = await storage.getEmployeeByEmployeeId(employeeId);
+      let employee = await storage.getEmployeeByEmployeeId(employeeId);
+      
+      if (!employee) {
+        employee = await storage.getEmployeeByEmailOrPhone(employeeId);
+      }
       
       if (!employee) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
       
-      // Check password (default password is employee ID if not set)
       const expectedPassword = employee.password || employee.employeeId;
       if (password !== expectedPassword) {
         return res.status(401).json({ message: "Invalid credentials" });
