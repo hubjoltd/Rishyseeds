@@ -79,12 +79,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     const file = e.target.files?.[0];
     if (!file || !pendingPunchType.current) return;
     const type = pendingPunchType.current;
-    const renamedFile = new File(
-      [file],
-      `punch_${type}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`,
-      { type: file.type || "image/jpeg" }
-    );
-    setOriginalPhotoFile(renamedFile);
+    setOriginalPhotoFile(file);
     const reader = new FileReader();
     reader.onload = () => {
       setEmployeePhoto(reader.result as string);
@@ -101,29 +96,73 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
+  const [shareStatus, setShareStatus] = useState<string>("");
+
+  const handleShareWithPhoto = useCallback(async () => {
+    const text = getShareText();
+    setShareStatus("Preparing...");
+
+    try {
+      if (!navigator.share) {
+        setShareStatus("Share not supported on this browser. Use Save Photo + WhatsApp buttons below.");
+        return;
+      }
+
+      let fileToShare: File | null = null;
+
+      if (originalPhotoFile) {
+        fileToShare = originalPhotoFile;
+        setShareStatus("Using camera photo...");
+      } else if (photoServerUrl) {
+        setShareStatus("Fetching photo from server...");
+        const resp = await fetch(photoServerUrl);
+        const blob = await resp.blob();
+        fileToShare = new File([blob], "punch_photo.jpg", { type: "image/jpeg" });
+      }
+
+      if (fileToShare) {
+        const canShare = navigator.canShare ? navigator.canShare({ files: [fileToShare] }) : false;
+        if (canShare) {
+          setShareStatus("Opening share menu...");
+          await navigator.share({ text, files: [fileToShare] });
+          setShareStatus("Shared!");
+          return;
+        } else {
+          setShareStatus("Your browser doesn't support sharing photos. Use the buttons below instead.");
+        }
+      } else {
+        setShareStatus("No photo available. Sending text only...");
+        await navigator.share({ text });
+        setShareStatus("Shared text only.");
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        setShareStatus("Share cancelled.");
+        return;
+      }
+      setShareStatus(`Share failed: ${err?.message || "Unknown error"}. Use the buttons below.`);
+    }
+  }, [getShareText, originalPhotoFile, photoServerUrl]);
+
   const handleDownloadImage = useCallback(() => {
     if (photoServerUrl) {
       window.open(photoServerUrl, "_blank");
-      toast({ title: "Photo opened", description: "Long-press the photo to save it to your device." });
       return;
     }
     if (originalPhotoFile) {
       const blobUrl = URL.createObjectURL(originalPhotoFile);
       window.open(blobUrl, "_blank");
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-      toast({ title: "Photo opened", description: "Long-press the photo to save it to your device." });
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
       return;
     }
     toast({ title: "Error", description: "Photo not available", variant: "destructive" });
   }, [originalPhotoFile, photoServerUrl, toast]);
 
-  const handleShareWhatsApp = useCallback(() => {
+  const handleSendWhatsApp = useCallback(() => {
     const text = getShareText();
-    const photoUrl = photoServerUrl ? `${window.location.origin}${photoServerUrl}` : "";
-    const fullText = photoUrl ? `${text}\n\nPhoto: ${photoUrl}` : text;
-    const encoded = encodeURIComponent(fullText);
+    const encoded = encodeURIComponent(text);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [getShareText, photoServerUrl]);
+  }, [getShareText]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -354,7 +393,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setOriginalPhotoFile(null); setPhotoServerUrl(null); setShareStatus(""); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -376,18 +415,27 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleDownloadImage} disabled={isUploading || !photoServerUrl} className="w-full" data-testid="button-download-screenshot">
-              <Download className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading Photo..." : "Step 1: View & Save Photo"}
-            </Button>
-            <Button onClick={handleShareWhatsApp} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
+            <Button onClick={handleShareWithPhoto} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
               <Share2 className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading..." : "Step 2: Send Details to WhatsApp"}
+              {isUploading ? "Uploading Photo..." : "Share Photo + Details"}
             </Button>
+            {shareStatus && (
+              <p className="text-xs text-center p-2 bg-blue-50 rounded text-blue-700" data-testid="text-share-status">{shareStatus}</p>
+            )}
+            <div className="border-t pt-2 mt-1">
+              <p className="text-xs text-muted-foreground mb-2 text-center">If share button doesn't work:</p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleDownloadImage} disabled={isUploading} className="flex-1 text-xs" data-testid="button-download-screenshot">
+                  <Download className="w-3 h-3 mr-1" />
+                  Save Photo
+                </Button>
+                <Button variant="outline" onClick={handleSendWhatsApp} disabled={isUploading} className="flex-1 text-xs" data-testid="button-whatsapp-text">
+                  <Share2 className="w-3 h-3 mr-1" />
+                  WhatsApp Text
+                </Button>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-center text-muted-foreground">
-            Tap Step 1 to save the photo, then Step 2 to send details on WhatsApp. Attach the saved photo in WhatsApp chat.
-          </p>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-close-share">Close</AlertDialogCancel>
           </AlertDialogFooter>
