@@ -201,6 +201,14 @@ export async function registerRoutes(
   
   app.use("/uploads", express.static("uploads"));
 
+  app.post("/api/employee/upload-punch-photo", upload.single("photo"), (req: any, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No photo uploaded" });
+    }
+    const photoUrl = `/uploads/${req.file.filename}`;
+    res.json({ url: photoUrl });
+  });
+
   // Google domain verification
   app.get("/google04e2cf6bed3e661f.html", (req, res) => {
     res.send("google-site-verification: google04e2cf6bed3e661f.html");

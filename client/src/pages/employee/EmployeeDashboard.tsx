@@ -46,9 +46,10 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [, setLocation] = useLocation();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [employeePhoto, setEmployeePhoto] = useState<string | null>(null);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoServerUrl, setPhotoServerUrl] = useState<string | null>(null);
   const [shareType, setShareType] = useState<"in" | "out">("in");
   const [punchTime, setPunchTime] = useState<string>("");
+  const [isUploading, setIsUploading] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pendingPunchType = useRef<"in" | "out" | null>(null);
 
@@ -60,51 +61,86 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     }
   };
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadPhotoToServer = async (file: File): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch("/api/employee/upload-punch-photo", { method: "POST", body: formData });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.url;
+    } catch {
+      return null;
+    }
+  };
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !pendingPunchType.current) return;
     const type = pendingPunchType.current;
-    const renamed = new File([file], `punch_${type}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`, { type: file.type });
-    setPhotoFile(renamed);
     const reader = new FileReader();
     reader.onload = () => {
       setEmployeePhoto(reader.result as string);
-      punchMutation.mutate(type);
     };
     reader.readAsDataURL(file);
+    setIsUploading(true);
+    const serverUrl = await uploadPhotoToServer(file);
+    setPhotoServerUrl(serverUrl);
+    setIsUploading(false);
+    punchMutation.mutate(type);
   };
 
   const getShareText = useCallback(() => {
     return `*Rishi Hybrid Seeds Pvt. Ltd.*\n\n*Punch ${shareType === "in" ? "In" : "Out"}*\nName: ${employee.fullName}\nID: ${employee.employeeId}\nTime: ${punchTime}\nDate: ${format(new Date(), "dd MMM yyyy, EEEE")}`;
   }, [shareType, punchTime, employee]);
 
+  const getFullPhotoUrl = useCallback(() => {
+    if (!photoServerUrl) return null;
+    return `${window.location.origin}${photoServerUrl}`;
+  }, [photoServerUrl]);
+
   const handleShare = useCallback(async () => {
     const text = getShareText();
-    if (photoFile && navigator.share) {
-      try {
-        const shareData: any = { text };
-        if (navigator.canShare && navigator.canShare({ files: [photoFile] })) {
-          shareData.files = [photoFile];
+    const fullUrl = getFullPhotoUrl();
+    const shareText = fullUrl ? `${text}\n\nPhoto: ${fullUrl}` : text;
+    try {
+      if (fullUrl && navigator.share) {
+        const response = await fetch(fullUrl);
+        const blob = await response.blob();
+        const file = new File([blob], `punch_${shareType}_${employee.employeeId}.jpg`, { type: "image/jpeg" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ text, files: [file] });
+          return;
         }
-        await navigator.share(shareData);
-        return;
-      } catch (err: any) {
-        if (err?.name === "AbortError") return;
       }
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
     }
-    const encoded = encodeURIComponent(text);
+    const encoded = encodeURIComponent(shareText);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
-  }, [photoFile, getShareText]);
+  }, [getShareText, getFullPhotoUrl, shareType, employee]);
 
-  const handleDownloadImage = useCallback(() => {
-    if (!employeePhoto) return;
-    const link = document.createElement("a");
-    link.href = employeePhoto;
-    link.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [employeePhoto, shareType, employee]);
+  const handleDownloadImage = useCallback(async () => {
+    const fullUrl = getFullPhotoUrl();
+    if (!fullUrl) {
+      toast({ title: "Error", description: "Photo not available for download", variant: "destructive" });
+      return;
+    }
+    try {
+      const response = await fetch(fullUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `punch_${shareType}_${employee.employeeId}_${format(new Date(), "yyyy-MM-dd_HH-mm")}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch {
+      window.open(fullUrl, "_blank");
+    }
+  }, [getFullPhotoUrl, shareType, employee, toast]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) {
@@ -335,7 +371,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </CardContent>
       </Card>
 
-      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setPhotoFile(null); } }}>
+      <AlertDialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setPhotoServerUrl(null); } }}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -357,13 +393,13 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-muted-foreground">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <Button onClick={handleShare} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
+            <Button onClick={handleShare} disabled={isUploading} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
               <Share2 className="w-4 h-4 mr-2" />
-              Share Photo + Details
+              {isUploading ? "Uploading Photo..." : "Share Photo + Details"}
             </Button>
-            <Button variant="outline" onClick={handleDownloadImage} className="w-full" data-testid="button-download-screenshot">
+            <Button variant="outline" onClick={handleDownloadImage} disabled={isUploading} className="w-full" data-testid="button-download-screenshot">
               <Download className="w-4 h-4 mr-2" />
-              Save Photo to Device
+              {isUploading ? "Uploading..." : "Save Photo to Device"}
             </Button>
           </div>
           <AlertDialogFooter>
