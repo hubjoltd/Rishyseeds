@@ -30,6 +30,7 @@ import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
 import Trips from "@/pages/Trips";
 import Dryer from "@/pages/Dryer";
+import OverdueDryerAlert from "@/components/OverdueDryerAlert";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -53,6 +54,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
         <Component />
       </main>
+      <OverdueDryerAlert />
     </div>
   );
 }
