@@ -2297,6 +2297,79 @@ export async function registerRoutes(
     }
   });
 
+  // === FEEDS ROUTES ===
+  app.get("/api/feeds", async (req: any, res) => {
+    try {
+      const [allEmps, allTasks, allTrips, allAttendance] = await Promise.all([
+        storage.getEmployees(),
+        storage.getTasks(),
+        storage.getTrips(),
+        storage.getAttendance(),
+      ]);
+      const empMap = Object.fromEntries(allEmps.map(e => [e.id, e]));
+      const feeds: any[] = [];
+
+      for (const task of allTasks) {
+        const emp = empMap[task.employeeDbId];
+        const empName = emp?.fullName || "Unknown";
+        const empDept = emp?.department || "NA";
+        if (task.startedAt) {
+          feeds.push({ id: `task-start-${task.id}`, employeeName: empName, team: empDept, action: "Task Started", actionType: "task_started", platform: "WEB", intel: "NA", dateTime: task.startedAt, taskCode: task.taskCode });
+        }
+        if (task.completedAt) {
+          feeds.push({ id: `task-complete-${task.id}`, employeeName: empName, team: empDept, action: "Task Completed", actionType: "task_completed", platform: "WEB", intel: "NA", dateTime: task.completedAt, taskCode: task.taskCode });
+        }
+        if (!task.startedAt && task.status === "pending" && task.createdAt) {
+          feeds.push({ id: `task-assign-${task.id}`, employeeName: empName, team: empDept, action: "Task Assigned", actionType: "task_assigned", platform: "WEB", intel: "NA", dateTime: task.createdAt, taskCode: task.taskCode });
+        }
+      }
+
+      for (const trip of allTrips) {
+        const emp = empMap[trip.employeeId];
+        const empName = emp?.fullName || "Unknown";
+        const empDept = emp?.department || "NA";
+        if (trip.startTime) {
+          feeds.push({ id: `trip-start-${trip.id}`, employeeName: empName, team: empDept, action: "Trip Started", actionType: "trip_started", platform: "ANDROID", intel: "NA", dateTime: trip.startTime });
+        }
+        if (trip.endTime) {
+          feeds.push({ id: `trip-end-${trip.id}`, employeeName: empName, team: empDept, action: "Trip Ended", actionType: "trip_ended", platform: "ANDROID", intel: "NA", dateTime: trip.endTime });
+        }
+        const visits = await storage.getTripVisits(trip.id);
+        for (const v of visits) {
+          if (v.punchInTime) {
+            feeds.push({ id: `visit-in-${v.id}`, employeeName: empName, team: empDept, action: "Visit Punched In", actionType: "visit_in", platform: "ANDROID", intel: v.customerName || "NA", dateTime: v.punchInTime });
+          }
+          if (v.punchOutTime) {
+            feeds.push({ id: `visit-out-${v.id}`, employeeName: empName, team: empDept, action: "Visit Punched Out", actionType: "visit_out", platform: "ANDROID", intel: v.customerName || "NA", dateTime: v.punchOutTime });
+          }
+        }
+      }
+
+      for (const att of allAttendance) {
+        const emp = empMap[att.employeeId];
+        const empName = emp?.fullName || "Unknown";
+        const empDept = emp?.department || "NA";
+        if (att.checkIn && att.date) {
+          const dt = new Date(`${att.date}T${att.checkIn}:00`);
+          if (!isNaN(dt.getTime())) {
+            feeds.push({ id: `att-in-${att.id}`, employeeName: empName, team: empDept, action: "Attendance In", actionType: "attendance_in", platform: "ANDROID", intel: "NA", dateTime: dt });
+          }
+        }
+        if (att.checkOut && att.date) {
+          const dt = new Date(`${att.date}T${att.checkOut}:00`);
+          if (!isNaN(dt.getTime())) {
+            feeds.push({ id: `att-out-${att.id}`, employeeName: empName, team: empDept, action: "Attendance Out", actionType: "attendance_out", platform: "ANDROID", intel: "NA", dateTime: dt });
+          }
+        }
+      }
+
+      feeds.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+      res.json(feeds.slice(0, 200));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
   // === CUSTOMER ROUTES ===
   app.get("/api/customers", async (req: any, res) => {
     try {
