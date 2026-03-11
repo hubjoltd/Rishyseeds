@@ -417,6 +417,65 @@ export const insertTripAuditSchema = createInsertSchema(tripAuditHistory).omit({
 export type TripAudit = typeof tripAuditHistory.$inferSelect;
 export type InsertTripAudit = z.infer<typeof insertTripAuditSchema>;
 
+// === EXPENSES ===
+export const expenses = pgTable("expenses", {
+  id: serial("id").primaryKey(),
+  expenseCode: text("expense_code").notNull().unique(),
+  title: text("title").notNull(),
+  employeeDbId: integer("employee_db_id").notNull(),
+  category: text("category").notNull().default("Expense"),
+  type: text("type").notNull().default("Expense"),
+  amount: decimal("amount").notNull().default("0"),
+  expenseDate: date("expense_date").notNull(),
+  description: text("description"),
+  workLocation: text("work_location"),
+  status: text("status").notNull().default("pending"),
+  approvedAmount: decimal("approved_amount"),
+  adminComment: text("admin_comment"),
+  startingOdometer: decimal("starting_odometer"),
+  startingOdometerPhoto: text("starting_odometer_photo"),
+  endOdometer: decimal("end_odometer"),
+  endOdometerPhoto: text("end_odometer_photo"),
+  totalDistance: decimal("total_distance"),
+  amountPerKm: decimal("amount_per_km"),
+  totalTravelAmount: decimal("total_travel_amount"),
+  expenseCategory: text("expense_category"),
+  finalAmount: decimal("final_amount"),
+  statusUpdatedBy: text("status_updated_by"),
+  statusUpdatedOn: timestamp("status_updated_on"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true });
+export type Expense = typeof expenses.$inferSelect;
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+
+export const expenseComments = pgTable("expense_comments", {
+  id: serial("id").primaryKey(),
+  expenseId: integer("expense_id").notNull(),
+  message: text("message").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertExpenseCommentSchema = createInsertSchema(expenseComments).omit({ id: true, createdAt: true });
+export type ExpenseComment = typeof expenseComments.$inferSelect;
+export type InsertExpenseComment = z.infer<typeof insertExpenseCommentSchema>;
+
+export const expenseAuditHistory = pgTable("expense_audit_history", {
+  id: serial("id").primaryKey(),
+  expenseId: integer("expense_id").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  changedByName: text("changed_by_name").notNull(),
+  notes: text("notes"),
+  changedAt: timestamp("changed_at").defaultNow(),
+});
+
+export const insertExpenseAuditSchema = createInsertSchema(expenseAuditHistory).omit({ id: true, changedAt: true });
+export type ExpenseAudit = typeof expenseAuditHistory.$inferSelect;
+export type InsertExpenseAudit = z.infer<typeof insertExpenseAuditSchema>;
+
 // === NOTIFICATIONS ===
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

@@ -31,6 +31,7 @@ import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
 import Trips from "@/pages/Trips";
 import Dryer from "@/pages/Dryer";
+import Expenses from "@/pages/Expenses";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -128,6 +129,9 @@ function Router() {
       </Route>
       <Route path="/dryer">
         <ProtectedRoute component={Dryer} />
+      </Route>
+      <Route path="/expenses">
+        <ProtectedRoute component={Expenses} />
       </Route>
 
       <Route component={NotFound} />

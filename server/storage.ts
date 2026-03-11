@@ -5,6 +5,7 @@ import {
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
   trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
+  expenses, expenseComments, expenseAuditHistory,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -23,7 +24,10 @@ import {
   type TripVisit, type InsertTripVisit,
   type TripComment, type InsertTripComment,
   type TripAudit, type InsertTripAudit,
-  type DryerEntry, type InsertDryerEntry
+  type DryerEntry, type InsertDryerEntry,
+  type Expense, type InsertExpense,
+  type ExpenseComment, type InsertExpenseComment,
+  type ExpenseAudit, type InsertExpenseAudit,
 } from "@shared/schema";
 import { eq, desc, sql, and, or } from "drizzle-orm";
 
@@ -182,6 +186,17 @@ export interface IStorage {
   createDryerEntry(entry: InsertDryerEntry): Promise<DryerEntry>;
   updateDryerEntry(id: number, updates: Partial<InsertDryerEntry>): Promise<DryerEntry | undefined>;
   deleteDryerEntry(id: number): Promise<boolean>;
+
+  // Expenses
+  getExpenses(): Promise<Expense[]>;
+  getExpensesByEmployee(employeeDbId: number): Promise<Expense[]>;
+  getExpense(id: number): Promise<Expense | undefined>;
+  createExpense(expense: InsertExpense): Promise<Expense>;
+  updateExpense(id: number, updates: Partial<InsertExpense>): Promise<Expense | undefined>;
+  getExpenseComments(expenseId: number): Promise<ExpenseComment[]>;
+  createExpenseComment(comment: InsertExpenseComment): Promise<ExpenseComment>;
+  getExpenseAuditHistory(expenseId: number): Promise<ExpenseAudit[]>;
+  createExpenseAudit(audit: InsertExpenseAudit): Promise<ExpenseAudit>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -850,6 +865,48 @@ export class DatabaseStorage implements IStorage {
   async deleteDryerEntry(id: number): Promise<boolean> {
     await db.delete(dryerEntries).where(eq(dryerEntries.id, id));
     return true;
+  }
+
+  // Expenses
+  async getExpenses(): Promise<Expense[]> {
+    return db.select().from(expenses).orderBy(desc(expenses.createdAt));
+  }
+
+  async getExpensesByEmployee(employeeDbId: number): Promise<Expense[]> {
+    return db.select().from(expenses).where(eq(expenses.employeeDbId, employeeDbId)).orderBy(desc(expenses.createdAt));
+  }
+
+  async getExpense(id: number): Promise<Expense | undefined> {
+    const [exp] = await db.select().from(expenses).where(eq(expenses.id, id));
+    return exp;
+  }
+
+  async createExpense(expense: InsertExpense): Promise<Expense> {
+    const [created] = await db.insert(expenses).values(expense).returning();
+    return created;
+  }
+
+  async updateExpense(id: number, updates: Partial<InsertExpense>): Promise<Expense | undefined> {
+    const [updated] = await db.update(expenses).set(updates).where(eq(expenses.id, id)).returning();
+    return updated;
+  }
+
+  async getExpenseComments(expenseId: number): Promise<ExpenseComment[]> {
+    return db.select().from(expenseComments).where(eq(expenseComments.expenseId, expenseId)).orderBy(desc(expenseComments.createdAt));
+  }
+
+  async createExpenseComment(comment: InsertExpenseComment): Promise<ExpenseComment> {
+    const [created] = await db.insert(expenseComments).values(comment).returning();
+    return created;
+  }
+
+  async getExpenseAuditHistory(expenseId: number): Promise<ExpenseAudit[]> {
+    return db.select().from(expenseAuditHistory).where(eq(expenseAuditHistory.expenseId, expenseId)).orderBy(desc(expenseAuditHistory.changedAt));
+  }
+
+  async createExpenseAudit(audit: InsertExpenseAudit): Promise<ExpenseAudit> {
+    const [created] = await db.insert(expenseAuditHistory).values(audit).returning();
+    return created;
   }
 }
 

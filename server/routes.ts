@@ -2288,6 +2288,195 @@ export async function registerRoutes(
     }
   });
 
+  // === EXPENSE ROUTES ===
+  app.get("/api/expenses", async (req: any, res) => {
+    try {
+      const all = await storage.getExpenses();
+      const emps = await storage.getEmployees();
+      const empMap = Object.fromEntries(emps.map(e => [e.id, e]));
+      const result = all.map(exp => ({
+        ...exp,
+        employeeName: empMap[exp.employeeDbId]?.fullName || "Unknown",
+        employeeCode: empMap[exp.employeeDbId]?.employeeId || "",
+        workLocation: exp.workLocation || empMap[exp.employeeDbId]?.workLocation || "NA",
+      }));
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch expenses" });
+    }
+  });
+
+  app.post("/api/expenses", async (req: any, res) => {
+    try {
+      const body = req.body;
+      const empId = req.employeeId;
+      let employeeDbId = body.employeeDbId;
+      if (!employeeDbId && empId) employeeDbId = empId;
+      const emp = await storage.getEmployee(employeeDbId);
+      if (!emp) return res.status(400).json({ message: "Employee not found" });
+      const countResult = await storage.getExpenses();
+      const nextNum = countResult.length + 1;
+      const expenseCode = `EXP-${String(nextNum).padStart(4, "0")}`;
+      const title = body.title || `${emp.fullName}-${emp.employeeId}-Expense`;
+      const expense = await storage.createExpense({
+        ...body,
+        employeeDbId,
+        expenseCode,
+        title,
+        status: "pending",
+      });
+      await storage.createExpenseAudit({
+        expenseId: expense.id,
+        fromStatus: null,
+        toStatus: "pending",
+        changedByName: emp.fullName,
+        notes: "Expense created",
+      });
+      res.status(201).json(expense);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to create expense" });
+    }
+  });
+
+  app.get("/api/expenses/:id", async (req: any, res) => {
+    try {
+      const expense = await storage.getExpense(Number(req.params.id));
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      const emp = await storage.getEmployee(expense.employeeDbId);
+      res.json({ ...expense, employeeName: emp?.fullName || "Unknown", employeeCode: emp?.employeeId || "" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch expense" });
+    }
+  });
+
+  app.patch("/api/expenses/:id/approve", async (req: any, res) => {
+    try {
+      const expense = await storage.getExpense(Number(req.params.id));
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      const { approvedAmount, comment } = req.body;
+      const adminUser = (req as any).user;
+      const adminName = adminUser?.fullName || adminUser?.username || "Admin";
+      const updated = await storage.updateExpense(expense.id, {
+        status: "approved",
+        approvedAmount: approvedAmount || expense.amount,
+        finalAmount: approvedAmount || expense.amount,
+        adminComment: comment,
+        statusUpdatedBy: adminName,
+        statusUpdatedOn: new Date(),
+      });
+      await storage.createExpenseAudit({
+        expenseId: expense.id,
+        fromStatus: expense.status,
+        toStatus: "approved",
+        changedByName: adminName,
+        notes: comment || "Expense approved",
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to approve expense" });
+    }
+  });
+
+  app.patch("/api/expenses/:id/reject", async (req: any, res) => {
+    try {
+      const expense = await storage.getExpense(Number(req.params.id));
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      const { reason } = req.body;
+      const adminUser = (req as any).user;
+      const adminName = adminUser?.fullName || adminUser?.username || "Admin";
+      const updated = await storage.updateExpense(expense.id, {
+        status: "rejected",
+        adminComment: reason,
+        statusUpdatedBy: adminName,
+        statusUpdatedOn: new Date(),
+      });
+      await storage.createExpenseAudit({
+        expenseId: expense.id,
+        fromStatus: expense.status,
+        toStatus: "rejected",
+        changedByName: adminName,
+        notes: reason || "Expense rejected",
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to reject expense" });
+    }
+  });
+
+  app.get("/api/expenses/:id/comments", async (req: any, res) => {
+    try {
+      const comments = await storage.getExpenseComments(Number(req.params.id));
+      res.json(comments);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/expenses/:id/comments", async (req: any, res) => {
+    try {
+      const { message } = req.body;
+      if (!message) return res.status(400).json({ message: "Message is required" });
+      const adminUser = (req as any).user;
+      const empUser = (req as any).employeeId ? await storage.getEmployee((req as any).employeeId) : null;
+      const createdByName = adminUser?.fullName || adminUser?.username || empUser?.fullName || "User";
+      const comment = await storage.createExpenseComment({ expenseId: Number(req.params.id), message, createdByName });
+      res.status(201).json(comment);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to add comment" });
+    }
+  });
+
+  app.get("/api/expenses/:id/audit", async (req: any, res) => {
+    try {
+      const audit = await storage.getExpenseAuditHistory(Number(req.params.id));
+      res.json(audit);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch audit" });
+    }
+  });
+
+  // Employee portal expense routes
+  app.get("/api/employee/expenses", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const list = await storage.getExpensesByEmployee(empId);
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch expenses" });
+    }
+  });
+
+  app.post("/api/employee/expenses", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const countResult = await storage.getExpenses();
+      const nextNum = countResult.length + 1;
+      const expenseCode = `EXP-${String(nextNum).padStart(4, "0")}`;
+      const title = req.body.title || `${emp.fullName}-${emp.employeeId}-Expense`;
+      const expense = await storage.createExpense({
+        ...req.body,
+        employeeDbId: empId,
+        expenseCode,
+        title,
+        status: "pending",
+      });
+      await storage.createExpenseAudit({
+        expenseId: expense.id,
+        fromStatus: null,
+        toStatus: "pending",
+        changedByName: emp.fullName,
+        notes: "Expense submitted",
+      });
+      res.status(201).json(expense);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to create expense" });
+    }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 
