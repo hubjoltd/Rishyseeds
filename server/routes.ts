@@ -2024,6 +2024,13 @@ export async function registerRoutes(
         approvedBy: userId,
         approvedAt: new Date(),
       });
+      await storage.createTripAudit({
+        tripId: id,
+        fromStatus: trip.status,
+        toStatus: "approved",
+        changedByName: user.fullName || user.username,
+        notes: "Trip approved",
+      });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to approve trip" });
@@ -2049,9 +2056,59 @@ export async function registerRoutes(
         approvedBy: userId,
         approvedAt: new Date(),
       });
+      await storage.createTripAudit({
+        tripId: id,
+        fromStatus: trip.status,
+        toStatus: "rejected",
+        changedByName: user.fullName || user.username,
+        notes: reason || "Rejected by admin",
+      });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to reject trip" });
+    }
+  });
+
+  app.get("/api/trips/:id/comments", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const id = parseInt(req.params.id);
+      const comments = await storage.getTripComments(id);
+      res.json(comments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/trips/:id/comments", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      const id = parseInt(req.params.id);
+      const { message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ message: "Message is required" });
+      const comment = await storage.createTripComment({
+        tripId: id,
+        message: message.trim(),
+        createdByName: user?.fullName || user?.username || "Admin",
+      });
+      res.json(comment);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to add comment" });
+    }
+  });
+
+  app.get("/api/trips/:id/audit", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const id = parseInt(req.params.id);
+      const history = await storage.getTripAuditHistory(id);
+      res.json(history);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch audit history" });
     }
   });
 

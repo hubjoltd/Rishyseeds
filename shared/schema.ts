@@ -389,6 +389,34 @@ export const insertTripVisitSchema = createInsertSchema(tripVisits).omit({ id: t
 export type TripVisit = typeof tripVisits.$inferSelect;
 export type InsertTripVisit = z.infer<typeof insertTripVisitSchema>;
 
+// === TRIP COMMENTS ===
+export const tripComments = pgTable("trip_comments", {
+  id: serial("id").primaryKey(),
+  tripId: integer("trip_id").notNull(),
+  message: text("message").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTripCommentSchema = createInsertSchema(tripComments).omit({ id: true, createdAt: true });
+export type TripComment = typeof tripComments.$inferSelect;
+export type InsertTripComment = z.infer<typeof insertTripCommentSchema>;
+
+// === TRIP AUDIT HISTORY ===
+export const tripAuditHistory = pgTable("trip_audit_history", {
+  id: serial("id").primaryKey(),
+  tripId: integer("trip_id").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  changedByName: text("changed_by_name").notNull(),
+  notes: text("notes"),
+  changedAt: timestamp("changed_at").defaultNow(),
+});
+
+export const insertTripAuditSchema = createInsertSchema(tripAuditHistory).omit({ id: true, changedAt: true });
+export type TripAudit = typeof tripAuditHistory.$inferSelect;
+export type InsertTripAudit = z.infer<typeof insertTripAuditSchema>;
+
 // === NOTIFICATIONS ===
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

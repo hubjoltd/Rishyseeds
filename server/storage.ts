@@ -4,7 +4,7 @@ import {
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
-  trips, tripVisits, dryerEntries,
+  trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -21,6 +21,8 @@ import {
   type Notification, type InsertNotification,
   type Trip, type InsertTrip,
   type TripVisit, type InsertTripVisit,
+  type TripComment, type InsertTripComment,
+  type TripAudit, type InsertTripAudit,
   type DryerEntry, type InsertDryerEntry
 } from "@shared/schema";
 import { eq, desc, sql, and, or } from "drizzle-orm";
@@ -165,6 +167,14 @@ export interface IStorage {
   getTripVisits(tripId: number): Promise<TripVisit[]>;
   createTripVisit(visit: InsertTripVisit): Promise<TripVisit>;
   updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined>;
+
+  // Trip Comments
+  getTripComments(tripId: number): Promise<TripComment[]>;
+  createTripComment(comment: InsertTripComment): Promise<TripComment>;
+
+  // Trip Audit History
+  getTripAuditHistory(tripId: number): Promise<TripAudit[]>;
+  createTripAudit(audit: InsertTripAudit): Promise<TripAudit>;
 
   // Dryer
   getDryerEntries(): Promise<DryerEntry[]>;
@@ -798,6 +808,24 @@ export class DatabaseStorage implements IStorage {
   async updateTripVisit(id: number, updates: Partial<InsertTripVisit>): Promise<TripVisit | undefined> {
     const [updated] = await db.update(tripVisits).set(updates).where(eq(tripVisits.id, id)).returning();
     return updated;
+  }
+
+  async getTripComments(tripId: number): Promise<TripComment[]> {
+    return db.select().from(tripComments).where(eq(tripComments.tripId, tripId)).orderBy(tripComments.createdAt);
+  }
+
+  async createTripComment(comment: InsertTripComment): Promise<TripComment> {
+    const [created] = await db.insert(tripComments).values(comment).returning();
+    return created;
+  }
+
+  async getTripAuditHistory(tripId: number): Promise<TripAudit[]> {
+    return db.select().from(tripAuditHistory).where(eq(tripAuditHistory.tripId, tripId)).orderBy(tripAuditHistory.changedAt);
+  }
+
+  async createTripAudit(audit: InsertTripAudit): Promise<TripAudit> {
+    const [created] = await db.insert(tripAuditHistory).values(audit).returning();
+    return created;
   }
 
   async getDryerEntries(): Promise<DryerEntry[]> {
