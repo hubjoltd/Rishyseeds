@@ -18,7 +18,8 @@ import {
   Truck,
   ChevronDown,
   Navigation,
-  BanknoteIcon
+  BanknoteIcon,
+  ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -41,7 +42,8 @@ const mainMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal", resource: "dashboard" },
   { icon: Clock, label: "Attendance", href: "/employee-portal/attendance", resource: "attendance" },
   { icon: FileText, label: "Payslips", href: "/employee-portal/payslips", resource: "payroll" },
-  { icon: Navigation, label: "My Tasks", href: "/employee-portal/trips" },
+  { icon: Navigation, label: "My Trips", href: "/employee-portal/trips" },
+  { icon: ClipboardList, label: "My Tasks", href: "/employee-portal/tasks" },
   { icon: BanknoteIcon, label: "My Expenses", href: "/employee-portal/expenses" },
   { icon: User, label: "My Profile", href: "/employee-portal/profile" },
 ];

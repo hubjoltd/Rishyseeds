@@ -30,6 +30,7 @@ import EmployeeLogin from "@/pages/EmployeeLogin";
 import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
 import Trips from "@/pages/Trips";
+import Tasks from "@/pages/Tasks";
 import Dryer from "@/pages/Dryer";
 import Expenses from "@/pages/Expenses";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
@@ -126,6 +127,9 @@ function Router() {
       </Route>
       <Route path="/trips">
         <ProtectedRoute component={Trips} />
+      </Route>
+      <Route path="/tasks">
+        <ProtectedRoute component={Tasks} />
       </Route>
       <Route path="/dryer">
         <ProtectedRoute component={Dryer} />

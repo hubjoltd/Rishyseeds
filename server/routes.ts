@@ -2290,6 +2290,137 @@ export async function registerRoutes(
     }
   });
 
+  // === TASK ROUTES ===
+  app.get("/api/tasks", async (req: any, res) => {
+    try {
+      const all = await storage.getTasks();
+      const emps = await storage.getEmployees();
+      const empMap = Object.fromEntries(emps.map(e => [e.id, e]));
+      const result = all.map(t => ({
+        ...t,
+        employeeName: empMap[t.employeeDbId]?.fullName || "Unknown",
+        employeeCode: empMap[t.employeeDbId]?.employeeId || "",
+      }));
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.post("/api/tasks", async (req: any, res) => {
+    try {
+      const body = req.body;
+      const adminUser = (req as any).user;
+      const adminName = adminUser?.fullName || adminUser?.username || "Admin";
+      const all = await storage.getTasks();
+      const nextNum = all.length + 1;
+      const taskCode = `CHK-${String(nextNum).padStart(5, "0")}`;
+      const task = await storage.createTask({
+        ...body,
+        taskCode,
+        createdByName: adminName,
+        status: body.status || "pending",
+      });
+      res.status(201).json(task);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to create task" });
+    }
+  });
+
+  app.get("/api/tasks/:id", async (req: any, res) => {
+    try {
+      const task = await storage.getTask(Number(req.params.id));
+      if (!task) return res.status(404).json({ message: "Task not found" });
+      const emp = await storage.getEmployee(task.employeeDbId);
+      res.json({ ...task, employeeName: emp?.fullName || "Unknown", employeeCode: emp?.employeeId || "" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.patch("/api/tasks/:id", async (req: any, res) => {
+    try {
+      const task = await storage.getTask(Number(req.params.id));
+      if (!task) return res.status(404).json({ message: "Task not found" });
+      const updated = await storage.updateTask(task.id, req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to update task" });
+    }
+  });
+
+  app.get("/api/tasks/:id/comments", async (req: any, res) => {
+    try {
+      const comments = await storage.getTaskComments(Number(req.params.id));
+      res.json(comments);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.post("/api/tasks/:id/comments", async (req: any, res) => {
+    try {
+      const { message } = req.body;
+      if (!message) return res.status(400).json({ message: "Message required" });
+      const adminUser = (req as any).user;
+      const empId = (req as any).employeeId;
+      const empUser = empId ? await storage.getEmployee(empId) : null;
+      const createdByName = adminUser?.fullName || adminUser?.username || empUser?.fullName || "User";
+      const comment = await storage.createTaskComment({ taskId: Number(req.params.id), message, createdByName });
+      res.status(201).json(comment);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  // Employee portal task routes
+  app.get("/api/employee/tasks", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const list = await storage.getTasksByEmployee(empId);
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.patch("/api/employee/tasks/:id/checkin", upload.single("checkInPhoto"), async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const task = await storage.getTask(Number(req.params.id));
+      if (!task || task.employeeDbId !== empId) return res.status(404).json({ message: "Task not found" });
+      const { checkInLatitude, checkInLongitude, checkInLocationName } = req.body;
+      const checkInPhoto = req.file ? `/uploads/${req.file.filename}` : null;
+      const updated = await storage.updateTask(task.id, {
+        status: "in_progress",
+        startedAt: new Date(),
+        checkInLatitude: checkInLatitude || null,
+        checkInLongitude: checkInLongitude || null,
+        checkInLocationName: checkInLocationName || null,
+        checkInTime: new Date(),
+        checkInPhoto,
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.patch("/api/employee/tasks/:id/complete", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const task = await storage.getTask(Number(req.params.id));
+      if (!task || task.employeeDbId !== empId) return res.status(404).json({ message: "Task not found" });
+      const updated = await storage.updateTask(task.id, { status: "completed", completedAt: new Date() });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
   // === EXPENSE ROUTES ===
   app.get("/api/expenses", async (req: any, res) => {
     try {

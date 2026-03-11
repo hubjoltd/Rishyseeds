@@ -419,6 +419,49 @@ export const insertTripAuditSchema = createInsertSchema(tripAuditHistory).omit({
 export type TripAudit = typeof tripAuditHistory.$inferSelect;
 export type InsertTripAudit = z.infer<typeof insertTripAuditSchema>;
 
+// === TASKS ===
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  taskCode: text("task_code").notNull().unique(),
+  title: text("title").notNull(),
+  employeeDbId: integer("employee_db_id").notNull(),
+  customerName: text("customer_name"),
+  customerAddress: text("customer_address"),
+  workLocation: text("work_location"),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("pending"),
+  stage: text("stage"),
+  type: text("type").notNull().default("Visit"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdByName: text("created_by_name"),
+  notes: text("notes"),
+  checkInLatitude: decimal("check_in_latitude"),
+  checkInLongitude: decimal("check_in_longitude"),
+  checkInLocationName: text("check_in_location_name"),
+  checkInTime: timestamp("check_in_time"),
+  checkInPhoto: text("check_in_photo"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
+export type Task = typeof tasks.$inferSelect;
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+
+export const taskComments = pgTable("task_comments", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull(),
+  message: text("message").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true });
+export type TaskComment = typeof taskComments.$inferSelect;
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+
 // === EXPENSES ===
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),

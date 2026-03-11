@@ -5,6 +5,7 @@ import {
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
   trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
+  tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   type User, type InsertUser,
   type Batch, type InsertBatch,
@@ -25,6 +26,8 @@ import {
   type TripComment, type InsertTripComment,
   type TripAudit, type InsertTripAudit,
   type DryerEntry, type InsertDryerEntry,
+  type Task, type InsertTask,
+  type TaskComment, type InsertTaskComment,
   type Expense, type InsertExpense,
   type ExpenseComment, type InsertExpenseComment,
   type ExpenseAudit, type InsertExpenseAudit,
@@ -186,6 +189,15 @@ export interface IStorage {
   createDryerEntry(entry: InsertDryerEntry): Promise<DryerEntry>;
   updateDryerEntry(id: number, updates: Partial<InsertDryerEntry>): Promise<DryerEntry | undefined>;
   deleteDryerEntry(id: number): Promise<boolean>;
+
+  // Tasks
+  getTasks(): Promise<Task[]>;
+  getTasksByEmployee(employeeDbId: number): Promise<Task[]>;
+  getTask(id: number): Promise<Task | undefined>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: number, updates: Partial<InsertTask>): Promise<Task | undefined>;
+  getTaskComments(taskId: number): Promise<TaskComment[]>;
+  createTaskComment(comment: InsertTaskComment): Promise<TaskComment>;
 
   // Expenses
   getExpenses(): Promise<Expense[]>;
@@ -865,6 +877,39 @@ export class DatabaseStorage implements IStorage {
   async deleteDryerEntry(id: number): Promise<boolean> {
     await db.delete(dryerEntries).where(eq(dryerEntries.id, id));
     return true;
+  }
+
+  // Tasks
+  async getTasks(): Promise<Task[]> {
+    return db.select().from(tasks).orderBy(desc(tasks.createdAt));
+  }
+
+  async getTasksByEmployee(employeeDbId: number): Promise<Task[]> {
+    return db.select().from(tasks).where(eq(tasks.employeeDbId, employeeDbId)).orderBy(desc(tasks.createdAt));
+  }
+
+  async getTask(id: number): Promise<Task | undefined> {
+    const [t] = await db.select().from(tasks).where(eq(tasks.id, id));
+    return t;
+  }
+
+  async createTask(task: InsertTask): Promise<Task> {
+    const [created] = await db.insert(tasks).values(task).returning();
+    return created;
+  }
+
+  async updateTask(id: number, updates: Partial<InsertTask>): Promise<Task | undefined> {
+    const [updated] = await db.update(tasks).set(updates).where(eq(tasks.id, id)).returning();
+    return updated;
+  }
+
+  async getTaskComments(taskId: number): Promise<TaskComment[]> {
+    return db.select().from(taskComments).where(eq(taskComments.taskId, taskId)).orderBy(desc(taskComments.createdAt));
+  }
+
+  async createTaskComment(comment: InsertTaskComment): Promise<TaskComment> {
+    const [created] = await db.insert(taskComments).values(comment).returning();
+    return created;
   }
 
   // Expenses
