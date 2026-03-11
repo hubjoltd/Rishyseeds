@@ -2245,7 +2245,7 @@ export async function registerRoutes(
       if (trip.status === "submitted" || trip.status === "approved") {
         return res.status(400).json({ message: "Trip already ended" });
       }
-      const { punchInLatitude, punchInLongitude, punchInLocationName, remarks } = req.body;
+      const { punchInLatitude, punchInLongitude, punchInLocationName, remarks, customerName, customerAddress } = req.body;
       const punchInPhoto = req.file ? `/uploads/${req.file.filename}` : null;
       const visit = await storage.createTripVisit({
         tripId,
@@ -2255,6 +2255,8 @@ export async function registerRoutes(
         punchInLocationName: punchInLocationName || null,
         punchInPhoto,
         remarks: remarks || null,
+        customerName: customerName || null,
+        customerAddress: customerAddress || null,
         status: "punched_in",
       });
       await storage.updateTrip(tripId, { status: "in_progress" });

@@ -388,7 +388,15 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
                         {idx + 1}
                       </div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-sm font-medium">Visit {idx + 1}</span>
+                        <div>
+                          <span className="text-sm font-medium">Visit {idx + 1}</span>
+                          {(visit as any).customerName && (
+                            <p className="text-xs text-primary font-medium mt-0.5">{(visit as any).customerName}</p>
+                          )}
+                          {(visit as any).customerAddress && (
+                            <p className="text-xs text-muted-foreground">{(visit as any).customerAddress}</p>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                           <Badge variant={visit.status === "punched_out" ? "default" : "secondary"} className="text-xs">
                             {visit.status === "punched_out" ? "Completed" : "Active"}

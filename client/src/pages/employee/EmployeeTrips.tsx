@@ -86,6 +86,8 @@ interface VisitData {
   punchOutPhoto: string | null;
   status: string;
   remarks: string | null;
+  customerName: string | null;
+  customerAddress: string | null;
 }
 
 function TripMap({ points }: { points: { lat: number; lng: number; label: string; color: string }[] }) {
@@ -230,6 +232,8 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const [startMeterReading, setStartMeterReading] = useState("");
   const [endMeterReading, setEndMeterReading] = useState("");
   const [visitRemarks, setVisitRemarks] = useState("");
+  const [visitCustomerName, setVisitCustomerName] = useState("");
+  const [visitCustomerAddress, setVisitCustomerAddress] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -365,12 +369,16 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       lng: number;
       photo: File;
       remarks: string;
+      customerName: string;
+      customerAddress: string;
     }) => {
       const formData = new FormData();
       formData.append("punchInLatitude", data.lat.toString());
       formData.append("punchInLongitude", data.lng.toString());
       formData.append("punchInPhoto", data.photo);
       if (data.remarks) formData.append("remarks", data.remarks);
+      if (data.customerName) formData.append("customerName", data.customerName);
+      if (data.customerAddress) formData.append("customerAddress", data.customerAddress);
 
       const res = await fetch(`/api/employee/trips/${data.tripId}/visits`, {
         method: "POST",
@@ -387,6 +395,8 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
       setShowVisitDialog(false);
       setVisitRemarks("");
+      setVisitCustomerName("");
+      setVisitCustomerAddress("");
       setPhotoFile(null);
       setCurrentLocation(null);
       toast({ title: "Visit Added", description: "Punched in at new location" });
@@ -500,6 +510,8 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       lng: currentLocation.lng,
       photo: photoFile,
       remarks: visitRemarks,
+      customerName: visitCustomerName,
+      customerAddress: visitCustomerAddress,
     });
   };
 
@@ -716,6 +728,8 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                       setPhotoFile(null);
                       setCurrentLocation(null);
                       setVisitRemarks("");
+                      setVisitCustomerName("");
+                      setVisitCustomerAddress("");
                       setShowVisitDialog(true);
                     }}
                     data-testid="button-add-visit"
@@ -751,6 +765,17 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                             </span>
                           )}
                         </div>
+
+                        {visit.customerName && (
+                          <div className="p-2 bg-primary/5 border border-primary/20 rounded-md">
+                            <p className="text-xs font-semibold text-primary flex items-center gap-1">
+                              <MapPin className="w-3 h-3" /> {visit.customerName}
+                            </p>
+                            {visit.customerAddress && (
+                              <p className="text-xs text-muted-foreground mt-0.5">{visit.customerAddress}</p>
+                            )}
+                          </div>
+                        )}
 
                         {visit.status === "punched_in" && visit.punchInTime && (
                           <VisitTimer punchInTime={visit.punchInTime} />
@@ -866,9 +891,28 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Visit</DialogTitle>
-              <DialogDescription>Punch in at current location with a photo</DialogDescription>
+              <DialogDescription>Enter customer details and capture your location</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Customer Name *</label>
+                <Input
+                  value={visitCustomerName}
+                  onChange={(e) => setVisitCustomerName(e.target.value)}
+                  placeholder="e.g. Sri Harshini Fertilizer &amp; Seeds"
+                  data-testid="input-visit-customer-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Customer Address</label>
+                <Textarea
+                  value={visitCustomerAddress}
+                  onChange={(e) => setVisitCustomerAddress(e.target.value)}
+                  placeholder="Enter customer address"
+                  className="min-h-[70px] resize-none"
+                  data-testid="input-visit-customer-address"
+                />
+              </div>
               <div className="space-y-2">
                 <Button
                   variant="outline"
@@ -886,6 +930,11 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                     ? `Location: ${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`
                     : "Capture GPS Location"}
                 </Button>
+                {currentLocation && (
+                  <div className="flex items-center gap-2 text-xs text-green-600">
+                    <CheckCircle className="w-3 h-3" /> GPS location captured
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Photo</label>
@@ -909,7 +958,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
               <Button
                 className="w-full"
                 onClick={handleAddVisit}
-                disabled={addVisitMutation.isPending}
+                disabled={addVisitMutation.isPending || !visitCustomerName.trim()}
                 data-testid="button-submit-visit"
               >
                 {addVisitMutation.isPending ? (

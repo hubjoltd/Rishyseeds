@@ -382,6 +382,8 @@ export const tripVisits = pgTable("trip_visits", {
   punchOutPhoto: text("punch_out_photo"),
   status: text("status").notNull().default("punched_in"),
   remarks: text("remarks"),
+  customerName: text("customer_name"),
+  customerAddress: text("customer_address"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
