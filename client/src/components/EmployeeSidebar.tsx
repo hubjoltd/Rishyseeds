@@ -41,7 +41,7 @@ const mainMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/employee-portal", resource: "dashboard" },
   { icon: Clock, label: "Attendance", href: "/employee-portal/attendance", resource: "attendance" },
   { icon: FileText, label: "Payslips", href: "/employee-portal/payslips", resource: "payroll" },
-  { icon: Navigation, label: "My Trips", href: "/employee-portal/trips" },
+  { icon: Navigation, label: "My Tasks", href: "/employee-portal/trips" },
   { icon: BanknoteIcon, label: "My Expenses", href: "/employee-portal/expenses" },
   { icon: User, label: "My Profile", href: "/employee-portal/profile" },
 ];

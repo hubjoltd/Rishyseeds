@@ -85,7 +85,7 @@ const allMenuItems: MenuItem[] = [
       { icon: CreditCard, label: "Payroll", href: "/payroll", roles: ["admin", "hr"] },
     ]
   },
-  { icon: MapPin, label: "Trip Tracking", href: "/trips", roles: ["admin", "manager"] },
+  { icon: MapPin, label: "Tasks", href: "/trips", roles: ["admin", "manager"] },
   { icon: BanknoteIcon, label: "Expenses", href: "/expenses", roles: ["admin", "manager", "hr"] },
   { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
   {
