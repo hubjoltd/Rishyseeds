@@ -917,6 +917,31 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/employees/:id/trips", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const trips = await storage.getTripsByEmployee(empId);
+      const tripsWithVisits = await Promise.all(
+        trips.map(async (trip) => {
+          const detail = await storage.getTripDetail(trip.id);
+          return { ...trip, visits: detail?.visits || [], visitCount: detail?.visits?.length || 0 };
+        })
+      );
+      res.json(tripsWithVisits);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch employee trips" });
+    }
+  });
+
+  app.get("/api/employees/:id/attendance", checkPermission('attendance', 'view'), async (req, res) => {
+    try {
+      const records = await storage.getAttendanceByEmployee(Number(req.params.id));
+      res.json(records);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch employee attendance" });
+    }
+  });
+
   // === DRYER ROUTES ===
   app.get("/api/dryer", async (req: any, res) => {
     try {

@@ -38,6 +38,7 @@ import {
 import { Plus, UserPlus, Briefcase, Users, Search, Building2, Banknote, Phone, Mail, CreditCard, IndianRupee, Pencil, Eye, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthToken } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 
 type FormTab = "basic" | "salary" | "bank";
 
@@ -59,6 +60,7 @@ export default function Employees() {
   const [newPassword, setNewPassword] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const handleViewPassword = async (emp: Employee) => {
     setViewPasswordEmp(emp);
@@ -762,7 +764,7 @@ export default function Employees() {
                 </TableRow>
               ) : (
                 filteredEmployees?.map((emp) => (
-                  <TableRow key={emp.id} data-testid={`row-employee-${emp.id}`}>
+                  <TableRow key={emp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/employees/${emp.id}`)} data-testid={`row-employee-${emp.id}`}>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
@@ -787,12 +789,12 @@ export default function Employees() {
                         {emp.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleViewPassword(emp)}
+                          onClick={(e) => { e.stopPropagation(); handleViewPassword(emp); }}
                           title="View Password"
                           data-testid={`button-view-password-${emp.id}`}
                         >
@@ -801,7 +803,7 @@ export default function Employees() {
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => { setChangePasswordEmp(emp); setNewPassword(""); }}
+                          onClick={(e) => { e.stopPropagation(); setChangePasswordEmp(emp); setNewPassword(""); }}
                           title="Change Password"
                           data-testid={`button-change-password-${emp.id}`}
                         >
@@ -810,7 +812,7 @@ export default function Employees() {
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleEditClick(emp)}
+                          onClick={(e) => { e.stopPropagation(); handleEditClick(emp); }}
                           data-testid={`button-edit-employee-${emp.id}`}
                         >
                           <Pencil className="h-4 w-4" />

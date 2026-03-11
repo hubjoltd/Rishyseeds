@@ -11,6 +11,7 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Batches from "@/pages/Batches";
 import Employees from "@/pages/Employees";
+import EmployeeProfile from "@/pages/EmployeeProfile";
 import NotFound from "@/pages/not-found";
 import Locations from "@/pages/Locations";
 import Stock from "@/pages/Stock";
@@ -76,6 +77,9 @@ function Router() {
       </Route>
       <Route path="/employees">
         <ProtectedRoute component={Employees} />
+      </Route>
+      <Route path="/employees/:id">
+        <ProtectedRoute component={EmployeeProfile} />
       </Route>
       <Route path="/locations">
         <ProtectedRoute component={Locations} />
