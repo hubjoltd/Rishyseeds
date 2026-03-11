@@ -31,6 +31,7 @@ import EmployeeLayout from "@/pages/employee/EmployeeLayout";
 import Roles from "@/pages/Roles";
 import Trips from "@/pages/Trips";
 import Tasks from "@/pages/Tasks";
+import Customers from "@/pages/Customers";
 import Dryer from "@/pages/Dryer";
 import Expenses from "@/pages/Expenses";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
@@ -130,6 +131,9 @@ function Router() {
       </Route>
       <Route path="/tasks">
         <ProtectedRoute component={Tasks} />
+      </Route>
+      <Route path="/customers">
+        <ProtectedRoute component={Customers} />
       </Route>
       <Route path="/dryer">
         <ProtectedRoute component={Dryer} />

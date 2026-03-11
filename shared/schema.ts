@@ -419,6 +419,26 @@ export const insertTripAuditSchema = createInsertSchema(tripAuditHistory).omit({
 export type TripAudit = typeof tripAuditHistory.$inferSelect;
 export type InsertTripAudit = z.infer<typeof insertTripAuditSchema>;
 
+// === CUSTOMERS ===
+export const customers = pgTable("customers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  mobile: text("mobile"),
+  email: text("email"),
+  address: text("address"),
+  status: text("status").notNull().default("active"),
+  ownerEmployeeId: integer("owner_employee_id"),
+  ownerName: text("owner_name"),
+  reportingManagerName: text("reporting_manager_name"),
+  source: text("source").default("visit"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true });
+export type Customer = typeof customers.$inferSelect;
+export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
+
 // === TASKS ===
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),

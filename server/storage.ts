@@ -5,6 +5,7 @@ import {
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
   trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
+  customers,
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   type User, type InsertUser,
@@ -26,6 +27,7 @@ import {
   type TripComment, type InsertTripComment,
   type TripAudit, type InsertTripAudit,
   type DryerEntry, type InsertDryerEntry,
+  type Customer, type InsertCustomer,
   type Task, type InsertTask,
   type TaskComment, type InsertTaskComment,
   type Expense, type InsertExpense,
@@ -189,6 +191,14 @@ export interface IStorage {
   createDryerEntry(entry: InsertDryerEntry): Promise<DryerEntry>;
   updateDryerEntry(id: number, updates: Partial<InsertDryerEntry>): Promise<DryerEntry | undefined>;
   deleteDryerEntry(id: number): Promise<boolean>;
+
+  // Customers
+  getCustomers(): Promise<Customer[]>;
+  getCustomer(id: number): Promise<Customer | undefined>;
+  findCustomerByName(name: string): Promise<Customer | undefined>;
+  createCustomer(customer: InsertCustomer): Promise<Customer>;
+  updateCustomer(id: number, updates: Partial<InsertCustomer>): Promise<Customer | undefined>;
+  upsertCustomerFromVisit(name: string, address: string | null, ownerEmployeeId: number, ownerName: string, reportingManagerName?: string): Promise<Customer>;
 
   // Tasks
   getTasks(): Promise<Task[]>;
@@ -877,6 +887,41 @@ export class DatabaseStorage implements IStorage {
   async deleteDryerEntry(id: number): Promise<boolean> {
     await db.delete(dryerEntries).where(eq(dryerEntries.id, id));
     return true;
+  }
+
+  // Customers
+  async getCustomers(): Promise<Customer[]> {
+    return db.select().from(customers).orderBy(desc(customers.createdAt));
+  }
+
+  async getCustomer(id: number): Promise<Customer | undefined> {
+    const [c] = await db.select().from(customers).where(eq(customers.id, id));
+    return c;
+  }
+
+  async findCustomerByName(name: string): Promise<Customer | undefined> {
+    const [c] = await db.select().from(customers).where(sql`lower(${customers.name}) = lower(${name})`);
+    return c;
+  }
+
+  async createCustomer(customer: InsertCustomer): Promise<Customer> {
+    const [created] = await db.insert(customers).values(customer).returning();
+    return created;
+  }
+
+  async updateCustomer(id: number, updates: Partial<InsertCustomer>): Promise<Customer | undefined> {
+    const [updated] = await db.update(customers).set({ ...updates, updatedAt: new Date() }).where(eq(customers.id, id)).returning();
+    return updated;
+  }
+
+  async upsertCustomerFromVisit(name: string, address: string | null, ownerEmployeeId: number, ownerName: string, reportingManagerName?: string): Promise<Customer> {
+    const existing = await this.findCustomerByName(name);
+    if (existing) {
+      const updates: Partial<InsertCustomer> = { updatedAt: new Date() };
+      if (address && !existing.address) updates.address = address;
+      return (await this.updateCustomer(existing.id, updates)) || existing;
+    }
+    return this.createCustomer({ name, address: address || null, ownerEmployeeId, ownerName, reportingManagerName: reportingManagerName || null, status: "active", source: "visit" });
   }
 
   // Tasks

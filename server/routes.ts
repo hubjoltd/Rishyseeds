@@ -2260,6 +2260,13 @@ export async function registerRoutes(
         status: "punched_in",
       });
       await storage.updateTrip(tripId, { status: "in_progress" });
+      // Auto-upsert customer record if customer name provided
+      if (customerName && customerName.trim()) {
+        try {
+          const emp = await storage.getEmployee(employeeId);
+          await storage.upsertCustomerFromVisit(customerName.trim(), customerAddress || null, employeeId, emp?.fullName || "Unknown");
+        } catch (_) {}
+      }
       res.json(visit);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to create visit" });
@@ -2287,6 +2294,54 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to punch out" });
+    }
+  });
+
+  // === CUSTOMER ROUTES ===
+  app.get("/api/customers", async (req: any, res) => {
+    try {
+      const list = await storage.getCustomers();
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.post("/api/customers", async (req: any, res) => {
+    try {
+      const { name, mobile, email, address, status } = req.body;
+      if (!name) return res.status(400).json({ message: "Name required" });
+      const adminUser = (req as any).user;
+      const customer = await storage.createCustomer({
+        name, mobile: mobile || null, email: email || null, address: address || null,
+        status: status || "active",
+        ownerName: adminUser?.fullName || adminUser?.username || "Admin",
+        ownerEmployeeId: null,
+        source: "manual",
+      });
+      res.status(201).json(customer);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.get("/api/customers/:id", async (req: any, res) => {
+    try {
+      const c = await storage.getCustomer(Number(req.params.id));
+      if (!c) return res.status(404).json({ message: "Not found" });
+      res.json(c);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  app.patch("/api/customers/:id", async (req: any, res) => {
+    try {
+      const updated = await storage.updateCustomer(Number(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "Not found" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
     }
   });
 
@@ -2402,6 +2457,13 @@ export async function registerRoutes(
         checkInTime: new Date(),
         checkInPhoto,
       });
+      // Auto-upsert customer record if task has customer info
+      if (task.customerName && task.customerName.trim()) {
+        try {
+          const emp = await storage.getEmployee(empId);
+          await storage.upsertCustomerFromVisit(task.customerName.trim(), task.customerAddress || null, empId, emp?.fullName || "Unknown");
+        } catch (_) {}
+      }
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed" });
