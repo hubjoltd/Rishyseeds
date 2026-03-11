@@ -38,6 +38,7 @@ import {
   Search,
   Navigation,
   Car,
+  Timer,
 } from "lucide-react";
 import { format } from "date-fns";
 import L from "leaflet";
@@ -46,6 +47,7 @@ import "leaflet/dist/leaflet.css";
 interface TripWithEmployee extends Trip {
   employeeName: string;
   employeeCode: string;
+  visitCount: number;
 }
 
 interface TripDetail extends TripWithEmployee {
@@ -243,6 +245,20 @@ export default function Trips() {
     }
   };
 
+  const formatDuration = (inTime: string | null | undefined, outTime: string | null | undefined): string => {
+    if (!inTime || !outTime) return "-";
+    try {
+      const diff = new Date(outTime).getTime() - new Date(inTime).getTime();
+      const totalSecs = Math.floor(diff / 1000);
+      const h = Math.floor(totalSecs / 3600);
+      const m = Math.floor((totalSecs % 3600) / 60);
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    } catch {
+      return "-";
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -298,6 +314,7 @@ export default function Trips() {
                   <TableHead>Employee</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Visits</TableHead>
                   <TableHead>KM</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -307,7 +324,7 @@ export default function Trips() {
                 {filteredTrips.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center text-muted-foreground py-8"
                     >
                       No trips found.
@@ -337,6 +354,16 @@ export default function Trips() {
                         >
                           {trip.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell data-testid={`text-visits-${trip.id}`}>
+                        {trip.visitCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-sm">
+                            <MapPin className="h-3 w-3 text-primary" />
+                            {trip.visitCount}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell data-testid={`text-km-${trip.id}`}>
                         {trip.totalKm ? `${Number(trip.totalKm).toFixed(1)} km` : "-"}
@@ -468,12 +495,12 @@ export default function Trips() {
               {selectedTrip.visits && selectedTrip.visits.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">
-                    Visits ({selectedTrip.visits.length})
+                    Location Visits ({selectedTrip.visits.length})
                   </p>
                   <div className="space-y-3">
                     {selectedTrip.visits.map((visit, idx) => (
                       <Card key={visit.id} data-testid={`card-visit-${visit.id}`}>
-                        <CardContent className="p-3">
+                        <CardContent className="p-3 space-y-3">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                               <MapPin className="h-4 w-4 text-primary" />
@@ -482,28 +509,52 @@ export default function Trips() {
                                 {visit.status === "punched_out" ? "Completed" : "Active"}
                               </Badge>
                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-muted-foreground">
-                            <div>
-                              <Clock className="inline h-3 w-3 mr-1" />
-                              In: {formatDateTime(visit.punchInTime)}
-                            </div>
-                            <div>
-                              <Clock className="inline h-3 w-3 mr-1" />
-                              Out: {formatDateTime(visit.punchOutTime)}
-                            </div>
-                            {visit.punchInLocationName && (
-                              <div>
-                                <Navigation className="inline h-3 w-3 mr-1" />
-                                {visit.punchInLocationName}
+                            {visit.status === "punched_out" && visit.punchInTime && visit.punchOutTime && (
+                              <div className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-1 rounded-full" data-testid={`text-visit-duration-${visit.id}`}>
+                                <Timer className="h-3 w-3" />
+                                {formatDuration(visit.punchInTime, visit.punchOutTime)}
+                              </div>
+                            )}
+                            {visit.status === "punched_in" && (
+                              <div className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-2 py-1 rounded-full">
+                                <Clock className="h-3 w-3 animate-pulse" />
+                                Active
                               </div>
                             )}
                           </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="space-y-1">
+                              <p className="text-muted-foreground font-medium">Punch In</p>
+                              <p className="font-semibold">
+                                {visit.punchInTime ? formatDateTime(visit.punchInTime) : "-"}
+                              </p>
+                              {visit.punchInLocationName && (
+                                <p className="flex items-center gap-1 text-muted-foreground">
+                                  <Navigation className="h-3 w-3" />
+                                  {visit.punchInLocationName}
+                                </p>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-muted-foreground font-medium">Punch Out</p>
+                              <p className="font-semibold">
+                                {visit.punchOutTime ? formatDateTime(visit.punchOutTime) : "-"}
+                              </p>
+                              {visit.punchOutLocationName && (
+                                <p className="flex items-center gap-1 text-muted-foreground">
+                                  <Navigation className="h-3 w-3" />
+                                  {visit.punchOutLocationName}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
                           {(visit.punchInPhoto || visit.punchOutPhoto) && (
-                            <div className="flex gap-3 mt-2 flex-wrap">
+                            <div className="flex gap-3 flex-wrap">
                               {visit.punchInPhoto && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground mb-1">Punch In</p>
+                                  <p className="text-xs text-muted-foreground mb-1">Punch In Photo</p>
                                   <img
                                     src={visit.punchInPhoto}
                                     alt="Punch in"
@@ -514,7 +565,7 @@ export default function Trips() {
                               )}
                               {visit.punchOutPhoto && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground mb-1">Punch Out</p>
+                                  <p className="text-xs text-muted-foreground mb-1">Punch Out Photo</p>
                                   <img
                                     src={visit.punchOutPhoto}
                                     alt="Punch out"

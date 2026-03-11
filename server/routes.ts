@@ -1964,10 +1964,18 @@ export async function registerRoutes(
       const allTrips = await storage.getTrips();
       const employees = await storage.getEmployees();
       const employeeMap = new Map(employees.map(e => [e.id, e]));
+      const allVisitCounts = await Promise.all(
+        allTrips.map(async (trip) => {
+          const visits = await storage.getTripVisits(trip.id);
+          return { tripId: trip.id, count: visits.length };
+        })
+      );
+      const visitCountMap = new Map(allVisitCounts.map(v => [v.tripId, v.count]));
       const tripsWithEmployee = allTrips.map(trip => ({
         ...trip,
         employeeName: employeeMap.get(trip.employeeId)?.fullName || "Unknown",
         employeeCode: employeeMap.get(trip.employeeId)?.employeeId || "N/A",
+        visitCount: visitCountMap.get(trip.id) || 0,
       }));
       res.json(tripsWithEmployee);
     } catch (error: any) {

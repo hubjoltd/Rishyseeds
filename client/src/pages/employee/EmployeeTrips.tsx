@@ -150,6 +150,47 @@ function TripMap({ points }: { points: { lat: number; lng: number; label: string
   return <div ref={mapRef} style={{ height: "250px", width: "100%" }} className="rounded-md z-0" />;
 }
 
+function VisitTimer({ punchInTime }: { punchInTime: string }) {
+  const [elapsed, setElapsed] = useState("");
+
+  useEffect(() => {
+    const update = () => {
+      const diff = Date.now() - new Date(punchInTime).getTime();
+      const totalSecs = Math.floor(diff / 1000);
+      const h = Math.floor(totalSecs / 3600);
+      const m = Math.floor((totalSecs % 3600) / 60);
+      const s = totalSecs % 60;
+      setElapsed(
+        h > 0
+          ? `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`
+          : `${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`
+      );
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [punchInTime]);
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
+      <Clock className="w-4 h-4 text-blue-500 animate-pulse" />
+      <div>
+        <p className="text-xs text-muted-foreground">Time at location</p>
+        <p className="text-sm font-bold text-blue-600 dark:text-blue-400 tabular-nums">{elapsed}</p>
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(inTime: string, outTime: string): string {
+  const diff = new Date(outTime).getTime() - new Date(inTime).getTime();
+  const totalSecs = Math.floor(diff / 1000);
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 function getStatusBadge(status: string) {
   switch (status) {
     case "started":
@@ -695,14 +736,26 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                         data-testid={`card-visit-${visit.id}`}
                       >
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="font-medium text-sm">Visit {idx + 1}</span>
-                          <Badge
-                            variant={visit.status === "punched_in" ? "default" : "secondary"}
-                            className="text-xs"
-                          >
-                            {visit.status === "punched_in" ? "Active" : "Completed"}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">Visit {idx + 1}</span>
+                            <Badge
+                              variant={visit.status === "punched_in" ? "default" : "secondary"}
+                              className="text-xs"
+                            >
+                              {visit.status === "punched_in" ? "Active" : "Completed"}
+                            </Badge>
+                          </div>
+                          {visit.status === "punched_out" && visit.punchInTime && visit.punchOutTime && (
+                            <span className="text-xs text-muted-foreground font-medium">
+                              Duration: {formatDuration(visit.punchInTime, visit.punchOutTime)}
+                            </span>
+                          )}
                         </div>
+
+                        {visit.status === "punched_in" && visit.punchInTime && (
+                          <VisitTimer punchInTime={visit.punchInTime} />
+                        )}
+
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
                             <span className="text-muted-foreground">Punch In</span>
@@ -711,6 +764,11 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                                 ? format(new Date(visit.punchInTime), "h:mm a")
                                 : "-"}
                             </p>
+                            {visit.punchInLocationName && (
+                              <p className="text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3" />{visit.punchInLocationName}
+                              </p>
+                            )}
                           </div>
                           <div>
                             <span className="text-muted-foreground">Punch Out</span>
@@ -719,25 +777,36 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                                 ? format(new Date(visit.punchOutTime), "h:mm a")
                                 : "-"}
                             </p>
+                            {visit.punchOutLocationName && (
+                              <p className="text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3" />{visit.punchOutLocationName}
+                              </p>
+                            )}
                           </div>
                         </div>
                         {visit.remarks && (
-                          <p className="text-xs text-muted-foreground">{visit.remarks}</p>
+                          <p className="text-xs text-muted-foreground italic">{visit.remarks}</p>
                         )}
                         <div className="flex gap-2 flex-wrap">
                           {visit.punchInPhoto && (
-                            <img
-                              src={visit.punchInPhoto}
-                              alt="Punch in"
-                              className="w-16 h-16 rounded-md object-cover"
-                            />
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">In Photo</p>
+                              <img
+                                src={visit.punchInPhoto}
+                                alt="Punch in"
+                                className="w-16 h-16 rounded-md object-cover"
+                              />
+                            </div>
                           )}
                           {visit.punchOutPhoto && (
-                            <img
-                              src={visit.punchOutPhoto}
-                              alt="Punch out"
-                              className="w-16 h-16 rounded-md object-cover"
-                            />
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">Out Photo</p>
+                              <img
+                                src={visit.punchOutPhoto}
+                                alt="Punch out"
+                                className="w-16 h-16 rounded-md object-cover"
+                              />
+                            </div>
                           )}
                         </div>
                         {isActive && visit.status === "punched_in" && (
