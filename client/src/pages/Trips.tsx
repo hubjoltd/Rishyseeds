@@ -5,7 +5,7 @@ import type { Trip, TripVisit, TripComment, TripAudit } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -26,16 +26,15 @@ import {
   Car,
   Timer,
   ArrowLeft,
-  FileText,
   History,
   MessageSquare,
-  ChevronRight,
   Send,
   User,
-  CalendarDays,
   Gauge,
   Route,
-  Camera,
+  ChevronDown,
+  Circle,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import L from "leaflet";
@@ -51,124 +50,6 @@ interface TripDetail extends TripWithEmployee {
   visits: TripVisit[];
 }
 
-const STATUS_PIPELINE = ["started", "submitted", "approved"];
-
-function StatusPipeline({ status }: { status: string }) {
-  const isRejected = status === "rejected";
-  const steps = ["started", "submitted", isRejected ? "rejected" : "approved"];
-  const labels: Record<string, string> = {
-    started: "Started",
-    submitted: "Submitted",
-    approved: "Approved",
-    rejected: "Rejected",
-  };
-  const currentIdx = steps.indexOf(status);
-
-  return (
-    <div className="flex items-center gap-0" data-testid="status-pipeline">
-      {steps.map((step, idx) => {
-        const isActive = step === status;
-        const isDone = currentIdx > idx;
-        const isRej = step === "rejected";
-        return (
-          <div key={step} className="flex items-center">
-            <div
-              className={`
-                px-5 py-2 text-sm font-medium rounded-sm
-                ${isActive
-                  ? isRej
-                    ? "bg-red-500 text-white"
-                    : "bg-primary text-primary-foreground"
-                  : isDone
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground"
-                }
-              `}
-              data-testid={`pipeline-step-${step}`}
-            >
-              {labels[step]}
-            </div>
-            {idx < steps.length - 1 && (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TripMap({ trip }: { trip: TripDetail }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-    }
-    const points: [number, number][] = [];
-    if (trip.startLatitude && trip.startLongitude)
-      points.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
-    if (trip.visits) {
-      trip.visits.forEach((v) => {
-        if (v.punchInLatitude && v.punchInLongitude)
-          points.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
-        if (v.punchOutLatitude && v.punchOutLongitude)
-          points.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
-      });
-    }
-    if (trip.endLatitude && trip.endLongitude)
-      points.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
-    if (points.length === 0) return;
-
-    const map = L.map(mapRef.current).setView(points[0], 13);
-    mapInstanceRef.current = map;
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-
-    const mkIcon = (color: string, size: number) =>
-      L.divIcon({
-        className: "",
-        html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-
-    if (trip.startLatitude && trip.startLongitude)
-      L.marker([Number(trip.startLatitude), Number(trip.startLongitude)], { icon: mkIcon("#16a34a", 14) })
-        .addTo(map).bindPopup(`<b>Start</b><br/>${trip.startLocationName || "Start Point"}`);
-
-    if (trip.visits) {
-      trip.visits.forEach((v, i) => {
-        if (v.punchInLatitude && v.punchInLongitude)
-          L.marker([Number(v.punchInLatitude), Number(v.punchInLongitude)], { icon: mkIcon("#2563eb", 12) })
-            .addTo(map).bindPopup(`<b>Visit ${i + 1} In</b><br/>${v.punchInLocationName || ""}`);
-        if (v.punchOutLatitude && v.punchOutLongitude)
-          L.marker([Number(v.punchOutLatitude), Number(v.punchOutLongitude)], { icon: mkIcon("#7c3aed", 12) })
-            .addTo(map).bindPopup(`<b>Visit ${i + 1} Out</b><br/>${v.punchOutLocationName || ""}`);
-      });
-    }
-    if (trip.endLatitude && trip.endLongitude)
-      L.marker([Number(trip.endLatitude), Number(trip.endLongitude)], { icon: mkIcon("#dc2626", 14) })
-        .addTo(map).bindPopup(`<b>End</b><br/>${trip.endLocationName || "End Point"}`);
-
-    if (points.length > 1) {
-      const polyline = L.polyline(points, { color: "#6366f1", weight: 3, opacity: 0.7, dashArray: "8 4" });
-      polyline.addTo(map);
-      map.fitBounds(polyline.getBounds().pad(0.2));
-    }
-    setTimeout(() => map.invalidateSize(), 100);
-    return () => {
-      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
-    };
-  }, [trip]);
-
-  return <div ref={mapRef} className="h-[300px] w-full rounded-md" />;
-}
-
 function formatDateTime(dt: string | Date | null | undefined) {
   if (!dt) return "-";
   try { return format(new Date(dt), "dd MMM yyyy, hh:mm a"); } catch { return "-"; }
@@ -177,6 +58,11 @@ function formatDateTime(dt: string | Date | null | undefined) {
 function formatDate(dt: string | Date | null | undefined) {
   if (!dt) return "-";
   try { return format(new Date(dt), "dd MMM yyyy"); } catch { return "-"; }
+}
+
+function formatTime(dt: string | Date | null | undefined) {
+  if (!dt) return "-";
+  try { return format(new Date(dt), "hh:mm a"); } catch { return "-"; }
 }
 
 function formatDuration(inTime: string | null | undefined, outTime: string | null | undefined): string {
@@ -191,6 +77,17 @@ function formatDuration(inTime: string | null | undefined, outTime: string | nul
   } catch { return "-"; }
 }
 
+function tripStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    started: "In Progress",
+    submitted: "Submitted",
+    approved: "Approved",
+    rejected: "Rejected",
+    completed: "Completed",
+  };
+  return map[status] || status;
+}
+
 const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   started: "secondary",
   submitted: "outline",
@@ -198,429 +95,70 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
-function DetailsTab({ trip, onApprove, onReject, isApproving, isRejecting }: {
-  trip: TripDetail;
-  onApprove: () => void;
-  onReject: (reason: string) => void;
-  isApproving: boolean;
-  isRejecting: boolean;
-}) {
+function TripMap({ trip }: { trip: TripDetail }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
+    const points: [number, number][] = [];
+    if (trip.startLatitude && trip.startLongitude)
+      points.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
+    (trip.visits || []).forEach((v) => {
+      if (v.punchInLatitude && v.punchInLongitude)
+        points.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
+      if (v.punchOutLatitude && v.punchOutLongitude)
+        points.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
+    });
+    if (trip.endLatitude && trip.endLongitude)
+      points.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
+    if (points.length === 0) return;
+
+    const map = L.map(mapRef.current).setView(points[0], 13);
+    mapInstanceRef.current = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    const mkIcon = (color: string, size: number) =>
+      L.divIcon({
+        className: "",
+        html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+      });
+    if (trip.startLatitude && trip.startLongitude)
+      L.marker([Number(trip.startLatitude), Number(trip.startLongitude)], { icon: mkIcon("#16a34a", 14) })
+        .addTo(map).bindPopup(`<b>Start</b><br/>${trip.startLocationName || "Start Point"}`);
+    (trip.visits || []).forEach((v, i) => {
+      if (v.punchInLatitude && v.punchInLongitude)
+        L.marker([Number(v.punchInLatitude), Number(v.punchInLongitude)], { icon: mkIcon("#2563eb", 12) })
+          .addTo(map).bindPopup(`<b>Visit ${i + 1} In</b><br/>${v.punchInLocationName || ""}`);
+      if (v.punchOutLatitude && v.punchOutLongitude)
+        L.marker([Number(v.punchOutLatitude), Number(v.punchOutLongitude)], { icon: mkIcon("#7c3aed", 12) })
+          .addTo(map).bindPopup(`<b>Visit ${i + 1} Out</b><br/>${v.punchOutLocationName || ""}`);
+    });
+    if (trip.endLatitude && trip.endLongitude)
+      L.marker([Number(trip.endLatitude), Number(trip.endLongitude)], { icon: mkIcon("#dc2626", 14) })
+        .addTo(map).bindPopup(`<b>End</b><br/>${trip.endLocationName || "End Point"}`);
+    if (points.length > 1) {
+      const pl = L.polyline(points, { color: "#6366f1", weight: 3, opacity: 0.7, dashArray: "8 4" });
+      pl.addTo(map);
+      map.fitBounds(pl.getBounds().pad(0.2));
+    }
+    setTimeout(() => map.invalidateSize(), 100);
+    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
+  }, [trip]);
+
+  return <div ref={mapRef} className="h-[260px] w-full rounded-md" />;
+}
+
+function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void }) {
+  const { toast } = useToast();
+  const [activeSection, setActiveSection] = useState<"details" | "audit" | "comments">("details");
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-
-  const mapPoints = (() => {
-    const pts: [number, number][] = [];
-    if (trip.startLatitude && trip.startLongitude) pts.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
-    if (trip.visits) trip.visits.forEach(v => {
-      if (v.punchInLatitude && v.punchInLongitude) pts.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
-    });
-    if (trip.endLatitude && trip.endLongitude) pts.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
-    return pts;
-  })();
-
-  return (
-    <div className="space-y-6 p-6">
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Employee</p>
-          <p className="font-semibold" data-testid="text-detail-employee">{trip.employeeName}</p>
-          <p className="text-xs text-muted-foreground">{trip.employeeCode}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Status</p>
-          <Badge variant={statusBadgeVariant[trip.status] || "secondary"} data-testid="badge-detail-status">
-            {trip.status}
-          </Badge>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Date</p>
-          <p className="font-semibold" data-testid="text-detail-date">{formatDate(trip.startTime)}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Start Time</p>
-          <p className="text-sm" data-testid="text-detail-start-time">{formatDateTime(trip.startTime)}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">End Time</p>
-          <p className="text-sm" data-testid="text-detail-end-time">{formatDateTime(trip.endTime)}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Distance</p>
-          <p className="font-semibold text-primary" data-testid="text-detail-km">
-            {trip.totalKm ? `${Number(trip.totalKm).toFixed(1)} km` : "-"}
-          </p>
-        </div>
-      </div>
-
-      <div className="border rounded-lg p-4 space-y-4">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <Gauge className="h-4 w-4 text-primary" /> Odometer Details
-        </h3>
-        <div className="grid grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground font-medium">Starting Odometer</p>
-            <p className="text-lg font-bold" data-testid="text-detail-start-meter">
-              {trip.startMeterReading ? `${Number(trip.startMeterReading).toLocaleString()} km` : "-"}
-            </p>
-            {trip.startMeterPhoto && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Starting Odometer Picture</p>
-                <img
-                  src={trip.startMeterPhoto}
-                  alt="Start meter"
-                  className="w-28 h-24 object-cover rounded-md border cursor-pointer hover:opacity-90"
-                  data-testid="img-start-meter"
-                  onClick={() => window.open(trip.startMeterPhoto!, "_blank")}
-                />
-              </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground font-medium">End Odometer</p>
-            <p className="text-lg font-bold" data-testid="text-detail-end-meter">
-              {trip.endMeterReading ? `${Number(trip.endMeterReading).toLocaleString()} km` : "-"}
-            </p>
-            {trip.endMeterPhoto && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">End Odometer Picture</p>
-                <img
-                  src={trip.endMeterPhoto}
-                  alt="End meter"
-                  className="w-28 h-24 object-cover rounded-md border cursor-pointer hover:opacity-90"
-                  data-testid="img-end-meter"
-                  onClick={() => window.open(trip.endMeterPhoto!, "_blank")}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-          <div>
-            <p className="text-xs text-muted-foreground">Total Distance</p>
-            <p className="font-semibold">{trip.totalKm ? `${Number(trip.totalKm).toFixed(1)} km` : "-"}</p>
-          </div>
-          {trip.expenseAmount && (
-            <div>
-              <p className="text-xs text-muted-foreground">Total Travel Amount</p>
-              <p className="font-semibold">₹{Number(trip.expenseAmount).toFixed(0)}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {trip.visits && trip.visits.length > 0 && (
-        <div className="border rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-primary" /> Location Visits ({trip.visits.length})
-          </h3>
-          <div className="space-y-3">
-            {trip.visits.map((visit, idx) => (
-              <div key={visit.id} className="border rounded-md p-3 space-y-3" data-testid={`card-visit-${visit.id}`}>
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
-                      {idx + 1}
-                    </div>
-                    <span className="text-sm font-medium">Visit {idx + 1}</span>
-                    <Badge variant={visit.status === "punched_out" ? "default" : "secondary"} className="text-xs">
-                      {visit.status === "punched_out" ? "Completed" : "Active"}
-                    </Badge>
-                  </div>
-                  {visit.status === "punched_out" && visit.punchInTime && visit.punchOutTime && (
-                    <div className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-1 rounded-full" data-testid={`text-visit-duration-${visit.id}`}>
-                      <Timer className="h-3 w-3" />
-                      {formatDuration(visit.punchInTime, visit.punchOutTime)}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="space-y-1">
-                    <p className="text-muted-foreground font-medium">Punch In</p>
-                    <p className="font-semibold">{visit.punchInTime ? formatDateTime(visit.punchInTime) : "-"}</p>
-                    {visit.punchInLocationName && (
-                      <p className="flex items-center gap-1 text-muted-foreground">
-                        <Navigation className="h-3 w-3" />{visit.punchInLocationName}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-muted-foreground font-medium">Punch Out</p>
-                    <p className="font-semibold">{visit.punchOutTime ? formatDateTime(visit.punchOutTime) : "-"}</p>
-                    {visit.punchOutLocationName && (
-                      <p className="flex items-center gap-1 text-muted-foreground">
-                        <Navigation className="h-3 w-3" />{visit.punchOutLocationName}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {(visit.punchInPhoto || visit.punchOutPhoto) && (
-                  <div className="flex gap-3 flex-wrap">
-                    {visit.punchInPhoto && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Punch In Photo</p>
-                        <img src={visit.punchInPhoto} alt="Punch in" className="w-20 h-16 object-cover rounded-md border cursor-pointer hover:opacity-90" onClick={() => window.open(visit.punchInPhoto!, "_blank")} data-testid={`img-visit-in-${visit.id}`} />
-                      </div>
-                    )}
-                    {visit.punchOutPhoto && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Punch Out Photo</p>
-                        <img src={visit.punchOutPhoto} alt="Punch out" className="w-20 h-16 object-cover rounded-md border cursor-pointer hover:opacity-90" onClick={() => window.open(visit.punchOutPhoto!, "_blank")} data-testid={`img-visit-out-${visit.id}`} />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mapPoints.length > 1 && (
-        <div className="border rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Route className="h-4 w-4 text-primary" /> Route Map
-          </h3>
-          <TripMap trip={trip} />
-          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Start</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Visit In</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-violet-600 inline-block" /> Visit Out</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> End</span>
-          </div>
-        </div>
-      )}
-
-      {trip.rejectionReason && (
-        <div className="p-3 bg-destructive/10 rounded-md border border-destructive/20">
-          <p className="text-sm font-medium text-destructive">Rejection Reason</p>
-          <p className="text-sm mt-1" data-testid="text-rejection-reason">{trip.rejectionReason}</p>
-        </div>
-      )}
-
-      {trip.status === "submitted" && (
-        <div className="border-t pt-4 space-y-3">
-          {showRejectInput ? (
-            <div className="space-y-2">
-              <Textarea
-                placeholder="Enter rejection reason..."
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                data-testid="input-reject-reason"
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  onClick={() => { onReject(rejectReason); setShowRejectInput(false); setRejectReason(""); }}
-                  disabled={!rejectReason.trim() || isRejecting}
-                  data-testid="button-confirm-reject"
-                >
-                  {isRejecting ? "Rejecting..." : "Confirm Reject"}
-                </Button>
-                <Button variant="outline" onClick={() => { setShowRejectInput(false); setRejectReason(""); }} data-testid="button-cancel-reject">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <Button onClick={onApprove} disabled={isApproving} data-testid="button-approve-trip">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                {isApproving ? "Approving..." : "Approve"}
-              </Button>
-              <Button variant="destructive" onClick={() => setShowRejectInput(true)} data-testid="button-reject-trip">
-                <XCircle className="h-4 w-4 mr-2" /> Reject
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AuditHistoryTab({ tripId }: { tripId: number }) {
-  const { data: history, isLoading } = useQuery<TripAudit[]>({
-    queryKey: ["/api/trips", tripId, "audit"],
-    queryFn: async () => {
-      const res = await fetch(`/api/trips/${tripId}/audit`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-      });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-  });
-
-  const statusLabels: Record<string, string> = {
-    started: "Trip Started",
-    submitted: "Trip Submitted",
-    approved: "Trip Approved",
-    rejected: "Trip Rejected",
-  };
-
-  const statusColors: Record<string, string> = {
-    started: "bg-blue-500",
-    submitted: "bg-amber-500",
-    approved: "bg-green-500",
-    rejected: "bg-red-500",
-  };
-
-  return (
-    <div className="p-6 space-y-4">
-      <h3 className="text-sm font-semibold flex items-center gap-2">
-        <History className="h-4 w-4 text-primary" /> Audit History
-      </h3>
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : !history || history.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No audit history yet</p>
-        </div>
-      ) : (
-        <div className="relative">
-          <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
-          <div className="space-y-6">
-            {history.map((entry) => (
-              <div key={entry.id} className="relative flex gap-4 pl-10" data-testid={`audit-entry-${entry.id}`}>
-                <div className={`absolute left-2.5 w-3 h-3 rounded-full ${statusColors[entry.toStatus] || "bg-gray-400"} mt-1`} />
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold">
-                      {statusLabels[entry.toStatus] || entry.toStatus}
-                    </span>
-                    {entry.fromStatus && (
-                      <span className="text-xs text-muted-foreground">
-                        from {entry.fromStatus}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <User className="h-3 w-3" /> {entry.changedByName}
-                    <span className="mx-1">·</span>
-                    <CalendarDays className="h-3 w-3" />
-                    {entry.changedAt ? formatDateTime(entry.changedAt) : "-"}
-                  </p>
-                  {entry.notes && entry.notes !== "Trip approved" && entry.notes !== "Trip rejected" && (
-                    <p className="text-xs text-muted-foreground italic mt-1">{entry.notes}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CommentsTab({ tripId }: { tripId: number }) {
-  const { toast } = useToast();
-  const [message, setMessage] = useState("");
-
-  const { data: comments, isLoading } = useQuery<TripComment[]>({
-    queryKey: ["/api/trips", tripId, "comments"],
-    queryFn: async () => {
-      const res = await fetch(`/api/trips/${tripId}/comments`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-      });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-  });
-
-  const addCommentMutation = useMutation({
-    mutationFn: async (msg: string) => {
-      const res = await fetch(`/api/trips/${tripId}/comments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
-        },
-        body: JSON.stringify({ message: msg }),
-      });
-      if (!res.ok) throw new Error("Failed to add comment");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId, "comments"] });
-      setMessage("");
-    },
-    onError: () => toast({ title: "Error", description: "Failed to add comment", variant: "destructive" }),
-  });
-
-  return (
-    <div className="p-6 flex flex-col h-full space-y-4">
-      <h3 className="text-sm font-semibold flex items-center gap-2">
-        <MessageSquare className="h-4 w-4 text-primary" /> Comments
-      </h3>
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : !comments || comments.length === 0 ? (
-        <div className="flex-1 text-center py-12 text-muted-foreground">
-          <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No comments found</p>
-        </div>
-      ) : (
-        <div className="flex-1 space-y-3">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Message</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Created By</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {comments.map((c) => (
-                <TableRow key={c.id} data-testid={`comment-row-${c.id}`}>
-                  <TableCell className="text-sm">{c.message}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDateTime(c.createdAt)}</TableCell>
-                  <TableCell className="text-sm">{c.createdByName}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      <div className="flex gap-2 pt-2 border-t">
-        <Textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Add a comment..."
-          className="min-h-[60px] resize-none"
-          data-testid="input-comment"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && message.trim()) {
-              e.preventDefault();
-              addCommentMutation.mutate(message.trim());
-            }
-          }}
-        />
-        <Button
-          size="icon"
-          onClick={() => message.trim() && addCommentMutation.mutate(message.trim())}
-          disabled={!message.trim() || addCommentMutation.isPending}
-          data-testid="button-send-comment"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function TripDetailPage({
-  tripId,
-  onBack,
-}: {
-  tripId: number;
-  onBack: () => void;
-}) {
-  const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"details" | "audit" | "comments">("details");
+  const [newComment, setNewComment] = useState("");
 
   const { data: trip, isLoading } = useQuery<TripDetail>({
     queryKey: ["/api/trips", tripId],
@@ -633,95 +171,440 @@ function TripDetailPage({
     },
   });
 
-  const approveMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("PATCH", `/api/trips/${tripId}/approve`);
+  const { data: comments } = useQuery<TripComment[]>({
+    queryKey: ["/api/trips", tripId, "comments"],
+    queryFn: async () => {
+      const res = await fetch(`/api/trips/${tripId}/comments`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
     },
+    enabled: activeSection === "comments",
+  });
+
+  const { data: auditHistory } = useQuery<TripAudit[]>({
+    queryKey: ["/api/trips", tripId, "audit"],
+    queryFn: async () => {
+      const res = await fetch(`/api/trips/${tripId}/audit`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: activeSection === "audit",
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async () => { await apiRequest("PATCH", `/api/trips/${tripId}/approve`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/trips"] });
       queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId] });
       queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId, "audit"] });
-      toast({ title: "Trip Approved", description: "Trip has been approved successfully." });
+      toast({ title: "Trip Approved" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (reason: string) => {
-      await apiRequest("PATCH", `/api/trips/${tripId}/reject`, { reason });
-    },
+    mutationFn: async (reason: string) => { await apiRequest("PATCH", `/api/trips/${tripId}/reject`, { reason }); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/trips"] });
       queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId] });
       queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId, "audit"] });
-      toast({ title: "Trip Rejected", description: "Trip has been rejected." });
+      setShowRejectInput(false);
+      setRejectReason("");
+      toast({ title: "Trip Rejected" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const tabs = [
-    { id: "details" as const, label: "Details", icon: FileText },
-    { id: "audit" as const, label: "Audit History", icon: History },
-    { id: "comments" as const, label: "Comments", icon: MessageSquare },
-  ];
+  const addCommentMutation = useMutation({
+    mutationFn: async (msg: string) => {
+      const res = await fetch(`/api/trips/${tripId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+        body: JSON.stringify({ message: msg }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/trips", tripId, "comments"] });
+      setNewComment("");
+    },
+    onError: () => toast({ title: "Error", description: "Failed to add comment", variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+  if (!trip) return <div className="p-8 text-center text-muted-foreground">Trip not found.</div>;
+
+  const timeline: { label: string; time: string | null; color: string; desc?: string }[] = [];
+  if (trip.startTime) timeline.push({ label: "Trip Started", time: trip.startTime, color: "#2563eb", desc: trip.startLocationName || undefined });
+  (trip.visits || []).forEach((v, i) => {
+    if (v.punchInTime) timeline.push({ label: `Visit ${i + 1} – Check In`, time: v.punchInTime, color: "#7c3aed", desc: v.punchInLocationName || undefined });
+    if (v.punchOutTime) timeline.push({ label: `Visit ${i + 1} – Check Out`, time: v.punchOutTime, color: "#7c3aed", desc: v.punchOutLocationName || undefined });
+  });
+  if (trip.endTime) timeline.push({ label: "Trip Completed", time: trip.endTime, color: "#16a34a", desc: trip.endLocationName || undefined });
+
+  const hasMapPoints = (trip.startLatitude && trip.startLongitude) || (trip.visits || []).some(v => v.punchInLatitude);
 
   return (
-    <div className="space-y-0 animate-in fade-in">
-      <div className="border-b bg-card">
-        <div className="flex items-center justify-between gap-4 px-6 py-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack} data-testid="button-back-trips">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="flex items-center gap-2">
-              <Car className="h-5 w-5 text-primary" />
-              <span className="font-semibold text-lg">Trip #{tripId}</span>
-              {trip && <span className="text-sm text-muted-foreground">— {trip.employeeName}</span>}
-            </div>
-          </div>
-          {trip && <StatusPipeline status={trip.status} />}
+    <div className="animate-in fade-in">
+      <div className="border-b bg-card px-6 py-3 flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack} data-testid="button-back-trips">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <Car className="h-5 w-5 text-primary" />
+        <span className="font-semibold text-lg">TRP-{String(trip.id).padStart(4, "0")}</span>
+        <span className="text-muted-foreground text-sm">— {trip.employeeName}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Badge variant={statusBadgeVariant[trip.status] || "secondary"} data-testid="badge-detail-status">
+            {tripStatusLabel(trip.status)}
+          </Badge>
+          {trip.status === "submitted" && (
+            <>
+              <Button size="sm" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending} data-testid="button-approve-trip">
+                <CheckCircle className="h-4 w-4 mr-1" /> {approveMutation.isPending ? "Approving..." : "Approve"}
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => setShowRejectInput(v => !v)} data-testid="button-reject-trip">
+                <XCircle className="h-4 w-4 mr-1" /> Reject
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="p-8 text-center text-muted-foreground">Loading trip details...</div>
-      ) : trip ? (
-        <div className="flex min-h-[600px]">
-          <div className="w-44 border-r bg-muted/20 flex-shrink-0">
-            <nav className="p-2 space-y-1 pt-4">
-              {tabs.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left ${
-                    activeTab === id
-                      ? "bg-primary text-primary-foreground font-medium"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                  data-testid={`tab-${id}`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {label}
-                </button>
-              ))}
-            </nav>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === "details" && (
-              <DetailsTab
-                trip={trip}
-                onApprove={() => approveMutation.mutate()}
-                onReject={(reason) => rejectMutation.mutate(reason)}
-                isApproving={approveMutation.isPending}
-                isRejecting={rejectMutation.isPending}
-              />
+      {showRejectInput && (
+        <div className="px-6 py-3 border-b bg-destructive/5 flex items-center gap-3">
+          <Textarea
+            className="min-h-[40px] max-h-[80px] resize-none flex-1"
+            placeholder="Enter rejection reason..."
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            data-testid="input-reject-reason"
+          />
+          <Button variant="destructive" size="sm" disabled={!rejectReason.trim() || rejectMutation.isPending} onClick={() => rejectMutation.mutate(rejectReason)} data-testid="button-confirm-reject">
+            {rejectMutation.isPending ? "..." : "Confirm"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setShowRejectInput(false); setRejectReason(""); }} data-testid="button-cancel-reject">Cancel</Button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-1 px-6 border-b bg-card">
+        {(["details", "audit", "comments"] as const).map((sec) => (
+          <button
+            key={sec}
+            onClick={() => setActiveSection(sec)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
+              activeSection === sec ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`tab-${sec}`}
+          >
+            {sec === "details" ? "Details" : sec === "audit" ? "Audit History" : "Comments"}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === "details" && (
+        <div className="flex gap-0 min-h-[600px]">
+          <div className="flex-1 p-6 space-y-5 border-r overflow-y-auto">
+            <div className="border rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground border-b pb-2">Trip Details</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Title</p>
+                  <p className="font-medium">TRP-{String(trip.id).padStart(4, "0")}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Employee</p>
+                  <p className="font-medium">{trip.employeeName}</p>
+                  <p className="text-xs text-muted-foreground">{trip.employeeCode}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <Badge variant={statusBadgeVariant[trip.status] || "secondary"} className="mt-1">
+                    {tripStatusLabel(trip.status)}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="font-medium">{formatDate(trip.startTime)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground border-b pb-2 flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-primary" /> Odometer
+              </h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Start Reading</p>
+                  <p className="font-bold text-lg">{trip.startMeterReading ? `${Number(trip.startMeterReading).toLocaleString()} km` : "-"}</p>
+                  {trip.startMeterPhoto && (
+                    <img src={trip.startMeterPhoto} alt="Start meter" className="w-24 h-20 object-cover rounded-md border cursor-pointer hover:opacity-80" onClick={() => window.open(trip.startMeterPhoto!, "_blank")} data-testid="img-start-meter" />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">End Reading</p>
+                  <p className="font-bold text-lg">{trip.endMeterReading ? `${Number(trip.endMeterReading).toLocaleString()} km` : "-"}</p>
+                  {trip.endMeterPhoto && (
+                    <img src={trip.endMeterPhoto} alt="End meter" className="w-24 h-20 object-cover rounded-md border cursor-pointer hover:opacity-80" onClick={() => window.open(trip.endMeterPhoto!, "_blank")} data-testid="img-end-meter" />
+                  )}
+                </div>
+              </div>
+              {trip.totalKm && (
+                <div className="pt-2 border-t flex gap-6 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Distance</p>
+                    <p className="font-semibold text-primary">{Number(trip.totalKm).toFixed(1)} km</p>
+                  </div>
+                  {trip.expenseAmount && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Travel Amount</p>
+                      <p className="font-semibold">₹{Number(trip.expenseAmount).toFixed(0)}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {(trip.visits || []).length > 0 && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-foreground border-b pb-2 flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-primary" /> Location Check-ins ({trip.visits!.length})
+                </h3>
+                <div className="space-y-4">
+                  {trip.visits!.map((visit, idx) => (
+                    <div key={visit.id} className="relative pl-6 pb-4 border-b last:border-0 last:pb-0" data-testid={`card-visit-${visit.id}`}>
+                      <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[9px] font-bold">
+                        {idx + 1}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-medium">Visit {idx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={visit.status === "punched_out" ? "default" : "secondary"} className="text-xs">
+                            {visit.status === "punched_out" ? "Completed" : "Active"}
+                          </Badge>
+                          {visit.status === "punched_out" && visit.punchInTime && visit.punchOutTime && (
+                            <span className="text-xs text-primary font-medium flex items-center gap-1" data-testid={`text-visit-duration-${visit.id}`}>
+                              <Timer className="h-3 w-3" />{formatDuration(visit.punchInTime, visit.punchOutTime)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-start gap-2">
+                          <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 shrink-0" />
+                          <div>
+                            <p className="text-muted-foreground">Check In · {formatTime(visit.punchInTime)}</p>
+                            {visit.punchInLocationName && (
+                              <p className="text-foreground font-medium mt-0.5 flex items-center gap-1">
+                                <Navigation className="h-3 w-3 text-muted-foreground" />{visit.punchInLocationName}
+                              </p>
+                            )}
+                            <p className="text-muted-foreground">{formatDateTime(visit.punchInTime)}</p>
+                          </div>
+                        </div>
+                        {visit.punchInPhoto && (
+                          <img src={visit.punchInPhoto} alt="Check in" className="w-16 h-14 object-cover rounded-md border cursor-pointer hover:opacity-80 ml-4" onClick={() => window.open(visit.punchInPhoto!, "_blank")} data-testid={`img-visit-in-${visit.id}`} />
+                        )}
+                        {visit.punchOutTime && (
+                          <div className="flex items-start gap-2 mt-1">
+                            <div className="w-2 h-2 rounded-full bg-violet-500 mt-1 shrink-0" />
+                            <div>
+                              <p className="text-muted-foreground">Check Out · {formatTime(visit.punchOutTime)}</p>
+                              {visit.punchOutLocationName && (
+                                <p className="text-foreground font-medium mt-0.5 flex items-center gap-1">
+                                  <Navigation className="h-3 w-3 text-muted-foreground" />{visit.punchOutLocationName}
+                                </p>
+                              )}
+                              <p className="text-muted-foreground">{formatDateTime(visit.punchOutTime)}</p>
+                            </div>
+                          </div>
+                        )}
+                        {visit.punchOutPhoto && (
+                          <img src={visit.punchOutPhoto} alt="Check out" className="w-16 h-14 object-cover rounded-md border cursor-pointer hover:opacity-80 ml-4" onClick={() => window.open(visit.punchOutPhoto!, "_blank")} data-testid={`img-visit-out-${visit.id}`} />
+                        )}
+                        {visit.remarks && <p className="text-muted-foreground italic ml-4">{visit.remarks}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-            {activeTab === "audit" && <AuditHistoryTab tripId={tripId} />}
-            {activeTab === "comments" && <CommentsTab tripId={tripId} />}
+
+            {trip.rejectionReason && (
+              <div className="p-3 bg-destructive/10 rounded-md border border-destructive/20">
+                <p className="text-sm font-medium text-destructive">Rejection Reason</p>
+                <p className="text-sm mt-1" data-testid="text-rejection-reason">{trip.rejectionReason}</p>
+              </div>
+            )}
+
+            {hasMapPoints && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Route className="h-4 w-4 text-primary" /> Route Map
+                </h3>
+                <TripMap trip={trip} />
+                <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Start</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Check In</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-600 inline-block" /> Check Out</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" /> End</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="w-72 p-5 space-y-5 shrink-0 overflow-y-auto">
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Timeline</h4>
+              {timeline.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No timeline events</p>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-[7px] top-3 bottom-3 w-0.5 bg-border" />
+                  <div className="space-y-5">
+                    {timeline.map((evt, i) => (
+                      <div key={i} className="relative flex gap-3">
+                        <div className="w-4 h-4 rounded-full border-2 border-white shadow shrink-0 mt-0.5" style={{ backgroundColor: evt.color }} />
+                        <div className="flex-1 space-y-0.5">
+                          <p className="text-xs font-semibold text-foreground">{evt.label}</p>
+                          {evt.desc && <p className="text-xs text-muted-foreground leading-tight">{evt.desc}</p>}
+                          <p className="text-xs text-muted-foreground">{formatDateTime(evt.time)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-4 space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Details</h4>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <p className="text-muted-foreground">Employee ID</p>
+                  <p className="font-medium">{trip.employeeCode}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Total KM</p>
+                  <p className="font-medium">{trip.totalKm ? `${Number(trip.totalKm).toFixed(1)} km` : "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Total Visits</p>
+                  <p className="font-medium">{(trip.visits || []).length}</p>
+                </div>
+                {trip.startLocationName && (
+                  <div>
+                    <p className="text-muted-foreground">Start Location</p>
+                    <p className="font-medium">{trip.startLocationName}</p>
+                  </div>
+                )}
+                {trip.endLocationName && (
+                  <div>
+                    <p className="text-muted-foreground">End Location</p>
+                    <p className="font-medium">{trip.endLocationName}</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      ) : (
-        <div className="p-8 text-center text-muted-foreground">Trip not found.</div>
+      )}
+
+      {activeSection === "audit" && (
+        <div className="p-6 space-y-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <History className="h-4 w-4 text-primary" /> Audit History
+          </h3>
+          {!auditHistory || auditHistory.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No audit history yet</p>
+            </div>
+          ) : (
+            <div className="relative">
+              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+              <div className="space-y-6">
+                {auditHistory.map((entry) => {
+                  const colors: Record<string, string> = { approved: "bg-green-500", rejected: "bg-red-500", submitted: "bg-amber-500", started: "bg-blue-500" };
+                  return (
+                    <div key={entry.id} className="relative flex gap-4 pl-10" data-testid={`audit-entry-${entry.id}`}>
+                      <div className={`absolute left-2.5 w-3 h-3 rounded-full ${colors[entry.toStatus] || "bg-gray-400"} mt-1`} />
+                      <div className="flex-1 space-y-1">
+                        <p className="text-sm font-semibold capitalize">{entry.toStatus}</p>
+                        <p className="text-xs text-muted-foreground">{entry.changedByName} · {formatDateTime(entry.changedAt)}</p>
+                        {entry.notes && entry.notes !== "Trip approved" && (
+                          <p className="text-xs text-muted-foreground italic">{entry.notes}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSection === "comments" && (
+        <div className="p-6 space-y-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-primary" /> Comments
+          </h3>
+          {!comments || comments.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No comments yet</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Message</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Created By</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {comments.map((c) => (
+                  <TableRow key={c.id} data-testid={`comment-row-${c.id}`}>
+                    <TableCell className="text-sm">{c.message}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(c.createdAt)}</TableCell>
+                    <TableCell className="text-sm">{c.createdByName}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <div className="flex gap-2 pt-2 border-t">
+            <Textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment..."
+              className="min-h-[60px] resize-none"
+              data-testid="input-comment"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && newComment.trim()) {
+                  e.preventDefault();
+                  addCommentMutation.mutate(newComment.trim());
+                }
+              }}
+            />
+            <Button size="icon" onClick={() => newComment.trim() && addCommentMutation.mutate(newComment.trim())} disabled={!newComment.trim() || addCommentMutation.isPending} data-testid="button-send-comment">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -737,12 +620,7 @@ export default function Trips() {
   });
 
   if (selectedTripId) {
-    return (
-      <TripDetailPage
-        tripId={selectedTripId}
-        onBack={() => setSelectedTripId(null)}
-      />
-    );
+    return <TripDetailPage tripId={selectedTripId} onBack={() => setSelectedTripId(null)} />;
   }
 
   const filteredTrips = (trips || []).filter((trip) => {
@@ -754,25 +632,25 @@ export default function Trips() {
   });
 
   const statusTabs = [
-    { value: "all", label: "All Expenses" },
+    { value: "all", label: "All Trips" },
+    { value: "started", label: "In Progress" },
     { value: "submitted", label: "Submitted" },
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
-    { value: "started", label: "Started" },
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-5 animate-in fade-in">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-lg">
             <Car className="h-6 w-6 text-primary" />
           </div>
           <div>
             <h2 className="text-3xl font-bold font-display text-primary" data-testid="text-page-title">
-              Trip Management
+              Trips
             </h2>
-            <p className="text-muted-foreground text-sm">Review and approve employee field trips</p>
+            <p className="text-muted-foreground text-sm">Employee field trip tracking</p>
           </div>
         </div>
       </div>
@@ -783,18 +661,14 @@ export default function Trips() {
             <button
               key={value}
               onClick={() => setStatusFilter(value)}
-              className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                statusFilter === value
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+              className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                statusFilter === value ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
               data-testid={`tab-filter-${value}`}
             >
               {label}
-              {value !== "all" && trips && (
-                <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded-full ${
-                  statusFilter === value ? "bg-primary/10" : "bg-muted"
-                }`}>
+              {trips && value !== "all" && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-muted">
                   {trips.filter(t => t.status === value).length}
                 </span>
               )}
@@ -817,9 +691,7 @@ export default function Trips() {
               />
             </div>
             {trips && (
-              <span className="text-sm text-muted-foreground">
-                {filteredTrips.length} trip{filteredTrips.length !== 1 ? "s" : ""}
-              </span>
+              <span className="text-sm text-muted-foreground">{filteredTrips.length} trip{filteredTrips.length !== 1 ? "s" : ""}</span>
             )}
           </div>
 
@@ -829,20 +701,22 @@ export default function Trips() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Title</TableHead>
                   <TableHead>Employee</TableHead>
-                  <TableHead>Trip ID</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Visits</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Completed</TableHead>
                   <TableHead>KM</TableHead>
-                  <TableHead>Amount</TableHead>
+                  <TableHead>Create Time</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTrips.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
                       <Car className="h-10 w-10 mx-auto mb-3 opacity-30" />
                       No trips found.
                     </TableCell>
@@ -856,27 +730,27 @@ export default function Trips() {
                       data-testid={`row-trip-${trip.id}`}
                     >
                       <TableCell>
+                        <span className="font-medium text-primary text-sm" data-testid={`text-trip-id-${trip.id}`}>
+                          TRP-{String(trip.id).padStart(4, "0")}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
                             {trip.employeeName.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <span className="font-medium text-sm" data-testid={`text-employee-name-${trip.id}`}>
-                              {trip.employeeName}
-                            </span>
+                            <p className="text-sm font-medium" data-testid={`text-employee-name-${trip.id}`}>{trip.employeeName}</p>
                             <p className="text-xs text-muted-foreground">{trip.employeeCode}</p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground font-mono" data-testid={`text-trip-id-${trip.id}`}>
-                        TRP-{String(trip.id).padStart(4, "0")}
-                      </TableCell>
-                      <TableCell className="text-sm" data-testid={`text-trip-date-${trip.id}`}>
-                        {formatDate(trip.startTime)}
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">Trip</span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusBadgeVariant[trip.status] || "secondary"} data-testid={`badge-status-${trip.id}`}>
-                          {trip.status}
+                          {tripStatusLabel(trip.status)}
                         </Badge>
                       </TableCell>
                       <TableCell data-testid={`text-visits-${trip.id}`}>
@@ -885,21 +759,27 @@ export default function Trips() {
                             <MapPin className="h-3 w-3 text-primary" />{trip.visitCount}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
+                          <span className="text-muted-foreground text-sm">0</span>
                         )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground" data-testid={`text-trip-date-${trip.id}`}>
+                        {trip.startTime ? formatDateTime(trip.startTime) : "-"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {trip.endTime ? formatDateTime(trip.endTime) : "-"}
                       </TableCell>
                       <TableCell className="text-sm" data-testid={`text-km-${trip.id}`}>
                         {trip.totalKm ? `${Number(trip.totalKm).toFixed(1)} km` : "-"}
                       </TableCell>
-                      <TableCell className="text-sm" data-testid={`text-amount-${trip.id}`}>
-                        {trip.expenseAmount ? `₹${Number(trip.expenseAmount).toFixed(0)}` : "-"}
+                      <TableCell className="text-xs text-muted-foreground">
+                        {trip.createdAt ? formatDateTime(trip.createdAt) : "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-primary"
                           onClick={(e) => { e.stopPropagation(); setSelectedTripId(trip.id); }}
-                          className="text-primary hover:text-primary"
                           data-testid={`button-view-trip-${trip.id}`}
                         >
                           View
@@ -913,8 +793,8 @@ export default function Trips() {
           )}
 
           {filteredTrips.length > 0 && (
-            <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-              Showing 1 - {filteredTrips.length} of {filteredTrips.length} items
+            <div className="px-4 py-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+              <span>Showing 1 – {filteredTrips.length} of {filteredTrips.length} items</span>
             </div>
           )}
         </CardContent>
