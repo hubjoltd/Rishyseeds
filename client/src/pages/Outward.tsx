@@ -146,10 +146,15 @@ export default function Outward() {
     return `${lot.lotNumber} (${product?.crop} - ${product?.variety || 'Unknown'})`;
   };
 
+  const getLotDispatched = (lotId: number): number =>
+    (records as OutwardRecord[] || [])
+      .filter((r: OutwardRecord) => r.lotId === lotId)
+      .reduce((sum: number, r: OutwardRecord) => sum + Number(r.quantity || 0), 0);
+
   const getLotBalance = (lotId: number): number => {
-    return (stockBalances as StockBalance[] || [])
-      .filter((b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose')
-      .reduce((sum: number, b: StockBalance) => sum + Number(b.quantity || 0), 0);
+    const lot = (lots as Lot[] || []).find((l: Lot) => l.id === lotId);
+    if (!lot) return 0;
+    return Math.max(0, Number(lot.initialQuantity || 0) - getLotDispatched(lotId));
   };
 
   const getLocationName = (locationId: number) => {

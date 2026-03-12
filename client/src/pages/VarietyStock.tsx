@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { useLots, useProducts, useStockBalances, useOutwardRecords } from "@/hooks/use-inventory";
-import type { Lot, Product, StockBalance, OutwardRecord } from "@shared/schema";
+import { useLots, useProducts, useOutwardRecords } from "@/hooks/use-inventory";
+import type { Lot, Product, OutwardRecord } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -24,7 +24,6 @@ import { Search, Layers, TrendingDown, TrendingUp, PackageCheck } from "lucide-r
 export default function VarietyStock() {
   const { data: lots = [] } = useLots() as { data: Lot[] };
   const { data: products = [] } = useProducts() as { data: Product[] };
-  const { data: stockBalances = [] } = useStockBalances() as { data: StockBalance[] };
   const { data: outwardRecords = [] } = useOutwardRecords() as { data: OutwardRecord[] };
 
   const [search, setSearch] = useState("");
@@ -47,15 +46,13 @@ export default function VarietyStock() {
     [lots, selectedYear]
   );
 
-  const getLotBalance = (lotId: number): number =>
-    (stockBalances as StockBalance[])
-      .filter((b) => b.lotId === lotId && b.stockForm === "loose")
-      .reduce((s, b) => s + Number(b.quantity || 0), 0);
-
   const getLotOutward = (lotId: number): number =>
     (outwardRecords as OutwardRecord[])
       .filter((r) => r.lotId === lotId)
       .reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  const getLotBalance = (lot: Lot): number =>
+    Math.max(0, Number(lot.initialQuantity || 0) - getLotOutward(lot.id));
 
   type VarietyRow = {
     productId: number;
@@ -89,7 +86,7 @@ export default function VarietyStock() {
       }
       const inward = Number(lot.initialQuantity || 0);
       const outward = getLotOutward(lot.id);
-      const balance = getLotBalance(lot.id);
+      const balance = getLotBalance(lot);
       map[product.id].lotCount += 1;
       map[product.id].totalInward += inward;
       map[product.id].totalOutward += outward;
@@ -97,7 +94,7 @@ export default function VarietyStock() {
       map[product.id].lots.push(lot);
     }
     return Object.values(map).sort((a, b) => a.crop.localeCompare(b.crop));
-  }, [filteredLots, products, stockBalances, outwardRecords]);
+  }, [filteredLots, products, outwardRecords]);
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();

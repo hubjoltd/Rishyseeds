@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance } from "@/hooks/use-inventory";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { Lot, Product, Location, StockBalance } from "@shared/schema";
+import type { Lot, Product, Location, StockBalance, OutwardRecord } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -172,11 +172,13 @@ function VarietySummary({
   products,
   stockBalances,
   locations,
+  outwardRecords,
 }: {
   lots: Lot[];
   products: Product[];
   stockBalances: StockBalance[];
   locations: Location[];
+  outwardRecords: OutwardRecord[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -189,10 +191,13 @@ function VarietySummary({
       .filter((b) => b.lotId === lotId && locIds.includes(b.locationId) && b.stockForm === form)
       .reduce((s, b) => s + Number(b.quantity || 0), 0);
 
-  const getLotBalance = (lotId: number) =>
-    stockBalances
-      .filter((b) => b.lotId === lotId && b.stockForm === "loose")
-      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+  const getLotDispatched = (lotId: number) =>
+    outwardRecords
+      .filter((r) => r.lotId === lotId)
+      .reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  const getLotBalance = (lot: Lot) =>
+    Math.max(0, Number(lot.initialQuantity || 0) - getLotDispatched(lot.id));
 
   type VarietyRow = {
     label: string;
@@ -213,7 +218,7 @@ function VarietySummary({
       grouped[key] = { label: key, totalInitial: 0, totalBalance: 0, csInward: 0, csOutward: 0, plant: 0, office: 0, lotCount: 0 };
     }
     grouped[key].totalInitial += Number(lot.initialQuantity || 0);
-    grouped[key].totalBalance += getLotBalance(lot.id);
+    grouped[key].totalBalance += getLotBalance(lot);
     grouped[key].csInward += getBalance(lot.id, coldStorageIds, "cs_inward");
     grouped[key].csOutward += getBalance(lot.id, coldStorageIds, "cs_outward");
     grouped[key].plant += getBalance(lot.id, plantIds, "loose");
@@ -317,6 +322,7 @@ export default function Inward() {
   const { mutate: deleteLot, isPending: isDeleting } = useDeleteLot();
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
   const { mutate: setStockBalance, isPending: isSavingDist } = useSetStockBalance();
+  const { data: outwardRecords } = useOutwardRecords();
   const { canDelete, canEdit } = useAuth();
 
   const getCreatedByName = (createdById: number | null | undefined) => {
@@ -458,10 +464,15 @@ export default function Inward() {
       .filter((b) => b.lotId === lotId && locIds.includes(b.locationId) && b.stockForm === form)
       .reduce((s, b) => s + Number(b.quantity || 0), 0);
 
-  const getLotBalance = (lotId: number) =>
-    balances
-      .filter((b) => b.lotId === lotId && b.stockForm === "loose")
-      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+  const getLotDispatched = (lotId: number) =>
+    ((outwardRecords as OutwardRecord[]) || [])
+      .filter((r) => r.lotId === lotId)
+      .reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  const getLotBalance = (lotId: number, initialQty: number | string) => {
+    const dispatched = getLotDispatched(lotId);
+    return Math.max(0, Number(initialQty) - dispatched);
+  };
 
   const handleSaveDistribution = (lotId: number, vals: z.infer<typeof stockDistSchema>) => {
     const saves = [
@@ -645,6 +656,7 @@ export default function Inward() {
           products={(products as Product[]) || []}
           stockBalances={balances}
           locations={locs}
+          outwardRecords={(outwardRecords as OutwardRecord[]) || []}
         />
       )}
 
@@ -744,13 +756,22 @@ export default function Inward() {
                           )}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {balancesLoading ? (
-                            <span className="text-muted-foreground text-sm">Loading...</span>
-                          ) : (
-                            <span className={getLotBalance(lot.id) < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : ""}>
-                              {getLotBalance(lot.id).toFixed(2)} kg
-                            </span>
-                          )}
+                          {(() => {
+                            const bal = getLotBalance(lot.id, lot.initialQuantity);
+                            const dispatched = getLotDispatched(lot.id);
+                            return (
+                              <div>
+                                <span className={bal < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : "text-green-700 dark:text-green-400"}>
+                                  {bal.toFixed(2)} kg
+                                </span>
+                                {dispatched > 0 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    -{dispatched.toFixed(0)} dispatched
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Badge variant={lot.stockForm === "packed" ? "default" : "secondary"}>
