@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useStockMovements } from "@/hooks/use-inventory";
+import { useState } from "react";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, PackagePlus, Trash2, RefreshCw, Pencil } from "lucide-react";
+import { Plus, Search, PackagePlus, Trash2, RefreshCw, Pencil, Layers, BarChart3, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 
 const inwardFormSchema = z.object({
@@ -59,6 +59,253 @@ const inwardFormSchema = z.object({
   remarks: z.string().optional(),
 });
 
+const stockDistSchema = z.object({
+  coldStorageInward: z.coerce.number().min(0).default(0),
+  coldStorageOutward: z.coerce.number().min(0).default(0),
+  storagePlant: z.coerce.number().min(0).default(0),
+  storageOffice: z.coerce.number().min(0).default(0),
+});
+
+// ── Stock Distribution Dialog ─────────────────────────────────────────────────
+function StockDistributionDialog({
+  lot,
+  locations,
+  stockBalances,
+  onSave,
+  isSaving,
+}: {
+  lot: Lot;
+  locations: Location[];
+  stockBalances: StockBalance[];
+  onSave: (vals: z.infer<typeof stockDistSchema>) => void;
+  isSaving: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const coldStorageIds = locations.filter((l) => (l as any).type === "cold_storage").map((l) => l.id);
+  const plantIds = locations.filter((l) => (l as any).type === "storage" && l.name.toLowerCase().includes("plant")).map((l) => l.id);
+  const officeIds = locations.filter((l) => (l as any).type === "office").map((l) => l.id);
+
+  const getBalance = (locIds: number[], form: string) =>
+    stockBalances
+      .filter((b) => b.lotId === lot.id && locIds.includes(b.locationId) && b.stockForm === form)
+      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+
+  const form = useForm<z.infer<typeof stockDistSchema>>({
+    resolver: zodResolver(stockDistSchema),
+    defaultValues: {
+      coldStorageInward: getBalance(coldStorageIds, "cs_inward"),
+      coldStorageOutward: getBalance(coldStorageIds, "cs_outward"),
+      storagePlant: getBalance(plantIds, "loose"),
+      storageOffice: getBalance(officeIds, "loose"),
+    },
+  });
+
+  const handleOpen = (val: boolean) => {
+    if (val) {
+      form.reset({
+        coldStorageInward: getBalance(coldStorageIds, "cs_inward"),
+        coldStorageOutward: getBalance(coldStorageIds, "cs_outward"),
+        storagePlant: getBalance(plantIds, "loose"),
+        storageOffice: getBalance(officeIds, "loose"),
+      });
+    }
+    setOpen(val);
+  };
+
+  const handleSubmit = (data: z.infer<typeof stockDistSchema>) => {
+    onSave(data);
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" title="Edit Stock Distribution" data-testid={`button-stock-dist-${lot.id}`}>
+          <Layers className="h-4 w-4 text-blue-600" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Stock Distribution — {lot.lotNumber}</DialogTitle>
+          <DialogDescription>Set quantities for each storage location type (kg)</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 pt-2">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-blue-950/20 dark:border-blue-900 p-3 space-y-3">
+            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">Cold Storage</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-green-700 dark:text-green-400">Inward (kg)</label>
+                <Input type="number" step="0.01" min="0" {...form.register("coldStorageInward")} data-testid="input-cs-inward" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-red-600 dark:text-red-400">Outward (kg)</label>
+                <Input type="number" step="0.01" min="0" {...form.register("coldStorageOutward")} data-testid="input-cs-outward" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-lg border border-orange-200 bg-orange-50/60 dark:bg-orange-950/20 dark:border-orange-900 p-3 space-y-3">
+            <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">Storage Locations</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-400">Plant (kg)</label>
+                <Input type="number" step="0.01" min="0" {...form.register("storagePlant")} data-testid="input-storage-plant" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-purple-700 dark:text-purple-400">Main Office (kg)</label>
+                <Input type="number" step="0.01" min="0" {...form.register("storageOffice")} data-testid="input-storage-office" />
+              </div>
+            </div>
+          </div>
+          <Button type="submit" className="w-full" disabled={isSaving} data-testid="button-save-stock-dist">
+            {isSaving ? "Saving..." : "Save Distribution"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Variety Summary ────────────────────────────────────────────────────────────
+function VarietySummary({
+  lots,
+  products,
+  stockBalances,
+  locations,
+}: {
+  lots: Lot[];
+  products: Product[];
+  stockBalances: StockBalance[];
+  locations: Location[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const coldStorageIds = locations.filter((l) => (l as any).type === "cold_storage").map((l) => l.id);
+  const plantIds = locations.filter((l) => (l as any).type === "storage" && l.name.toLowerCase().includes("plant")).map((l) => l.id);
+  const officeIds = locations.filter((l) => (l as any).type === "office").map((l) => l.id);
+
+  const getBalance = (lotId: number, locIds: number[], form: string) =>
+    stockBalances
+      .filter((b) => b.lotId === lotId && locIds.includes(b.locationId) && b.stockForm === form)
+      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+
+  const getLotBalance = (lotId: number) =>
+    stockBalances
+      .filter((b) => b.lotId === lotId && b.stockForm === "loose")
+      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+
+  type VarietyRow = {
+    label: string;
+    totalInitial: number;
+    totalBalance: number;
+    csInward: number;
+    csOutward: number;
+    plant: number;
+    office: number;
+    lotCount: number;
+  };
+
+  const grouped: Record<string, VarietyRow> = {};
+  for (const lot of lots) {
+    const product = products.find((p) => p.id === lot.productId);
+    const key = product ? `${product.crop} - ${product.variety}` : "Unknown";
+    if (!grouped[key]) {
+      grouped[key] = { label: key, totalInitial: 0, totalBalance: 0, csInward: 0, csOutward: 0, plant: 0, office: 0, lotCount: 0 };
+    }
+    grouped[key].totalInitial += Number(lot.initialQuantity || 0);
+    grouped[key].totalBalance += getLotBalance(lot.id);
+    grouped[key].csInward += getBalance(lot.id, coldStorageIds, "cs_inward");
+    grouped[key].csOutward += getBalance(lot.id, coldStorageIds, "cs_outward");
+    grouped[key].plant += getBalance(lot.id, plantIds, "loose");
+    grouped[key].office += getBalance(lot.id, officeIds, "loose");
+    grouped[key].lotCount += 1;
+  }
+
+  const rows = Object.values(grouped).sort((a, b) => b.totalInitial - a.totalInitial);
+  const totalInitial = rows.reduce((s, r) => s + r.totalInitial, 0);
+  const totalBalance = rows.reduce((s, r) => s + r.totalBalance, 0);
+
+  return (
+    <Card className="border-0 shadow-md shadow-primary/5">
+      <CardHeader className="pb-0 pt-4 px-4">
+        <button
+          className="flex items-center gap-2 w-full text-left"
+          onClick={() => setExpanded((e) => !e)}
+          data-testid="button-toggle-variety-summary"
+        >
+          <BarChart3 className="h-5 w-5 text-primary" />
+          <span className="font-semibold">Total Stock by Variety</span>
+          <Badge variant="outline" className="ml-2">{rows.length} varieties</Badge>
+          <span className="ml-auto text-muted-foreground text-sm font-normal">
+            Total: {totalInitial.toLocaleString()} kg initial | {totalBalance.toFixed(0)} kg on hand
+          </span>
+          {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground ml-2" /> : <ChevronDown className="h-4 w-4 text-muted-foreground ml-2" />}
+        </button>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="pt-3 px-4 pb-4">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead>Variety (Crop - Variety)</TableHead>
+                  <TableHead className="text-center">Lots</TableHead>
+                  <TableHead className="text-right">Initial Qty</TableHead>
+                  <TableHead className="text-right">Current Balance</TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300">CS Inward</TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400">CS Outward</TableHead>
+                  <TableHead className="text-center bg-orange-50 dark:bg-orange-950/20 text-orange-700">Plant</TableHead>
+                  <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700">Main Office</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.label} className="text-sm">
+                    <TableCell className="font-medium">{r.label}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="text-xs">{r.lotCount}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono">{r.totalInitial.toLocaleString()} kg</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <span className={r.totalBalance < r.totalInitial ? "text-orange-600 dark:text-orange-400" : "text-green-700 dark:text-green-400"}>
+                        {r.totalBalance.toFixed(0)} kg
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center bg-blue-50/30 dark:bg-blue-950/10">
+                      {r.csInward > 0 ? <span className="text-green-700 dark:text-green-400 font-medium">{r.csInward.toFixed(0)}</span> : <span className="text-muted-foreground text-xs">-</span>}
+                    </TableCell>
+                    <TableCell className="text-center bg-blue-50/30 dark:bg-blue-950/10">
+                      {r.csOutward > 0 ? <span className="text-red-600 dark:text-red-400 font-medium">-{r.csOutward.toFixed(0)}</span> : <span className="text-muted-foreground text-xs">-</span>}
+                    </TableCell>
+                    <TableCell className="text-center bg-orange-50/30 dark:bg-orange-950/10">
+                      {r.plant > 0 ? <span className="text-orange-700 dark:text-orange-400 font-medium">{r.plant.toFixed(0)}</span> : <span className="text-muted-foreground text-xs">-</span>}
+                    </TableCell>
+                    <TableCell className="text-center bg-purple-50/30 dark:bg-purple-950/10">
+                      {r.office > 0 ? <span className="text-purple-700 dark:text-purple-400 font-medium">{r.office.toFixed(0)}</span> : <span className="text-muted-foreground text-xs">-</span>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {/* Totals row */}
+                <TableRow className="bg-muted/40 font-bold text-sm border-t-2">
+                  <TableCell>TOTAL</TableCell>
+                  <TableCell className="text-center">{lots.length} lots</TableCell>
+                  <TableCell className="text-right font-mono">{totalInitial.toLocaleString()} kg</TableCell>
+                  <TableCell className="text-right font-mono">{totalBalance.toFixed(0)} kg</TableCell>
+                  <TableCell className="text-center">{rows.reduce((s, r) => s + r.csInward, 0).toFixed(0)}</TableCell>
+                  <TableCell className="text-center">{rows.reduce((s, r) => s + r.csOutward, 0).toFixed(0)}</TableCell>
+                  <TableCell className="text-center">{rows.reduce((s, r) => s + r.plant, 0).toFixed(0)}</TableCell>
+                  <TableCell className="text-center">{rows.reduce((s, r) => s + r.office, 0).toFixed(0)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Inward() {
   const { data: lots, isLoading } = useLots();
   const { data: stockBalances, isLoading: balancesLoading } = useStockBalances();
@@ -69,23 +316,23 @@ export default function Inward() {
   const { mutate: updateLot, isPending: isUpdating } = useUpdateLot();
   const { mutate: deleteLot, isPending: isDeleting } = useDeleteLot();
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
-  const { data: stockMovements } = useStockMovements();
+  const { mutate: setStockBalance, isPending: isSavingDist } = useSetStockBalance();
   const { canDelete, canEdit } = useAuth();
-  
+
   const getCreatedByName = (createdById: number | null | undefined) => {
     if (!createdById) return "-";
     const emp = (employees || []).find((e: any) => e.id === createdById);
     return emp?.fullName || emp?.employeeId || "-";
   };
-  
+
   const [open, setOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [deleteLotId, setDeleteLotId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [generatedLotNumber, setGeneratedLotNumber] = useState("");
 
-  const canDeleteLot = canDelete('lots');
-  const canEditLot = canEdit('lots');
+  const canDeleteLot = canDelete("lots");
+  const canEditLot = canEdit("lots");
 
   const form = useForm<z.infer<typeof inwardFormSchema>>({
     resolver: zodResolver(inwardFormSchema),
@@ -94,7 +341,7 @@ export default function Inward() {
       quantityUnit: "kg",
       initialQuantity: 0,
       sourceName: "",
-    }
+    },
   });
 
   const selectedProductId = form.watch("productId");
@@ -116,38 +363,35 @@ export default function Inward() {
       const result = await generateLotNumber(data.productId);
       lotNumber = result.lotNumber;
     }
-    
-    const quantityInKg = data.quantityUnit === "tons" 
-      ? data.initialQuantity * 1000 
-      : data.initialQuantity;
-    
-    createLot({
-      lotNumber,
-      productId: data.productId,
-      locationId: data.locationId,
-      sourceType: "inward",
-      sourceName: data.sourceName || null,
-      initialQuantity: String(quantityInKg),
-      quantityUnit: data.quantityUnit,
-      stockForm: data.stockForm,
-      inwardDate: data.inwardDate || new Date().toISOString().slice(0, 10),
-      expiryDate: data.expiryDate || null,
-      remarks: data.remarks || null,
-      status: "active",
-    }, {
-      onSuccess: () => {
-        setOpen(false);
-        form.reset();
-        setGeneratedLotNumber("");
+    const quantityInKg = data.quantityUnit === "tons" ? data.initialQuantity * 1000 : data.initialQuantity;
+    createLot(
+      {
+        lotNumber,
+        productId: data.productId,
+        locationId: data.locationId,
+        sourceType: "inward",
+        sourceName: data.sourceName || null,
+        initialQuantity: String(quantityInKg),
+        quantityUnit: data.quantityUnit,
+        stockForm: data.stockForm,
+        inwardDate: data.inwardDate || new Date().toISOString().slice(0, 10),
+        expiryDate: data.expiryDate || null,
+        remarks: data.remarks || null,
+        status: "active",
       },
-    });
+      {
+        onSuccess: () => {
+          setOpen(false);
+          form.reset();
+          setGeneratedLotNumber("");
+        },
+      }
+    );
   };
 
   const handleDelete = () => {
     if (deleteLotId) {
-      deleteLot(deleteLotId, {
-        onSuccess: () => setDeleteLotId(null),
-      });
+      deleteLot(deleteLotId, { onSuccess: () => setDeleteLotId(null) });
     }
   };
 
@@ -170,29 +414,28 @@ export default function Inward() {
 
   const handleUpdate = (data: z.infer<typeof inwardFormSchema>) => {
     if (!editingLot) return;
-    
-    const quantityInKg = data.quantityUnit === "tons" 
-      ? data.initialQuantity * 1000 
-      : data.initialQuantity;
-    
-    updateLot({
-      id: editingLot.id,
-      data: {
-        sourceName: data.sourceName || null,
-        initialQuantity: String(quantityInKg),
-        stockForm: data.stockForm,
-        inwardDate: data.inwardDate || null,
-        expiryDate: data.expiryDate || null,
-        remarks: data.remarks || null,
-      }
-    }, {
-      onSuccess: () => {
-        setOpen(false);
-        setEditingLot(null);
-        form.reset();
-        setGeneratedLotNumber("");
+    const quantityInKg = data.quantityUnit === "tons" ? data.initialQuantity * 1000 : data.initialQuantity;
+    updateLot(
+      {
+        id: editingLot.id,
+        data: {
+          sourceName: data.sourceName || null,
+          initialQuantity: String(quantityInKg),
+          stockForm: data.stockForm,
+          inwardDate: data.inwardDate || null,
+          expiryDate: data.expiryDate || null,
+          remarks: data.remarks || null,
+        },
       },
-    });
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setEditingLot(null);
+          form.reset();
+          setGeneratedLotNumber("");
+        },
+      }
+    );
   };
 
   const getProductDetails = (productId: number) => {
@@ -200,64 +443,61 @@ export default function Inward() {
     return product ? `${product.crop} - ${product.variety}` : "Unknown";
   };
 
-  const parseBalanceToKg = (b: StockBalance): number => {
-    const qty = Number(b.quantity);
-    if (b.stockForm === 'packed' && b.packetSize) {
-      const s = b.packetSize.toLowerCase().trim();
-      if (s.endsWith('kg')) return qty * parseFloat(s);
-      if (s.endsWith('g')) return qty * parseFloat(s) / 1000;
-    }
-    return qty;
+  const locs = (locations as Location[]) || [];
+  const coldStorageIds = locs.filter((l) => (l as any).type === "cold_storage").map((l) => l.id);
+  const plantIds = locs.filter((l) => (l as any).type === "storage" && l.name.toLowerCase().includes("plant")).map((l) => l.id);
+  const officeIds = locs.filter((l) => (l as any).type === "office").map((l) => l.id);
+  const firstCsId = coldStorageIds[0] ?? 0;
+  const firstPlantId = plantIds[0] ?? 0;
+  const firstOfficeId = officeIds[0] ?? 0;
+
+  const balances = (stockBalances as StockBalance[]) || [];
+
+  const getColBalance = (lotId: number, locIds: number[], form: string) =>
+    balances
+      .filter((b) => b.lotId === lotId && locIds.includes(b.locationId) && b.stockForm === form)
+      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+
+  const getLotBalance = (lotId: number) =>
+    balances
+      .filter((b) => b.lotId === lotId && b.stockForm === "loose")
+      .reduce((s, b) => s + Number(b.quantity || 0), 0);
+
+  const handleSaveDistribution = (lotId: number, vals: z.infer<typeof stockDistSchema>) => {
+    const saves = [
+      { lotId, locationId: firstCsId || 1, quantity: vals.coldStorageInward, stockForm: "cs_inward" },
+      { lotId, locationId: firstCsId || 1, quantity: vals.coldStorageOutward, stockForm: "cs_outward" },
+      { lotId, locationId: firstPlantId || 2, quantity: vals.storagePlant, stockForm: "loose" },
+      { lotId, locationId: firstOfficeId || 1, quantity: vals.storageOffice, stockForm: "loose" },
+    ];
+    saves.forEach((s) => {
+      if (s.locationId) setStockBalance(s);
+    });
   };
 
-  const getLotBalance = (lotId: number) => {
-    const balances = stockBalances?.filter((b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose') || [];
-    return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
-  };
-
-  const coldStorageLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'cold_storage');
-  const plantLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'storage' && l.name.toLowerCase().includes('plant'));
-  const officeLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'office');
-
-  const coldStorageIds = coldStorageLocations.map((l: Location) => l.id);
-  const plantLocationIds = plantLocations.map((l: Location) => l.id);
-  const officeLocationIds = officeLocations.map((l: Location) => l.id);
-
-  const getColdStorageInward = (lotId: number) =>
-    (stockMovements as any[] || [])
-      .filter((m: any) => m.lotId === lotId && coldStorageIds.includes(m.toLocationId))
-      .reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0);
-
-  const getColdStorageOutward = (lotId: number) =>
-    (stockMovements as any[] || [])
-      .filter((m: any) => m.lotId === lotId && coldStorageIds.includes(m.fromLocationId))
-      .reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0);
-
-  const getStorageBalance = (lotId: number, locationIds: number[]) =>
-    (stockBalances as StockBalance[] || [])
-      .filter((b: StockBalance) => b.lotId === lotId && locationIds.includes(b.locationId))
-      .reduce((sum: number, b: StockBalance) => sum + Number(b.quantity || 0), 0);
-
-  const filteredLots = (lots as Lot[] || []).filter((lot: Lot) =>
+  const filteredLots = ((lots as Lot[]) || []).filter((lot: Lot) =>
     lot.lotNumber.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in">
+    <div className="space-y-6 animate-in fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold font-display text-primary">Inward / Lots</h2>
           <p className="text-muted-foreground">Record incoming seed stock with auto-generated lot numbers</p>
         </div>
 
-        <Dialog open={open} onOpenChange={(isOpen) => {
-          setOpen(isOpen);
-          if (!isOpen) {
-            setEditingLot(null);
-            form.reset();
-            setGeneratedLotNumber("");
-          }
-        }}>
+        <Dialog
+          open={open}
+          onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) {
+              setEditingLot(null);
+              form.reset();
+              setGeneratedLotNumber("");
+            }
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" data-testid="button-new-inward">
               <Plus className="mr-2 h-4 w-4" />
@@ -273,11 +513,7 @@ export default function Inward() {
               {editingLot ? (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Product (Crop/Variety)</label>
-                  <Input 
-                    value={getProductDetails(editingLot.productId)}
-                    disabled
-                    className="bg-muted"
-                  />
+                  <Input value={getProductDetails(editingLot.productId)} disabled className="bg-muted" />
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -302,21 +538,21 @@ export default function Inward() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Lot Number</label>
                 <div className="flex gap-2">
-                  <Input 
-                    value={generatedLotNumber} 
+                  <Input
+                    value={generatedLotNumber}
                     onChange={(e) => setGeneratedLotNumber(e.target.value)}
                     placeholder="Auto-generated or enter manually"
                     data-testid="input-lot-number"
                   />
                   {!editingLot && (
-                    <Button 
-                      type="button" 
-                      variant="outline" 
+                    <Button
+                      type="button"
+                      variant="outline"
                       onClick={handleGenerateLotNumber}
                       disabled={!selectedProductId || isGenerating}
                       data-testid="button-generate-lot"
                     >
-                      <RefreshCw className={`h-4 w-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                      <RefreshCw className={`h-4 w-4 ${isGenerating ? "animate-spin" : ""}`} />
                     </Button>
                   )}
                 </div>
@@ -325,11 +561,7 @@ export default function Inward() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Source / Supplier (Optional)</label>
-                <Input 
-                  {...form.register("sourceName")}
-                  placeholder="Enter supplier or source name"
-                  data-testid="input-source-name"
-                />
+                <Input {...form.register("sourceName")} placeholder="Enter supplier or source name" data-testid="input-source-name" />
               </div>
 
               {!editingLot && (
@@ -340,7 +572,7 @@ export default function Inward() {
                       <SelectValue placeholder="Select Warehouse" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(locations as Location[] || []).map((loc: Location) => (
+                      {locs.map((loc: Location) => (
                         <SelectItem key={loc.id} value={loc.id.toString()}>
                           {loc.name}
                         </SelectItem>
@@ -353,19 +585,11 @@ export default function Inward() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Quantity</label>
-                  <Input 
-                    type="number" 
-                    {...form.register("initialQuantity")}
-                    placeholder="Enter quantity"
-                    data-testid="input-quantity"
-                  />
+                  <Input type="number" {...form.register("initialQuantity")} placeholder="Enter quantity" data-testid="input-quantity" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Unit</label>
-                  <Select 
-                    defaultValue="kg"
-                    onValueChange={(val) => form.setValue("quantityUnit", val)}
-                  >
+                  <Select defaultValue="kg" onValueChange={(val) => form.setValue("quantityUnit", val)}>
                     <SelectTrigger data-testid="select-quantity-unit">
                       <SelectValue />
                     </SelectTrigger>
@@ -377,10 +601,7 @@ export default function Inward() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Stock Form</label>
-                  <Select 
-                    defaultValue="loose"
-                    onValueChange={(val) => form.setValue("stockForm", val)}
-                  >
+                  <Select defaultValue="loose" onValueChange={(val) => form.setValue("stockForm", val)}>
                     <SelectTrigger data-testid="select-stock-form">
                       <SelectValue />
                     </SelectTrigger>
@@ -396,46 +617,36 @@ export default function Inward() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Inward Date</label>
-                  <Input 
-                    type="date" 
-                    {...form.register("inwardDate")}
-                    data-testid="input-inward-date"
-                  />
+                  <Input type="date" {...form.register("inwardDate")} data-testid="input-inward-date" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Expiry Date</label>
-                  <Input 
-                    type="date" 
-                    {...form.register("expiryDate")}
-                    data-testid="input-expiry-date"
-                  />
+                  <Input type="date" {...form.register("expiryDate")} data-testid="input-expiry-date" />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Remarks</label>
-                <Input 
-                  {...form.register("remarks")}
-                  placeholder="Optional notes"
-                  data-testid="input-remarks"
-                />
+                <Input {...form.register("remarks")} placeholder="Optional notes" data-testid="input-remarks" />
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={editingLot ? isUpdating : isPending}
-                data-testid="button-submit-inward"
-              >
-                {editingLot 
-                  ? (isUpdating ? "Saving..." : "Save Changes")
-                  : (isPending ? "Recording..." : "Record Inward")
-                }
+              <Button type="submit" className="w-full" disabled={editingLot ? isUpdating : isPending} data-testid="button-submit-inward">
+                {editingLot ? (isUpdating ? "Saving..." : "Save Changes") : isPending ? "Recording..." : "Record Inward"}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Variety Summary */}
+      {!isLoading && lots && products && balances && (
+        <VarietySummary
+          lots={(lots as Lot[]) || []}
+          products={(products as Product[]) || []}
+          stockBalances={balances}
+          locations={locs}
+        />
+      )}
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -466,11 +677,19 @@ export default function Inward() {
                   <TableHead>Lot Number</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Initial Qty</TableHead>
-                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-xs">Cold Storage<br/>Inward</TableHead>
-                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400 text-xs">Cold Storage<br/>Outward</TableHead>
-                  <TableHead className="text-center bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 text-xs">Storage<br/>Plant</TableHead>
-                  <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-xs">Storage<br/>Main Office</TableHead>
-                  <TableHead>Current Balance (Loose)</TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-xs">
+                    Cold Storage<br />Inward
+                  </TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400 text-xs">
+                    Cold Storage<br />Outward
+                  </TableHead>
+                  <TableHead className="text-center bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 text-xs">
+                    Storage<br />Plant
+                  </TableHead>
+                  <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-xs">
+                    Storage<br />Main Office
+                  </TableHead>
+                  <TableHead>Current Balance</TableHead>
                   <TableHead>Stock Form</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead>Status</TableHead>
@@ -485,80 +704,101 @@ export default function Inward() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLots.map((lot: Lot) => (
-                    <TableRow key={lot.id} data-testid={`row-lot-${lot.id}`}>
-                      <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
-                      <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
-                      <TableCell>{getProductDetails(lot.productId)}</TableCell>
-                      <TableCell>{lot.initialQuantity} kg</TableCell>
-                      {(() => {
-                        const csIn = getColdStorageInward(lot.id);
-                        const csOut = getColdStorageOutward(lot.id);
-                        const plant = getStorageBalance(lot.id, plantLocationIds);
-                        const office = getStorageBalance(lot.id, officeLocationIds);
-                        return (
-                          <>
-                            <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
-                              {csIn > 0 ? <span className="text-green-700 dark:text-green-400 font-medium">{csIn.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
-                            </TableCell>
-                            <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
-                              {csOut > 0 ? <span className="text-red-600 dark:text-red-400 font-medium">-{csOut.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
-                            </TableCell>
-                            <TableCell className="text-center bg-orange-50/40 dark:bg-orange-950/10">
-                              {plant > 0 ? <span className="text-orange-700 dark:text-orange-400 font-medium">{plant.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
-                            </TableCell>
-                            <TableCell className="text-center bg-purple-50/40 dark:bg-purple-950/10">
-                              {office > 0 ? <span className="text-purple-700 dark:text-purple-400 font-medium">{office.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
-                            </TableCell>
-                          </>
-                        );
-                      })()}
-                      <TableCell className="font-medium">
-                        {balancesLoading ? (
-                          <span className="text-muted-foreground text-sm">Loading...</span>
-                        ) : (
-                          <span className={getLotBalance(lot.id) < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : ""}>
-                            {getLotBalance(lot.id).toFixed(2)} kg
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={lot.stockForm === 'packed' ? 'default' : 'secondary'}>
-                          {lot.stockForm === 'loose' ? 'Raw Seeds' : lot.stockForm === 'cobs' ? 'Cobs' : lot.stockForm}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{getCreatedByName(lot.createdBy)}</TableCell>
-                      <TableCell>
-                        <Badge variant={lot.status === 'active' ? 'default' : 'outline'}>
-                          {lot.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {canEditLot && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(lot)}
-                              data-testid={`button-edit-lot-${lot.id}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
+                  filteredLots.map((lot: Lot) => {
+                    const csIn = getColBalance(lot.id, coldStorageIds, "cs_inward");
+                    const csOut = getColBalance(lot.id, coldStorageIds, "cs_outward");
+                    const plant = getColBalance(lot.id, plantIds, "loose");
+                    const office = getColBalance(lot.id, officeIds, "loose");
+                    return (
+                      <TableRow key={lot.id} data-testid={`row-lot-${lot.id}`}>
+                        <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
+                        <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
+                        <TableCell>{getProductDetails(lot.productId)}</TableCell>
+                        <TableCell>{lot.initialQuantity} kg</TableCell>
+                        <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
+                          {csIn > 0 ? (
+                            <span className="text-green-700 dark:text-green-400 font-medium">{csIn.toFixed(0)} kg</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
                           )}
-                          {canDeleteLot && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeleteLotId(lot.id)}
-                              data-testid={`button-delete-lot-${lot.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                        </TableCell>
+                        <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
+                          {csOut > 0 ? (
+                            <span className="text-red-600 dark:text-red-400 font-medium">-{csOut.toFixed(0)} kg</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
                           )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell className="text-center bg-orange-50/40 dark:bg-orange-950/10">
+                          {plant > 0 ? (
+                            <span className="text-orange-700 dark:text-orange-400 font-medium">{plant.toFixed(0)} kg</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center bg-purple-50/40 dark:bg-purple-950/10">
+                          {office > 0 ? (
+                            <span className="text-purple-700 dark:text-purple-400 font-medium">{office.toFixed(0)} kg</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {balancesLoading ? (
+                            <span className="text-muted-foreground text-sm">Loading...</span>
+                          ) : (
+                            <span className={getLotBalance(lot.id) < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : ""}>
+                              {getLotBalance(lot.id).toFixed(2)} kg
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={lot.stockForm === "packed" ? "default" : "secondary"}>
+                            {lot.stockForm === "loose" ? "Raw Seeds" : lot.stockForm === "cobs" ? "Cobs" : lot.stockForm}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{getCreatedByName(lot.createdBy)}</TableCell>
+                        <TableCell>
+                          <Badge variant={lot.status === "active" ? "default" : "outline"}>{lot.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {canEditLot && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleEdit(lot)}
+                                  title="Edit Lot"
+                                  data-testid={`button-edit-lot-${lot.id}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <StockDistributionDialog
+                                  lot={lot}
+                                  locations={locs}
+                                  stockBalances={balances}
+                                  onSave={(vals) => handleSaveDistribution(lot.id, vals)}
+                                  isSaving={isSavingDist}
+                                />
+                              </>
+                            )}
+                            {canDeleteLot && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setDeleteLotId(lot.id)}
+                                title="Delete Lot"
+                                data-testid={`button-delete-lot-${lot.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -566,22 +806,17 @@ export default function Inward() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteLotId} onOpenChange={() => setDeleteLotId(null)}>
+      <AlertDialog open={!!deleteLotId} onOpenChange={(open) => { if (!open) setDeleteLotId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Lot</AlertDialogTitle>
+            <AlertDialogTitle>Delete Lot?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this lot? This action cannot be undone and will affect all related stock balances.
+              This will permanently delete this lot and all associated stock records. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={isDeleting}
-              data-testid="button-confirm-delete"
-            >
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
               {isDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -1471,6 +1471,27 @@ export async function registerRoutes(
     res.json(balances);
   });
 
+  // Upsert stock balance for a lot+location
+  app.post("/api/stock-balances/set", checkPermission('stock', 'edit'), async (req, res) => {
+    try {
+      const { lotId, locationId, quantity, stockForm } = req.body;
+      if (!lotId || !locationId || quantity === undefined) {
+        return res.status(400).json({ message: "lotId, locationId and quantity required" });
+      }
+      const form = stockForm || "loose";
+      const existing = await storage.getStockBalanceByLotAndLocation(lotId, locationId, form);
+      let result;
+      if (existing) {
+        result = await storage.updateStockBalance(existing.id, String(quantity));
+      } else {
+        result = await storage.createStockBalance({ lotId, locationId, stockForm: form, quantity: String(quantity), packetSize: null });
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // === PROCESSING RECORDS ROUTES ===
   app.get("/api/processing", checkPermission('processing', 'view'), async (req, res) => {
     const records = await storage.getProcessingRecords();

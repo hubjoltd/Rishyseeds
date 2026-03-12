@@ -835,3 +835,29 @@ export function useDeletePackagingSize() {
     },
   });
 }
+
+export function useSetStockBalance() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (data: { lotId: number; locationId: number; quantity: number; stockForm?: string }) => {
+      const res = await fetch("/api/stock-balances/set", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to set stock balance");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-balances"] });
+      toast({ title: "Saved", description: "Stock distribution updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
