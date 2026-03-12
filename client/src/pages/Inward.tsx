@@ -61,7 +61,7 @@ const inwardFormSchema = z.object({
 
 export default function Inward() {
   const { data: lots, isLoading } = useLots();
-  const { data: stockBalances } = useStockBalances();
+  const { data: stockBalances, isLoading: balancesLoading } = useStockBalances();
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
   const { data: employees } = useEmployees();
@@ -462,7 +462,15 @@ export default function Inward() {
                       <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
                       <TableCell>{getProductDetails(lot.productId)}</TableCell>
                       <TableCell>{lot.initialQuantity} kg</TableCell>
-                      <TableCell className="font-medium">{getLotBalance(lot.id)} kg</TableCell>
+                      <TableCell className="font-medium">
+                        {balancesLoading ? (
+                          <span className="text-muted-foreground text-sm">Loading...</span>
+                        ) : (
+                          <span className={getLotBalance(lot.id) < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : ""}>
+                            {getLotBalance(lot.id).toFixed(2)} kg
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={lot.stockForm === 'packed' ? 'default' : 'secondary'}>
                           {lot.stockForm === 'loose' ? 'Raw Seeds' : lot.stockForm === 'cobs' ? 'Cobs' : lot.stockForm}
