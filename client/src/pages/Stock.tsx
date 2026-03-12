@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
-import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances, usePackagingOutputs } from "@/hooks/use-inventory";
+import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { StockMovement, Lot, Product, StockBalance, PackagingOutput } from "@shared/schema";
+import type { StockMovement, Lot, Product, StockBalance } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,6 @@ export default function Stock() {
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
   const { data: employees } = useEmployees();
-  const { data: packagingOutputs } = usePackagingOutputs();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
   const { mutate: updateMovement, isPending: isUpdating } = useUpdateStockMovement();
@@ -119,41 +118,6 @@ export default function Stock() {
       quantity: Number(sb.quantity)
     }));
   };
-
-  const combinedHistory = useMemo(() => {
-    const movementItems = (movements || []).map((m: StockMovement) => ({
-      type: 'movement' as const,
-      id: m.id,
-      date: m.movementDate ? new Date(m.movementDate) : new Date(0),
-      lotId: m.lotId,
-      fromLocationId: m.fromLocationId,
-      toLocationId: m.toLocationId,
-      quantityKg: Number(m.quantity),
-      person: m.responsiblePerson || '-',
-      createdBy: m.createdBy,
-      remarks: m.remarks,
-      raw: m,
-    }));
-
-    const packagingItems = (packagingOutputs || []).map((p: PackagingOutput) => {
-      const totalUsedKg = (Number(p.totalQuantityKg) || 0) + (Number(p.wasteQuantity) || 0);
-      return {
-        type: 'packaging' as const,
-        id: p.id,
-        date: p.productionDate ? new Date(p.productionDate) : new Date(0),
-        lotId: p.lotId || null,
-        fromLocationId: p.locationId || null,
-        toLocationId: null,
-        quantityKg: totalUsedKg,
-        person: p.packedBy || '-',
-        createdBy: p.createdBy,
-        remarks: p.remarks,
-        raw: p,
-      };
-    });
-
-    return [...movementItems, ...packagingItems].sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [movements, packagingOutputs]);
 
   const handleDeleteMovement = () => {
     if (deleteId !== null) {
@@ -447,29 +411,15 @@ export default function Stock() {
             <TableBody>
               {isLoading ? (
                 <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
-              ) : combinedHistory.length === 0 ? (
+              ) : movements?.length === 0 ? (
                 <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
-                combinedHistory.map((item) => {
-                  const lot = (lots as Lot[] || []).find(l => l.id === item.lotId);
+                movements?.map((m) => {
+                  const lot = (lots as Lot[] || []).find(l => l.id === m.lotId);
                   const product = lot ? (products as Product[] || []).find(p => p.id === lot.productId) : null;
-                  const isPackaging = item.type === 'packaging';
                   return (
-                    <TableRow
-                      key={`${item.type}-${item.id}`}
-                      data-testid={`row-${item.type}-${item.id}`}
-                      className={isPackaging ? "bg-amber-50/50 dark:bg-amber-950/20" : ""}
-                    >
-                      <TableCell>
-                        <div className="space-y-0.5">
-                          <div>{format(item.date, 'MMM dd, yyyy')}</div>
-                          {isPackaging && (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded">
-                              <Package className="w-3 h-3" /> Packaging
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
+                    <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
+                      <TableCell>{m.movementDate ? format(new Date(m.movementDate), 'MMM dd, yyyy') : '-'}</TableCell>
                       <TableCell>
                         <div className="space-y-0.5">
                           <div className="font-mono font-medium">{lot?.lotNumber || '-'}</div>
@@ -480,62 +430,43 @@ export default function Stock() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-0.5">
-                          <div className="font-medium">
-                            {item.fromLocationId ? getLocationName(item.fromLocationId) : '-'}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {isPackaging ? 'Packed at' : 'Source'}
-                          </div>
+                          <div className="font-medium">{getLocationName(m.fromLocationId)}</div>
+                          <div className="text-xs text-muted-foreground">Source</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {isPackaging ? (
-                          <div className="space-y-0.5">
-                            <div className="font-medium text-muted-foreground italic">Packaging</div>
-                            <div className="text-xs text-muted-foreground">
-                              {(item.raw as PackagingOutput).numberOfPackets} × {(item.raw as PackagingOutput).packetSize}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-0.5">
-                            <div className="font-medium">{item.toLocationId ? getLocationName(item.toLocationId) : '-'}</div>
-                            <div className="text-xs text-muted-foreground">Destination</div>
-                          </div>
-                        )}
+                        <div className="space-y-0.5">
+                          <div className="font-medium">{getLocationName(m.toLocationId)}</div>
+                          <div className="text-xs text-muted-foreground">Destination</div>
+                        </div>
                       </TableCell>
-                      <TableCell className="text-right font-medium">
-                        <span className={isPackaging ? "text-red-600 dark:text-red-400" : ""}>
-                          {isPackaging ? '-' : ''}{item.quantityKg.toFixed(2)} kg
-                        </span>
-                      </TableCell>
-                      <TableCell>{item.person}</TableCell>
-                      <TableCell>{getCreatedByName(item.createdBy)}</TableCell>
+                      <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
+                      <TableCell>{m.responsiblePerson || '-'}</TableCell>
+                      <TableCell>{getCreatedByName(m.createdBy)}</TableCell>
                       {(canEditStock || canDeleteStock) && (
                         <TableCell className="text-right">
-                          {!isPackaging && (
-                            <div className="flex justify-end gap-1">
-                              {canEditStock && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => handleEditMovement(item.raw as StockMovement)}
-                                  data-testid={`button-edit-movement-${item.id}`}
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              )}
-                              {canDeleteStock && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => setDeleteId(item.id)}
-                                  data-testid={`button-delete-movement-${item.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
+                          <div className="flex justify-end gap-1">
+                            {canEditStock && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditMovement(m)}
+                                data-testid={`button-edit-movement-${m.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canDeleteStock && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => setDeleteId(m.id)}
+                                data-testid={`button-delete-movement-${m.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
