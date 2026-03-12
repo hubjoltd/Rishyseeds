@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations } from "@/hooks/use-inventory";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useStockMovements } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -69,6 +69,7 @@ export default function Inward() {
   const { mutate: updateLot, isPending: isUpdating } = useUpdateLot();
   const { mutate: deleteLot, isPending: isDeleting } = useDeleteLot();
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
+  const { data: stockMovements } = useStockMovements();
   const { canDelete, canEdit } = useAuth();
   
   const getCreatedByName = (createdById: number | null | undefined) => {
@@ -213,6 +214,29 @@ export default function Inward() {
     const balances = stockBalances?.filter((b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose') || [];
     return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
   };
+
+  const coldStorageLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'cold_storage');
+  const plantLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'storage' && l.name.toLowerCase().includes('plant'));
+  const officeLocations = (locations as Location[] || []).filter((l: Location) => (l as any).type === 'office');
+
+  const coldStorageIds = coldStorageLocations.map((l: Location) => l.id);
+  const plantLocationIds = plantLocations.map((l: Location) => l.id);
+  const officeLocationIds = officeLocations.map((l: Location) => l.id);
+
+  const getColdStorageInward = (lotId: number) =>
+    (stockMovements as any[] || [])
+      .filter((m: any) => m.lotId === lotId && coldStorageIds.includes(m.toLocationId))
+      .reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0);
+
+  const getColdStorageOutward = (lotId: number) =>
+    (stockMovements as any[] || [])
+      .filter((m: any) => m.lotId === lotId && coldStorageIds.includes(m.fromLocationId))
+      .reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0);
+
+  const getStorageBalance = (lotId: number, locationIds: number[]) =>
+    (stockBalances as StockBalance[] || [])
+      .filter((b: StockBalance) => b.lotId === lotId && locationIds.includes(b.locationId))
+      .reduce((sum: number, b: StockBalance) => sum + Number(b.quantity || 0), 0);
 
   const filteredLots = (lots as Lot[] || []).filter((lot: Lot) =>
     lot.lotNumber.toLowerCase().includes(search.toLowerCase())
@@ -441,6 +465,10 @@ export default function Inward() {
                   <TableHead>Lot Number</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Initial Qty</TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-xs">Cold Storage<br/>Inward</TableHead>
+                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400 text-xs">Cold Storage<br/>Outward</TableHead>
+                  <TableHead className="text-center bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 text-xs">Storage<br/>Plant</TableHead>
+                  <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-xs">Storage<br/>Main Office</TableHead>
                   <TableHead>Current Balance (Loose)</TableHead>
                   <TableHead>Stock Form</TableHead>
                   <TableHead>Inward Date</TableHead>
@@ -452,7 +480,7 @@ export default function Inward() {
               <TableBody>
                 {filteredLots.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
                       No lots found. Record your first inward entry above.
                     </TableCell>
                   </TableRow>
@@ -462,6 +490,28 @@ export default function Inward() {
                       <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
                       <TableCell>{getProductDetails(lot.productId)}</TableCell>
                       <TableCell>{lot.initialQuantity} kg</TableCell>
+                      {(() => {
+                        const csIn = getColdStorageInward(lot.id);
+                        const csOut = getColdStorageOutward(lot.id);
+                        const plant = getStorageBalance(lot.id, plantLocationIds);
+                        const office = getStorageBalance(lot.id, officeLocationIds);
+                        return (
+                          <>
+                            <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
+                              {csIn > 0 ? <span className="text-green-700 dark:text-green-400 font-medium">{csIn.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
+                            </TableCell>
+                            <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
+                              {csOut > 0 ? <span className="text-red-600 dark:text-red-400 font-medium">-{csOut.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
+                            </TableCell>
+                            <TableCell className="text-center bg-orange-50/40 dark:bg-orange-950/10">
+                              {plant > 0 ? <span className="text-orange-700 dark:text-orange-400 font-medium">{plant.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
+                            </TableCell>
+                            <TableCell className="text-center bg-purple-50/40 dark:bg-purple-950/10">
+                              {office > 0 ? <span className="text-purple-700 dark:text-purple-400 font-medium">{office.toFixed(0)} kg</span> : <span className="text-muted-foreground text-xs">-</span>}
+                            </TableCell>
+                          </>
+                        );
+                      })()}
                       <TableCell className="font-medium">
                         {balancesLoading ? (
                           <span className="text-muted-foreground text-sm">Loading...</span>
