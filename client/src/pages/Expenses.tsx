@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Expense, ExpenseComment, ExpenseAudit } from "@shared/schema";
@@ -13,7 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Search, CheckCircle, XCircle, History, MessageSquare,
-  FileText, Send, Loader2, BanknoteIcon, IndianRupee, Gauge, Camera,
+  FileText, Send, Loader2, BanknoteIcon, IndianRupee, Gauge, Camera, Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -79,6 +79,9 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
   const [approvedAmount, setApprovedAmount] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [newComment, setNewComment] = useState("");
+  const startPhotoRef = useRef<HTMLInputElement>(null);
+  const endPhotoRef = useRef<HTMLInputElement>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState<"start" | "end" | null>(null);
 
   const { data: expense, isLoading } = useQuery<ExpenseWithEmployee>({
     queryKey: ["/api/expenses", expenseId],
@@ -156,6 +159,28 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
     },
     onError: () => toast({ title: "Error", description: "Failed to add comment", variant: "destructive" }),
   });
+
+  const handlePhotoUpload = async (field: "startingOdometerPhoto" | "endOdometerPhoto", file: File) => {
+    const which = field === "startingOdometerPhoto" ? "start" : "end";
+    setUploadingPhoto(which);
+    try {
+      const formData = new FormData();
+      formData.append(field === "startingOdometerPhoto" ? "startingOdometerPhoto" : "endOdometerPhoto", file);
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/expenses/${expenseId}/upload-photos`, {
+        method: "PATCH",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses", expenseId] });
+      toast({ title: "Photo uploaded", description: "Odometer photo saved successfully." });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload photo.", variant: "destructive" });
+    } finally {
+      setUploadingPhoto(null);
+    }
+  };
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   if (!expense) return <div className="p-8 text-center text-muted-foreground">Expense not found.</div>;
@@ -291,12 +316,18 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">Starting Odometer picture</label>
+                      <input ref={startPhotoRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePhotoUpload("startingOdometerPhoto", e.target.files[0]); }} />
                       {expense.startingOdometerPhoto ? (
-                        <img src={expense.startingOdometerPhoto} alt="Start odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80" onClick={() => window.open(expense.startingOdometerPhoto!, "_blank")} data-testid="img-start-odometer" />
-                      ) : (
-                        <div className="w-24 h-20 border-2 border-dashed rounded flex items-center justify-center text-muted-foreground">
-                          <Camera className="h-6 w-6 opacity-40" />
+                        <div className="relative group w-24 h-20">
+                          <img src={expense.startingOdometerPhoto} alt="Start odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80" onClick={() => window.open(expense.startingOdometerPhoto!, "_blank")} data-testid="img-start-odometer" />
+                          <button onClick={() => startPhotoRef.current?.click()} className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
+                            <Upload className="h-4 w-4" /> Replace
+                          </button>
                         </div>
+                      ) : (
+                        <button onClick={() => startPhotoRef.current?.click()} className="w-24 h-20 border-2 border-dashed rounded flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors gap-1" data-testid="btn-upload-start-photo">
+                          {uploadingPhoto === "start" ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Camera className="h-5 w-5" /><span className="text-xs">Upload</span></>}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -307,12 +338,18 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">End Odometer picture</label>
+                      <input ref={endPhotoRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePhotoUpload("endOdometerPhoto", e.target.files[0]); }} />
                       {expense.endOdometerPhoto ? (
-                        <img src={expense.endOdometerPhoto} alt="End odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80" onClick={() => window.open(expense.endOdometerPhoto!, "_blank")} data-testid="img-end-odometer" />
-                      ) : (
-                        <div className="w-24 h-20 border-2 border-dashed rounded flex items-center justify-center text-muted-foreground">
-                          <Camera className="h-6 w-6 opacity-40" />
+                        <div className="relative group w-24 h-20">
+                          <img src={expense.endOdometerPhoto} alt="End odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80" onClick={() => window.open(expense.endOdometerPhoto!, "_blank")} data-testid="img-end-odometer" />
+                          <button onClick={() => endPhotoRef.current?.click()} className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
+                            <Upload className="h-4 w-4" /> Replace
+                          </button>
                         </div>
+                      ) : (
+                        <button onClick={() => endPhotoRef.current?.click()} className="w-24 h-20 border-2 border-dashed rounded flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors gap-1" data-testid="btn-upload-end-photo">
+                          {uploadingPhoto === "end" ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Camera className="h-5 w-5" /><span className="text-xs">Upload</span></>}
+                        </button>
                       )}
                     </div>
                   </div>

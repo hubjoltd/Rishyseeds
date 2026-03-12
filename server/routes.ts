@@ -548,11 +548,13 @@ export async function registerRoutes(
 
   // === DASHBOARD ROUTES ===
   app.get(api.dashboard.stats.path, async (req, res) => {
-    const [stats, allLots, allBalances, allLocations] = await Promise.all([
+    const [stats, allLots, allBalances, allLocations, allPackaging, allOutward] = await Promise.all([
       storage.getDashboardStats(),
       storage.getLots(),
       storage.getStockBalances(),
       storage.getLocations(),
+      storage.getPackagingOutputs(),
+      storage.getOutwardRecords(),
     ]);
 
     const activeLots = allLots.filter(l => l.status === 'active');
@@ -598,12 +600,56 @@ export async function registerRoutes(
       .sort((a, b) => b.stock - a.stock)
       .slice(0, 8);
 
+    const lotMap: Record<number, string> = {};
+    allLots.forEach(l => { lotMap[l.id] = l.lotNumber; });
+
+    const recentActivity: { id: string; type: string; label: string; detail: string; date: string }[] = [];
+
+    allLots.slice(0, 5).forEach(lot => {
+      if (lot.createdAt) {
+        recentActivity.push({
+          id: `inward-${lot.id}`,
+          type: 'inward',
+          label: `Inward: ${lot.lotNumber}`,
+          detail: `${lot.initialQuantity} kg received`,
+          date: lot.createdAt instanceof Date ? lot.createdAt.toISOString() : String(lot.createdAt),
+        });
+      }
+    });
+
+    allPackaging.slice(0, 5).forEach(p => {
+      if (p.createdAt) {
+        recentActivity.push({
+          id: `pkg-${p.id}`,
+          type: 'packaging',
+          label: `Packaged: ${lotMap[p.lotId] || `Lot ${p.lotId}`}`,
+          detail: `${p.numberOfPackets} x ${p.packetSize}`,
+          date: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt),
+        });
+      }
+    });
+
+    allOutward.slice(0, 5).forEach(o => {
+      if (o.createdAt) {
+        recentActivity.push({
+          id: `out-${o.id}`,
+          type: 'outward',
+          label: `Dispatched: ${lotMap[o.lotId] || `Lot ${o.lotId}`}`,
+          detail: `${o.quantity} ${o.stockForm === 'packed' ? 'pkts' : 'kg'} to ${o.destinationName || o.destinationType}`,
+          date: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+        });
+      }
+    });
+
+    recentActivity.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     res.json({
       ...stats,
       lowStockLots,
       lowStockBatches: lowStockLots,
       stockByLot,
       locationData,
+      recentActivity: recentActivity.slice(0, 10),
       pendingPayroll: 0,
     });
   });
@@ -2825,6 +2871,32 @@ export async function registerRoutes(
       res.status(201).json(comment);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to add comment" });
+    }
+  });
+
+  app.patch("/api/expenses/:id/upload-photos", upload.fields([
+    { name: "startingOdometerPhoto", maxCount: 1 },
+    { name: "endOdometerPhoto", maxCount: 1 }
+  ]), async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const expense = await storage.getExpense(id);
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      const files = req.files as Record<string, Express.Multer.File[]>;
+      const updates: Record<string, string> = {};
+      if (files?.startingOdometerPhoto?.[0]) {
+        updates.startingOdometerPhoto = `/uploads/${files.startingOdometerPhoto[0].filename}`;
+      }
+      if (files?.endOdometerPhoto?.[0]) {
+        updates.endOdometerPhoto = `/uploads/${files.endOdometerPhoto[0].filename}`;
+      }
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No photos provided" });
+      }
+      const updated = await storage.updateExpense(id, updates as any);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to upload photos" });
     }
   });
 

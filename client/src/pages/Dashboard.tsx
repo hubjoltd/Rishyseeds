@@ -1,4 +1,5 @@
 import { useDashboardStats } from "@/hooks/use-dashboard";
+import { useQuery } from "@tanstack/react-query";
 import { StatsCard } from "@/components/StatsCard";
 import {
   Package,
@@ -8,7 +9,13 @@ import {
   Activity,
   ArrowUpRight,
   MapPin,
-  Boxes
+  Boxes,
+  ArrowDownToLine,
+  PackageCheck,
+  Truck,
+  UserCheck,
+  ClipboardList,
+  Navigation
 } from "lucide-react";
 import {
   BarChart,
@@ -25,14 +32,42 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
 
 const CHART_COLORS = [
   "#22c55e", "#3b82f6", "#f59e0b", "#ef4444",
   "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"
 ];
 
+function activityIcon(type: string) {
+  switch (type) {
+    case "inward": return <ArrowDownToLine className="h-3.5 w-3.5 text-green-600" />;
+    case "packaging": return <PackageCheck className="h-3.5 w-3.5 text-blue-600" />;
+    case "outward": return <Truck className="h-3.5 w-3.5 text-orange-600" />;
+    case "trip": return <Navigation className="h-3.5 w-3.5 text-purple-600" />;
+    case "task": return <ClipboardList className="h-3.5 w-3.5 text-cyan-600" />;
+    case "attendance": return <UserCheck className="h-3.5 w-3.5 text-emerald-600" />;
+    default: return <Activity className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
+}
+
+function activityBadgeColor(type: string) {
+  const map: Record<string, string> = {
+    inward: "bg-green-50 text-green-700 border-green-200",
+    packaging: "bg-blue-50 text-blue-700 border-blue-200",
+    outward: "bg-orange-50 text-orange-700 border-orange-200",
+    trip: "bg-purple-50 text-purple-700 border-purple-200",
+    task: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    attendance: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  };
+  return map[type] || "bg-muted text-muted-foreground border-muted";
+}
+
 export default function Dashboard() {
   const { data: stats, isLoading } = useDashboardStats();
+  const { data: feedsData } = useQuery<any[]>({
+    queryKey: ["/api/feeds"],
+  });
 
   if (isLoading) {
     return (
@@ -56,6 +91,11 @@ export default function Dashboard() {
   const activeLots: number = (stats as any)?.activeLots ?? stats?.activeBatches ?? 0;
   const totalPackedPackets: number = (stats as any)?.totalPackedPackets ?? 0;
   const totalPackagingBags: number = (stats as any)?.totalPackagingBags ?? 0;
+
+  const recentInventoryActivity: { id: string; type: string; label: string; detail: string; date: string }[] =
+    (stats as any)?.recentActivity || [];
+
+  const employeeFeeds: any[] = feedsData?.slice(0, 8) || [];
 
   const shortName = (name: string) => name.length > 12 ? name.slice(0, 12) + ".." : name;
 
@@ -182,6 +222,78 @@ export default function Dashboard() {
                 })
               )}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="w-4 h-4 text-primary" />
+              Recent Inventory Activity
+            </CardTitle>
+            <CardDescription>Latest inward, packaging, and dispatch events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentInventoryActivity.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                <Package className="w-8 h-8 mb-2 opacity-30" />
+                <p className="text-sm">No recent inventory activity</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentInventoryActivity.map((item) => (
+                  <div key={item.id} className="flex items-start gap-3 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+                    <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${activityBadgeColor(item.type)}`}>
+                      {activityIcon(item.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.label}</p>
+                      <p className="text-xs text-muted-foreground truncate">{item.detail}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {format(new Date(item.date), "d MMM")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="w-4 h-4 text-primary" />
+              Employee Activity Feed
+            </CardTitle>
+            <CardDescription>Recent field trips, tasks, and attendance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {employeeFeeds.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                <Users className="w-8 h-8 mb-2 opacity-30" />
+                <p className="text-sm">No recent employee activity</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {employeeFeeds.map((feed: any) => (
+                  <div key={feed.id} className="flex items-start gap-3 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+                    <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${activityBadgeColor(feed.actionType || feed.type)}`}>
+                      {activityIcon(feed.actionType || feed.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{feed.employeeName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{feed.action}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {feed.dateTime ? format(new Date(feed.dateTime), "d MMM") : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
