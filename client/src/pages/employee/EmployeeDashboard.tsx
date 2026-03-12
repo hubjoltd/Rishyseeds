@@ -85,9 +85,9 @@ async function captureLocation(): Promise<{ latitude: string; longitude: string;
     return { latitude: lat.toString(), longitude: lng.toString(), locationName };
   } catch (err: any) {
     const code = err?.code;
-    if (code === 1) console.warn("Location permission denied — the app webview may not have location permission enabled");
-    else if (code === 2) console.warn("Location unavailable — GPS may be off or no signal");
-    else if (code === 3) console.warn("Location request timed out — GPS took too long");
+    if (code === 1) console.warn("Location permission denied - the app webview may not have location permission enabled");
+    else if (code === 2) console.warn("Location unavailable - GPS may be off or no signal");
+    else if (code === 3) console.warn("Location request timed out - GPS took too long");
     else console.warn("Location capture failed:", err?.message || err);
     return null;
   }
