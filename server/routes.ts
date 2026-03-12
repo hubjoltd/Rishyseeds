@@ -1035,8 +1035,8 @@ export async function registerRoutes(
       const trips = await storage.getTripsByEmployee(empId);
       const tripsWithVisits = await Promise.all(
         trips.map(async (trip) => {
-          const detail = await storage.getTripDetail(trip.id);
-          return { ...trip, visits: detail?.visits || [], visitCount: detail?.visits?.length || 0 };
+          const visits = await storage.getTripVisits(trip.id);
+          return { ...trip, visits: visits || [], visitCount: visits?.length || 0 };
         })
       );
       res.json(tripsWithVisits);
@@ -2737,6 +2737,7 @@ export async function registerRoutes(
   // === FEEDS ROUTES ===
   app.get("/api/feeds", async (req: any, res) => {
     try {
+      const filterEmpId = req.query.employeeId ? Number(req.query.employeeId) : null;
       const [allEmps, allTasks, allTrips, allAttendance] = await Promise.all([
         storage.getEmployees(),
         storage.getTasks(),
@@ -2745,8 +2746,10 @@ export async function registerRoutes(
       ]);
       const empMap = Object.fromEntries(allEmps.map(e => [e.id, e]));
       const feeds: any[] = [];
+      const matchesFilter = (empId: number) => !filterEmpId || empId === filterEmpId;
 
       for (const task of allTasks) {
+        if (!matchesFilter(task.employeeDbId)) continue;
         const emp = empMap[task.employeeDbId];
         const empName = emp?.fullName || "Unknown";
         const empDept = emp?.department || "NA";
@@ -2762,6 +2765,7 @@ export async function registerRoutes(
       }
 
       for (const trip of allTrips) {
+        if (!matchesFilter(trip.employeeId)) continue;
         const emp = empMap[trip.employeeId];
         const empName = emp?.fullName || "Unknown";
         const empDept = emp?.department || "NA";
@@ -2783,6 +2787,7 @@ export async function registerRoutes(
       }
 
       for (const att of allAttendance) {
+        if (!matchesFilter(att.employeeId)) continue;
         const emp = empMap[att.employeeId];
         const empName = emp?.fullName || "Unknown";
         const empDept = emp?.department || "NA";

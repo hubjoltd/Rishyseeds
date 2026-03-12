@@ -281,7 +281,28 @@ export default function EmployeeProfile() {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
-    enabled: !!empId && (activeTab === "attendance" || activeTab === "live"),
+    enabled: !!empId,
+  });
+
+  const { data: employeeTasks = [], isLoading: tasksLoading } = useQuery<any[]>({
+    queryKey: ["/api/tasks", "employee", empId],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      const all = await res.json();
+      return all.filter((t: any) => t.employeeDbId === empId);
+    },
+    enabled: !!empId,
+  });
+
+  const { data: employeeFeeds = [], isLoading: feedsLoading } = useQuery<any[]>({
+    queryKey: ["/api/feeds", "employee", empId],
+    queryFn: async () => {
+      const res = await fetch(`/api/feeds?employeeId=${empId}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId,
   });
 
   if (empLoading) {
@@ -315,31 +336,6 @@ export default function EmployeeProfile() {
     }
     return null;
   })();
-
-  const allVisits: Array<{ visitId: number; tripId: number; priority: string; status: string; createdBy: string; startedAt: string | null; completedAt: string | null; address: string }> = trips.flatMap(trip =>
-    (trip.visits || []).map(v => ({
-      visitId: v.id,
-      tripId: trip.id,
-      priority: "Medium",
-      status: v.status === "punched_out" ? "Completed" : "In Progress",
-      createdBy: employee.fullName,
-      startedAt: v.punchInTime,
-      completedAt: v.punchOutTime,
-      address: v.punchInLocationName || v.punchOutLocationName || "-",
-    }))
-  ).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
-
-  const feeds = trips.flatMap(trip => {
-    const items: Array<{ action: string; platform: string; time: string | null }> = [];
-    if (trip.startTime) items.push({ action: "Task Started", platform: "ANDROID", time: trip.startTime });
-    (trip.visits || []).forEach(v => {
-      if (v.punchInTime) items.push({ action: "Punched In", platform: "ANDROID", time: v.punchInTime });
-      if (v.punchOutTime) items.push({ action: "Punched Out", platform: "ANDROID", time: v.punchOutTime });
-      if (v.punchOutTime) items.push({ action: "Task Completed", platform: "ANDROID", time: v.punchOutTime });
-    });
-    if (trip.endTime) items.push({ action: "Task Completed", platform: "ANDROID", time: trip.endTime });
-    return items;
-  }).sort((a, b) => (b.time || "").localeCompare(a.time || ""));
 
   const expenses = trips.filter(t => t.expenseAmount && Number(t.expenseAmount) > 0);
 
@@ -576,60 +572,58 @@ export default function EmployeeProfile() {
           <div className="space-y-3">
             <Card className="border shadow-sm">
               <CardContent className="p-0">
-                {tripsLoading ? (
+                {tasksLoading ? (
                   <div className="p-8 text-center"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Task Code</TableHead>
                         <TableHead>Title</TableHead>
                         <TableHead>Priority</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Stage</TableHead>
-                        <TableHead>Type</TableHead>
                         <TableHead>Created By</TableHead>
                         <TableHead>Started</TableHead>
                         <TableHead>Completed</TableHead>
-                        <TableHead>Address</TableHead>
+                        <TableHead>Due Date</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allVisits.length === 0 ? (
+                      {employeeTasks.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-muted-foreground py-10">
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                            No tasks found
+                            No tasks assigned to this employee
                           </TableCell>
                         </TableRow>
                       ) : (
-                        allVisits.map((v) => (
-                          <TableRow key={`${v.tripId}-${v.visitId}`} data-testid={`row-task-${v.visitId}`}>
+                        employeeTasks.map((t) => (
+                          <TableRow key={t.id} data-testid={`row-task-${t.id}`}>
                             <TableCell>
-                              <span className="text-primary font-medium text-sm cursor-pointer hover:underline">
-                                CHK-{String(v.visitId).padStart(5, "0")}
-                              </span>
+                              <span className="text-primary font-medium text-sm">{t.taskCode}</span>
+                            </TableCell>
+                            <TableCell className="text-sm max-w-[200px] truncate">{t.title || "-"}</TableCell>
+                            <TableCell>
+                              <Badge variant={t.priority === "high" ? "destructive" : "secondary"} className="text-xs capitalize">{t.priority || "medium"}</Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="secondary" className="text-xs">{v.priority}</Badge>
+                              <Badge variant={t.status === "completed" ? "default" : t.status === "in_progress" ? "secondary" : "outline"} className="text-xs capitalize">
+                                {t.status?.replace("_", " ") || "pending"}
+                              </Badge>
                             </TableCell>
-                            <TableCell>
-                              <Badge variant={v.status === "Completed" ? "default" : "secondary"} className="text-xs">{v.status}</Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">NA</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">Visit</TableCell>
-                            <TableCell className="text-sm">{v.createdBy}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{formatDT(v.startedAt)}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{v.completedAt ? formatDT(v.completedAt) : "NA"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={v.address}>{v.address}</TableCell>
+                            <TableCell className="text-sm">{t.createdByName || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{t.startedAt ? formatDT(t.startedAt) : "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{t.completedAt ? formatDT(t.completedAt) : "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{t.dueDate ? formatDate(t.dueDate) : "-"}</TableCell>
                           </TableRow>
                         ))
                       )}
                     </TableBody>
                   </Table>
                 )}
-                {allVisits.length > 0 && (
+                {employeeTasks.length > 0 && (
                   <div className="px-4 py-2 border-t text-xs text-muted-foreground">
-                    {allVisits.length} – {allVisits.length} of {allVisits.length} items
+                    Total {employeeTasks.length} tasks
                   </div>
                 )}
               </CardContent>
@@ -763,45 +757,49 @@ export default function EmployeeProfile() {
           <div className="space-y-3">
             <Card className="border shadow-sm">
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Platform</TableHead>
-                      <TableHead>IMEI</TableHead>
-                      <TableHead>Date/Time</TableHead>
-                      <TableHead>Friendly Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {feeds.length === 0 ? (
+                {feedsLoading ? (
+                  <div className="p-8 text-center"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
+                ) : (
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-10">
-                          <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          No activity feeds found
-                        </TableCell>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Platform</TableHead>
+                        <TableHead>Intel</TableHead>
+                        <TableHead>Date/Time</TableHead>
+                        <TableHead>Friendly Date</TableHead>
                       </TableRow>
-                    ) : (
-                      feeds.slice(0, 100).map((f, i) => (
-                        <TableRow key={i} data-testid={`row-feed-${i}`}>
-                          <TableCell>
-                            <span className="flex items-center gap-2 text-sm">
-                              <MapPin className="h-3 w-3 text-primary" />
-                              {f.action}
-                            </span>
+                    </TableHeader>
+                    <TableBody>
+                      {employeeFeeds.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-10">
+                            <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                            No activity feeds found
                           </TableCell>
-                          <TableCell className="text-sm">{f.platform}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">NA</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{formatDT(f.time)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{friendlyDate(f.time)}</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-                {feeds.length > 0 && (
+                      ) : (
+                        employeeFeeds.slice(0, 100).map((f: any, i: number) => (
+                          <TableRow key={f.id || i} data-testid={`row-feed-${i}`}>
+                            <TableCell>
+                              <span className="flex items-center gap-2 text-sm">
+                                <MapPin className="h-3 w-3 text-primary" />
+                                {f.action}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm">{f.platform}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{f.intel || "NA"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{formatDT(f.dateTime)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{friendlyDate(f.dateTime)}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+                {employeeFeeds.length > 0 && (
                   <div className="px-4 py-2 border-t text-xs text-muted-foreground">
-                    1 – {Math.min(100, feeds.length)} of {feeds.length} items
+                    1 – {Math.min(100, employeeFeeds.length)} of {employeeFeeds.length} items
                   </div>
                 )}
               </CardContent>
