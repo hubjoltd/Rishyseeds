@@ -1,8 +1,9 @@
-import { useAttendance } from "@/hooks/use-hrms";
+import { useAttendance, useEmployees } from "@/hooks/use-hrms";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState } from "react";
+import type { Employee } from "@shared/schema";
 import {
   Table,
   TableBody,
@@ -18,6 +19,12 @@ export default function Attendance() {
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : undefined;
   
   const { data: attendanceData, isLoading } = useAttendance(formattedDate);
+  const { data: employees } = useEmployees();
+
+  const getEmployeeName = (empId: number) => {
+    const emp = (employees as Employee[] || []).find(e => e.id === empId);
+    return emp ? emp.fullName : `EMP-${empId}`;
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in">
@@ -52,7 +59,7 @@ export default function Attendance() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee ID</TableHead>
+                  <TableHead>Employee</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Shift</TableHead>
                   <TableHead>Check In</TableHead>
@@ -69,7 +76,7 @@ export default function Attendance() {
                 ) : (
                   attendanceData?.map((record) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-medium">{record.employeeId}</TableCell>
+                      <TableCell className="font-medium">{getEmployeeName(record.employeeId)}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
                           record.status === 'present' ? 'bg-green-100 text-green-700' : 
