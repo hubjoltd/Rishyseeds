@@ -62,8 +62,8 @@ export default function Reports() {
   };
 
   const getLotCurrentBalance = (lotId: number): number => {
-    const balances = (stockBalances || []).filter(b => b.lotId === lotId);
-    return balances.reduce((sum, b) => sum + parseBalanceToKg(b), 0);
+    const balances = (stockBalances || []).filter(b => b.lotId === lotId && b.stockForm === 'loose');
+    return balances.reduce((sum, b) => sum + Number(b.quantity), 0);
   };
 
   const handlePrint = () => {
