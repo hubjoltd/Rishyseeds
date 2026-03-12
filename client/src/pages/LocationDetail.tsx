@@ -138,8 +138,18 @@ export default function LocationDetail() {
     }
   };
 
-  // Calculate total stock at location
-  const totalStockAtLocation = locationStockBalances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
+  const parseBalanceToKg = (sb: StockBalance): number => {
+    const qty = Number(sb.quantity);
+    if (sb.stockForm === 'packed' && sb.packetSize) {
+      const s = sb.packetSize.toLowerCase().trim();
+      if (s.endsWith('kg')) return qty * parseFloat(s);
+      if (s.endsWith('g')) return qty * parseFloat(s) / 1000;
+    }
+    return qty;
+  };
+
+  // Calculate total stock at location (converting packed packets → kg)
+  const totalStockAtLocation = locationStockBalances.reduce((sum, sb) => sum + parseBalanceToKg(sb), 0);
 
   useEffect(() => {
     if (location) {

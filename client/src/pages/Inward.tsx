@@ -199,9 +199,19 @@ export default function Inward() {
     return product ? `${product.crop} - ${product.variety}` : "Unknown";
   };
 
+  const parseBalanceToKg = (b: StockBalance): number => {
+    const qty = Number(b.quantity);
+    if (b.stockForm === 'packed' && b.packetSize) {
+      const s = b.packetSize.toLowerCase().trim();
+      if (s.endsWith('kg')) return qty * parseFloat(s);
+      if (s.endsWith('g')) return qty * parseFloat(s) / 1000;
+    }
+    return qty;
+  };
+
   const getLotBalance = (lotId: number) => {
     const balances = stockBalances?.filter((b: StockBalance) => b.lotId === lotId) || [];
-    return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
+    return balances.reduce((sum: number, b: StockBalance) => sum + parseBalanceToKg(b), 0);
   };
 
   const filteredLots = (lots as Lot[] || []).filter((lot: Lot) =>
