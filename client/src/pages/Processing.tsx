@@ -303,13 +303,13 @@ export default function Processing() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date</TableHead>
                   <TableHead>Input Lot</TableHead>
                   <TableHead>Input Qty</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Output Qty</TableHead>
                   <TableHead>Waste</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -324,6 +324,7 @@ export default function Processing() {
                 ) : (
                   filteredRecords.map((record: ProcessingRecord) => (
                     <TableRow key={record.id} data-testid={`row-processing-${record.id}`}>
+                      <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
                       <TableCell className="font-mono">{getLotDetails(record.inputLotId)}</TableCell>
                       <TableCell>{record.inputQuantity} kg</TableCell>
                       <TableCell>
@@ -336,7 +337,6 @@ export default function Processing() {
                           {record.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
                       <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right flex gap-1 justify-end">
                         {record.status === 'pending' && canEditProcessing && (

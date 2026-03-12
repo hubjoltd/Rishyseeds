@@ -43,6 +43,10 @@ export default function Payroll() {
     setPayslipOpen(true);
   };
 
+  const handleDownloadPayslip = (payroll: PayrollType) => {
+    window.open(`/api/payroll/${payroll.id}/download`, "_blank");
+  };
+
   const getEmployeeForPayroll = (employeeId: number) => {
     return employees?.find(e => e.id === employeeId);
   };
@@ -104,14 +108,26 @@ export default function Payroll() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => handleViewPayslip(p)}
-                        data-testid={`button-view-payslip-${p.id}`}
-                      >
-                        <FileText className="w-4 h-4 text-primary" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          title="View Payslip"
+                          onClick={() => handleViewPayslip(p)}
+                          data-testid={`button-view-payslip-${p.id}`}
+                        >
+                          <FileText className="w-4 h-4 text-primary" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Download Payslip PDF"
+                          onClick={() => handleDownloadPayslip(p)}
+                          data-testid={`button-download-payslip-${p.id}`}
+                        >
+                          <Download className="w-4 h-4 text-green-700" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

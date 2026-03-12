@@ -1213,6 +1213,122 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  app.get("/api/payroll/:id/download", async (req, res) => {
+    try {
+      const payrollId = parseInt(req.params.id);
+      const payroll = await storage.getPayroll(payrollId);
+      if (!payroll) return res.status(404).json({ message: "Payroll not found" });
+      const employee = await storage.getEmployee(payroll.employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+      const escHtml = (s: string | null | undefined) => s ? s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : "-";
+      const fmt = (v: number) => v.toLocaleString("en-IN");
+      const monthLabel = (() => {
+        const [y, m] = payroll.month.split("-");
+        const names = ["","JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+        return `${names[parseInt(m)] || m}'${y}`;
+      })();
+      const doj = (employee as any).joinDate ? new Date((employee as any).joinDate).toLocaleDateString("en-IN",{day:"2-digit",month:"2-digit",year:"numeric"}) : "-";
+      const gross = Number(payroll.basicPay) + Number((employee as any).hra||0) + Number((employee as any).da||0) +
+        Number((employee as any).travelAllowance||0) + Number((employee as any).medicalAllowance||0) +
+        Number((employee as any).otherAllowances||0) + Number(payroll.overtimeAmount||0);
+      const profTax = Number((employee as any).professionalTax||0);
+      const totalDed = Number((employee as any).pfDeduction||0) + Number((employee as any).esiDeduction||0) +
+        Number((employee as any).tdsDeduction||0) + profTax +
+        Number((employee as any).otherDeductions||0) + Number(payroll.deductions||0);
+      const leaveDays = Number(payroll.totalDays) - Number(payroll.presentDays);
+      const netPay = Number(payroll.netSalary);
+      const eRow = (label: string, val: number) =>
+        `<tr><td class="el">${label}</td><td class="ec">:</td><td class="ev">${fmt(val)}</td></tr>`;
+      const dRow = (label: string, val: number) =>
+        `<tr><td class="dl">${label}</td><td class="dc">:</td><td class="dv">${fmt(val)}</td></tr>`;
+
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Pay Slip - ${escHtml(payroll.month)}</title>
+<style>
+  @page{size:A4;margin:12mm}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Arial',sans-serif;background:#fff;color:#000;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:760px;margin:20px auto;border:2px solid #000;padding:0}
+  .co-header{text-align:center;padding:18px 20px 12px;border-bottom:1px solid #000}
+  .co-header .co-name{font-size:15px;font-weight:900;letter-spacing:0.5px;text-transform:uppercase}
+  .co-header .slip-title{font-size:13px;font-weight:700;margin-top:4px;text-transform:uppercase}
+  .emp-info{padding:10px 16px;border-bottom:1px solid #000}
+  .emp-info table{width:100%;border-collapse:collapse}
+  .emp-info td{padding:3px 6px;font-size:11.5px;vertical-align:top}
+  .emp-info .lbl{font-weight:700;width:100px;white-space:nowrap}
+  .emp-info .sep{width:14px;text-align:center}
+  .emp-info .val{font-weight:700}
+  .sal-grid{display:flex;border-bottom:1px solid #000}
+  .earn-col{flex:1;border-right:1px solid #000}
+  .ded-col{flex:1}
+  .col-hdr{display:flex;justify-content:space-between;padding:5px 8px;font-size:11.5px;font-weight:900;border-bottom:1px solid #000;text-transform:uppercase}
+  .st{width:100%;border-collapse:collapse}
+  .st .el,.st .dl{padding:4px 8px;font-size:11px;width:55%}
+  .st .ec,.st .dc{padding:4px 2px;font-size:11px;width:8%;text-align:center}
+  .st .ev,.st .dv{padding:4px 8px;font-size:11px;width:37%;text-align:right;font-weight:600}
+  .st tr{border-bottom:1px dotted #ccc}
+  .gross-row,.total-row{display:flex;justify-content:space-between;padding:5px 8px;font-size:12px;font-weight:900;border-top:1px solid #000;text-transform:uppercase}
+  .net-row{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid #000;font-size:12.5px;font-weight:900;text-transform:uppercase}
+  .slip-footer{text-align:center;padding:10px 16px;font-size:11px;font-style:italic}
+  @media print{body{background:#fff}.page{border:2px solid #000;max-width:100%;margin:0}}
+</style></head><body><div class="page">
+  <div class="co-header">
+    <div class="co-name">RISHI HYBRID SEEDS PVT LTD, SECUNDERABAD</div>
+    <div class="slip-title">Pay Slip For The Month Of ${monthLabel}</div>
+  </div>
+  <div class="emp-info"><table><tr>
+    <td><table>
+      <tr><td class="lbl">EMP. NAME</td><td class="sep">:</td><td class="val">${escHtml(employee.fullName)}</td></tr>
+      <tr><td class="lbl">DEPT.</td><td class="sep">:</td><td class="val">${escHtml(employee.department)}</td></tr>
+      <tr><td class="lbl">DESG.</td><td class="sep">:</td><td class="val">${escHtml(employee.role)}</td></tr>
+      <tr><td class="lbl">PRESENT DAYS</td><td class="sep">:</td><td class="val">${payroll.presentDays} / ${payroll.totalDays}</td></tr>
+    </table></td>
+    <td style="width:50%"><table>
+      <tr><td class="lbl">D.O.J</td><td class="sep">:</td><td class="val">${doj}</td></tr>
+      <tr><td class="lbl">EMP CODE</td><td class="sep">:</td><td class="val">${escHtml(employee.employeeId)}</td></tr>
+      <tr><td class="lbl">UAN</td><td class="sep">:</td><td class="val">${escHtml((employee as any).uan)||"0"}</td></tr>
+      <tr><td class="lbl">LEAVE DAYS</td><td class="sep">:</td><td class="val">${leaveDays}</td></tr>
+    </table></td>
+  </tr></table></div>
+  <div class="sal-grid">
+    <div class="earn-col">
+      <div class="col-hdr"><span>EARNINGS</span><span>RS.</span></div>
+      <table class="st">
+        ${eRow("BASIC", Number(payroll.basicPay))}
+        ${eRow("HRA", Number((employee as any).hra||0))}
+        ${eRow("DA", Number((employee as any).da||0))}
+        ${eRow("CONV", Number((employee as any).travelAllowance||0))}
+        ${eRow("SPL ALLOW", Number((employee as any).otherAllowances||0))}
+        ${eRow("MED.ALLOW", Number((employee as any).medicalAllowance||0))}
+        ${eRow("OVERTIME", Number(payroll.overtimeAmount||0))}
+      </table>
+      <div class="gross-row"><span>GROSS</span><span>:</span><span>${fmt(gross)}</span></div>
+    </div>
+    <div class="ded-col">
+      <div class="col-hdr"><span>DEDUCTIONS</span><span>:</span><span>RS</span></div>
+      <table class="st">
+        ${dRow("PF", Number((employee as any).pfDeduction||0))}
+        ${dRow("VPF", 0)}
+        ${dRow("ESI", Number((employee as any).esiDeduction||0))}
+        ${dRow("PROF.TAX", profTax)}
+        ${dRow("I.TAX (TDS)", Number((employee as any).tdsDeduction||0))}
+        ${dRow("SAL.ADV", 0)}
+        ${dRow("OTHERS", Number((employee as any).otherDeductions||0)+Number(payroll.deductions||0))}
+      </table>
+      <div class="total-row"><span>TOTAL</span><span>:</span><span>${fmt(totalDed)}</span></div>
+    </div>
+  </div>
+  <div class="net-row"><span>NET TAKE HOME</span><span>:</span><span>${fmt(netPay)}</span></div>
+  <div class="slip-footer">This is computer generated Pay Slip, Signature not required</div>
+</div></body></html>`;
+      res.setHeader("Content-Type","text/html");
+      res.setHeader("Content-Disposition",`inline; filename="payslip-${payroll.month}-${employee.employeeId}.html"`);
+      res.send(html);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to generate payslip" });
+    }
+  });
+
   app.get("/api/products", async (req, res) => {
     const products = await storage.getProducts();
     res.json(products);

@@ -388,6 +388,7 @@ export default function Outward() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date</TableHead>
                   <TableHead>Lot</TableHead>
                   <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
@@ -395,7 +396,6 @@ export default function Outward() {
                   <TableHead className="text-right">Quantity</TableHead>
                   <TableHead>Variety</TableHead>
                   <TableHead>Invoice</TableHead>
-                  <TableHead>Date</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -410,6 +410,7 @@ export default function Outward() {
                 ) : (
                   filteredRecords.map((record: OutwardRecord) => (
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
+                      <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
                       <TableCell className="font-mono text-sm">{getLotDetails(record.lotId)}</TableCell>
                       <TableCell>
                         <div className="font-medium">{getLocationName(record.locationId)}</div>
@@ -432,7 +433,6 @@ export default function Outward() {
                       </TableCell>
                       <TableCell>{record.variety || '-'}</TableCell>
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
-                      <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
                       <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right">
                         {canDeleteOutward && (
