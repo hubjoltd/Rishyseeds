@@ -586,6 +586,44 @@ export default function EmployeeProfile() {
                   ))}
                 </div>
               </div>
+
+              {/* Check-in details cards */}
+              {playbackDateTrips.flatMap((trip, ti) =>
+                (trip.visits || []).map((v, vi) => ({ v, idx: ti * 10 + vi + 1 }))
+              ).length > 0 && (
+                <div className="bg-card border rounded-lg p-4 space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <MapPin className="h-3 w-3" /> Check-ins
+                  </p>
+                  <div className="space-y-2">
+                    {playbackDateTrips.flatMap((trip, ti) =>
+                      (trip.visits || []).map((v, vi) => ({ v, idx: ti * 10 + vi + 1 }))
+                    ).map(({ v, idx }) => (
+                      <div key={idx} className="rounded-md border bg-muted/30 p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">{idx}</div>
+                          <span className="text-xs font-semibold text-foreground">Check-in {idx}</span>
+                        </div>
+                        {(v.punchInLocationName || v.punchOutLocationName) && (
+                          <p className="text-[11px] text-muted-foreground leading-tight pl-7">
+                            {v.punchInLocationName || v.punchOutLocationName}
+                          </p>
+                        )}
+                        <div className="grid grid-cols-2 gap-1 pl-7">
+                          <div className="space-y-0.5">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Punch In</p>
+                            <p className="text-xs font-bold text-green-600">{fmtPopupTime(v.punchInTime as unknown as string)}</p>
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Punch Out</p>
+                            <p className="text-xs font-bold text-red-500">{fmtPopupTime(v.punchOutTime as unknown as string)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
