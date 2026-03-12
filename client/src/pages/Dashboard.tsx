@@ -4,38 +4,31 @@ import {
   Package,
   Users,
   AlertTriangle,
-  IndianRupee,
-  Activity
+  TrendingDown,
+  Activity,
+  ArrowUpRight,
+  MapPin,
+  Boxes
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
+  Cell
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
-// Mock data for charts (backend could provide this later)
-const stockTrends = [
-  { name: 'Jan', stock: 4000 },
-  { name: 'Feb', stock: 3000 },
-  { name: 'Mar', stock: 2000 },
-  { name: 'Apr', stock: 2780 },
-  { name: 'May', stock: 1890 },
-  { name: 'Jun', stock: 2390 },
-];
-
-const productionData = [
-  { name: 'Week 1', output: 2400 },
-  { name: 'Week 2', output: 1398 },
-  { name: 'Week 3', output: 9800 },
-  { name: 'Week 4', output: 3908 },
+const CHART_COLORS = [
+  "#22c55e", "#3b82f6", "#f59e0b", "#ef4444",
+  "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"
 ];
 
 export default function Dashboard() {
@@ -54,23 +47,35 @@ export default function Dashboard() {
     );
   }
 
+  const stockByLot: { name: string; stock: number }[] = (stats as any)?.stockByLot || [];
+  const locationData: { name: string; stock: number }[] = (stats as any)?.locationData || [];
+  const lowStockLots: { id: number; lotNumber: string; initialQuantity: string; currentBalance: number }[] =
+    (stats as any)?.lowStockLots || [];
+
+  const totalLooseStock: number = (stats as any)?.totalLooseStock ?? stats?.totalStock ?? 0;
+  const activeLots: number = (stats as any)?.activeLots ?? stats?.activeBatches ?? 0;
+  const totalPackedPackets: number = (stats as any)?.totalPackedPackets ?? 0;
+  const totalPackagingBags: number = (stats as any)?.totalPackagingBags ?? 0;
+
+  const shortName = (name: string) => name.length > 12 ? name.slice(0, 12) + ".." : name;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
         <h2 className="text-3xl font-bold tracking-tight font-display text-primary">Dashboard</h2>
-        <p className="text-muted-foreground">Overview of seed production and operations.</p>
+        <p className="text-muted-foreground">Real-time overview of seed stock and operations.</p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
-          title="Total Active Batches"
-          value={stats?.activeBatches ?? 0}
+          title="Active Lots"
+          value={activeLots}
           icon={Package}
           className="border-l-blue-500"
         />
         <StatsCard
-          title="Total Stock (KG)"
-          value={stats?.totalStock?.toLocaleString() ?? 0}
+          title="Total Loose Stock (KG)"
+          value={totalLooseStock.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           icon={Activity}
           className="border-l-green-500"
         />
@@ -81,63 +86,152 @@ export default function Dashboard() {
           className="border-l-orange-500"
         />
         <StatsCard
-          title="Pending Payroll"
-          value={stats?.pendingPayroll ?? 0}
-          icon={IndianRupee}
-          className="border-l-red-500"
+          title="Total Packed Packets"
+          value={(totalPackedPackets + totalPackagingBags).toLocaleString()}
+          icon={Boxes}
+          className="border-l-purple-500"
         />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4 shadow-sm">
           <CardHeader>
-            <CardTitle>Stock Trends</CardTitle>
+            <CardTitle>Current Stock by Lot (KG)</CardTitle>
+            <CardDescription>Live loose seed balance per active lot</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
-            <ResponsiveContainer width="100%" height={350}>
-              <AreaChart data={stockTrends}>
-                <defs>
-                  <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}kg`} />
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <Tooltip />
-                <Area type="monotone" dataKey="stock" stroke="var(--primary)" fillOpacity={1} fill="url(#colorStock)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {stockByLot.length === 0 ? (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No stock data available
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={stockByLot} margin={{ top: 5, right: 20, left: 0, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="#888888"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                    tickFormatter={shortName}
+                  />
+                  <YAxis
+                    stroke="#888888"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${v}kg`}
+                  />
+                  <Tooltip formatter={(value: number) => [`${value.toFixed(2)} kg`, "Loose Stock"]} />
+                  <Bar dataKey="stock" radius={[4, 4, 0, 0]}>
+                    {stockByLot.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
         <Card className="col-span-3 shadow-sm">
           <CardHeader>
-            <CardTitle>Recent Low Stock Alerts</CardTitle>
+            <CardTitle>
+              {lowStockLots.length > 0 ? (
+                <span className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="w-5 h-5" />
+                  Low Stock Alerts
+                </span>
+              ) : "Low Stock Alerts"}
+            </CardTitle>
+            <CardDescription>Lots below 20% of initial quantity</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {stats?.lowStockBatches?.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No low stock alerts.</p>
+            <div className="space-y-3">
+              {lowStockLots.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                  <Activity className="w-8 h-8 mb-2 text-green-500" />
+                  <p className="text-sm font-medium">All stock levels healthy</p>
+                  <p className="text-xs">No lots below 20% threshold</p>
+                </div>
               ) : (
-                stats?.lowStockBatches?.map((batch: any) => (
-                  <div key={batch.id} className="flex items-center justify-between p-4 border rounded-lg bg-red-50/50 border-red-100 dark:bg-red-900/10 dark:border-red-900/50">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">{batch.crop} - {batch.variety}</p>
-                      <p className="text-xs text-muted-foreground">Batch: {batch.batchNumber}</p>
+                lowStockLots.map((lot) => {
+                  const pct = Math.round((lot.currentBalance / Number(lot.initialQuantity)) * 100);
+                  return (
+                    <div
+                      key={lot.id}
+                      className="flex items-center justify-between p-3 border rounded-lg bg-red-50/50 border-red-100 dark:bg-red-900/10 dark:border-red-900/50"
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium leading-none font-mono">{lot.lotNumber}</p>
+                        <p className="text-xs text-muted-foreground">Initial: {lot.initialQuantity} kg</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1 text-red-600 font-bold text-sm">
+                          <TrendingDown className="w-3 h-3" />
+                          {lot.currentBalance.toFixed(2)} kg
+                        </div>
+                        <Badge variant="destructive" className="text-xs">{pct}% remaining</Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-red-600 font-bold text-sm">
-                      <AlertTriangle className="w-4 h-4" />
-                      {batch.currentQuantity} kg
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-primary" />
+            Stock by Location (KG)
+          </CardTitle>
+          <CardDescription>Current loose seed stock distributed across all storage locations</CardDescription>
+        </CardHeader>
+        <CardContent className="pl-2">
+          {locationData.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-muted-foreground">
+              No location data available
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={locationData} layout="vertical" margin={{ top: 5, right: 40, left: 8, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis
+                  type="number"
+                  stroke="#888888"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${v}kg`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  stroke="#888888"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={160}
+                  tickFormatter={(v: string) => v.length > 22 ? v.slice(0, 22) + ".." : v}
+                />
+                <Tooltip formatter={(value: number) => [`${value.toFixed(2)} kg`, "Loose Stock"]} />
+                <Bar dataKey="stock" radius={[0, 4, 4, 0]}>
+                  {locationData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -756,26 +756,40 @@ export class DatabaseStorage implements IStorage {
 
   // Stats
   async getDashboardStats() {
-    const [stock] = await db.select({ 
-      total: sql<number>`sum(current_quantity)` 
-    }).from(batches);
+    const [looseStock] = await db.select({
+      total: sql<number>`sum(cast(quantity as numeric))`
+    }).from(stockBalances).where(eq(stockBalances.stockForm, 'loose'));
 
-    const [activeBatches] = await db.select({
+    const [packedStock] = await db.select({
+      total: sql<number>`sum(cast(quantity as numeric))`
+    }).from(stockBalances).where(eq(stockBalances.stockForm, 'packed'));
+
+    const [activeLots] = await db.select({
       count: sql<number>`count(*)`
-    }).from(batches).where(eq(batches.status, 'active'));
+    }).from(lots).where(eq(lots.status, 'active'));
 
     const [emp] = await db.select({
       count: sql<number>`count(*)`
     }).from(employees).where(eq(employees.status, 'active'));
 
-    // Mock payroll sum for now
-    const monthlyPayroll = 0; 
+    const [totalOutward] = await db.select({
+      total: sql<number>`sum(cast(quantity as numeric))`
+    }).from(outwardRecords);
+
+    const [packagingCount] = await db.select({
+      total: sql<number>`sum(number_of_packets)`
+    }).from(packagingOutputs);
 
     return {
-      totalStock: Number(stock?.total || 0),
-      activeBatches: Number(activeBatches?.count || 0),
+      totalStock: Number(looseStock?.total || 0),
+      activeBatches: Number(activeLots?.count || 0),
+      activeLots: Number(activeLots?.count || 0),
+      totalLooseStock: Number(looseStock?.total || 0),
+      totalPackedPackets: Number(packedStock?.total || 0),
       totalEmployees: Number(emp?.count || 0),
-      monthlyPayroll
+      totalOutwardKg: Number(totalOutward?.total || 0),
+      totalPackagingBags: Number(packagingCount?.total || 0),
+      monthlyPayroll: 0
     };
   }
 

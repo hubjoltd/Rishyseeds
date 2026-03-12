@@ -548,11 +548,63 @@ export async function registerRoutes(
 
   // === DASHBOARD ROUTES ===
   app.get(api.dashboard.stats.path, async (req, res) => {
-    const stats = await storage.getDashboardStats();
+    const [stats, allLots, allBalances, allLocations] = await Promise.all([
+      storage.getDashboardStats(),
+      storage.getLots(),
+      storage.getStockBalances(),
+      storage.getLocations(),
+    ]);
+
+    const activeLots = allLots.filter(l => l.status === 'active');
+
+    const lotBalances = activeLots.map(lot => {
+      const looseKg = allBalances
+        .filter(b => b.lotId === lot.id && b.stockForm === 'loose')
+        .reduce((sum, b) => sum + Number(b.quantity), 0);
+      return { lot, looseKg };
+    });
+
+    const lowStockLots = lotBalances
+      .filter(({ lot, looseKg }) => looseKg > 0 && looseKg < Number(lot.initialQuantity) * 0.2)
+      .slice(0, 5)
+      .map(({ lot, looseKg }) => ({
+        id: lot.id,
+        lotNumber: lot.lotNumber,
+        initialQuantity: lot.initialQuantity,
+        currentBalance: Math.round(looseKg * 100) / 100,
+      }));
+
+    const stockByLot = lotBalances
+      .filter(({ looseKg }) => looseKg > 0)
+      .map(({ lot, looseKg }) => ({
+        name: lot.lotNumber,
+        stock: Math.round(looseKg * 100) / 100,
+      }))
+      .slice(0, 10);
+
+    const locationMap: Record<number, string> = {};
+    allLocations.forEach(loc => { locationMap[loc.id] = loc.name; });
+
+    const stockByLocation: Record<string, number> = {};
+    allBalances
+      .filter(b => b.stockForm === 'loose' && Number(b.quantity) > 0)
+      .forEach(b => {
+        const locName = locationMap[b.locationId] || `Loc ${b.locationId}`;
+        stockByLocation[locName] = (stockByLocation[locName] || 0) + Number(b.quantity);
+      });
+
+    const locationData = Object.entries(stockByLocation)
+      .map(([name, stock]) => ({ name, stock: Math.round(stock * 100) / 100 }))
+      .sort((a, b) => b.stock - a.stock)
+      .slice(0, 8);
+
     res.json({
       ...stats,
-      pendingPayroll: 0, // Mock
-      lowStockBatches: [] // Mock
+      lowStockLots,
+      lowStockBatches: lowStockLots,
+      stockByLot,
+      locationData,
+      pendingPayroll: 0,
     });
   });
 
