@@ -210,8 +210,8 @@ export default function Inward() {
   };
 
   const getLotBalance = (lotId: number) => {
-    const balances = stockBalances?.filter((b: StockBalance) => b.lotId === lotId) || [];
-    return balances.reduce((sum: number, b: StockBalance) => sum + parseBalanceToKg(b), 0);
+    const balances = stockBalances?.filter((b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose') || [];
+    return balances.reduce((sum: number, b: StockBalance) => sum + Number(b.quantity), 0);
   };
 
   const filteredLots = (lots as Lot[] || []).filter((lot: Lot) =>
@@ -441,7 +441,7 @@ export default function Inward() {
                   <TableHead>Lot Number</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Initial Qty</TableHead>
-                  <TableHead>Current Balance</TableHead>
+                  <TableHead>Current Balance (Loose)</TableHead>
                   <TableHead>Stock Form</TableHead>
                   <TableHead>Inward Date</TableHead>
                   <TableHead>Created By</TableHead>
