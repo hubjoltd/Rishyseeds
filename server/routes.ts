@@ -2045,104 +2045,214 @@ export async function registerRoutes(
       const gross = Number(payroll.basicPay) + Number((employee as any).hra || 0) + Number((employee as any).da || 0) +
         Number((employee as any).travelAllowance || 0) + Number((employee as any).medicalAllowance || 0) +
         Number((employee as any).otherAllowances || 0) + Number(payroll.overtimeAmount || 0);
+      const profTax = Number((employee as any).professionalTax || 0);
       const totalDed = Number((employee as any).pfDeduction || 0) + Number((employee as any).esiDeduction || 0) +
-        Number((employee as any).tdsDeduction || 0) + Number((employee as any).otherDeductions || 0) +
-        Number(payroll.deductions || 0);
+        Number((employee as any).tdsDeduction || 0) + profTax +
+        Number((employee as any).otherDeductions || 0) + Number(payroll.deductions || 0);
       const leaveDays = Number(payroll.totalDays) - Number(payroll.presentDays);
       const netPay = Number(payroll.netSalary);
 
+      const fmt = (v: number) => v.toLocaleString("en-IN");
       const earRow = (label: string, val: number) => val > 0
-        ? `<div class="sal-row"><span class="comp">${label}</span><span class="amt">Rs. ${val.toLocaleString()}</span></div>` : "";
+        ? `<tr><td class="ec">${label}</td><td class="ev">&#8377; ${fmt(val)}</td></tr>` : "";
       const dedRow = (label: string, val: number) => val > 0
-        ? `<div class="sal-row ded"><span class="comp">${label}</span><span class="amt" style="color:#b91c1c">Rs. ${val.toLocaleString()}</span></div>` : "";
+        ? `<tr><td class="dc">${label}</td><td class="dv">&#8377; ${fmt(val)}</td></tr>` : "";
 
       const html = `<!DOCTYPE html>
-<html><head><title>Pay Slip - ${escapeHtml(payroll.month)}</title>
+<html><head><meta charset="UTF-8"/><title>Pay Slip - ${escapeHtml(payroll.month)}</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;background:#f3f4f6;padding:24px}
-.slip{max-width:800px;margin:0 auto;background:#fff;border:1.5px solid #16a34a}
-.top-bar{background:linear-gradient(135deg,#14532d 0%,#16a34a 100%);color:#fff;padding:16px 20px}
-.top-bar .co-name{font-size:20px;font-weight:800;letter-spacing:0.5px}
-.top-bar .co-sub{font-size:11px;opacity:0.8;margin-top:2px}
-.title-bar{background:#166534;color:#fff;text-align:center;padding:6px;font-size:13px;font-weight:700;letter-spacing:2px}
-.emp-table{width:100%;border-collapse:collapse;border-bottom:2px solid #16a34a}
-.emp-table td{padding:5px 14px;font-size:12px;border-bottom:1px solid #e5e7eb}
-.emp-table .lbl{font-weight:700;color:#166534;width:120px}
-.salary-section{display:flex;border-bottom:2px solid #16a34a}
-.earn-col,.ded-col{flex:1}
-.earn-col{border-right:1px solid #d1fae5}
-.col-head-e{background:#166534;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:6px 12px;text-transform:uppercase;display:flex;justify-content:space-between}
-.col-head-d{background:#991b1b;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:6px 12px;text-transform:uppercase;display:flex;justify-content:space-between}
-.sal-row{display:flex;justify-content:space-between;padding:5px 12px;font-size:11.5px;border-bottom:1px solid #f0fdf4}
-.sal-row:nth-child(even){background:#f9fafb}
-.comp{color:#374151}.amt{font-weight:600}
-.sub-row-e{display:flex;justify-content:space-between;padding:6px 12px;font-size:13px;font-weight:700;background:#dcfce7;color:#15803d;border-top:2px solid #16a34a}
-.sub-row-d{display:flex;justify-content:space-between;padding:6px 12px;font-size:13px;font-weight:700;background:#fee2e2;color:#b91c1c;border-top:2px solid #b91c1c}
-.net-bar{background:linear-gradient(135deg,#14532d,#16a34a);color:#fff;display:flex;justify-content:space-between;align-items:center;padding:10px 20px}
-.net-bar .lbl{font-size:15px;font-weight:800;letter-spacing:0.5px}
-.net-bar .amt{font-size:22px;font-weight:900}
-.footer{text-align:center;padding:8px;border-top:1.5px solid #16a34a;font-size:10px;color:#6b7280;background:#f9fafb}
-.sig-row{display:flex;justify-content:space-between;padding:16px 40px 6px;font-size:11px;color:#6b7280}
-.sig-line{border-top:1px solid #9ca3af;width:130px;padding-top:3px;text-align:center}
+  @page{size:A4;margin:10mm}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Arial',sans-serif;background:#fff;color:#1a1a1a;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:780px;margin:0 auto;border:2px solid #15803d;border-radius:4px;overflow:hidden}
+
+  /* HEADER */
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#fff;border-bottom:3px solid #15803d}
+  .logo-block{display:flex;align-items:center;gap:14px}
+  .logo-circle{width:64px;height:64px;border-radius:50%;border:3px solid #15803d;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+  .logo-circle svg{width:56px;height:56px}
+  .co-info{line-height:1.4}
+  .co-name{font-size:16px;font-weight:900;color:#15803d;letter-spacing:0.3px}
+  .co-tagline{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-top:1px}
+  .co-addr{font-size:9.5px;color:#374151;margin-top:2px}
+  .slip-ref{text-align:right;font-size:10px;color:#6b7280;line-height:1.8}
+  .slip-ref .ref-num{font-size:13px;font-weight:800;color:#15803d}
+
+  /* TITLE BANNER */
+  .title-banner{background:linear-gradient(90deg,#14532d 0%,#16a34a 60%,#22c55e 100%);color:#fff;text-align:center;padding:7px 0;font-size:13px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
+
+  /* EMPLOYEE INFO */
+  .emp-section{padding:0}
+  .emp-table{width:100%;border-collapse:collapse}
+  .emp-table td{padding:5px 14px;font-size:11px;border-bottom:1px solid #e5e7eb}
+  .emp-table tr:nth-child(even) td{background:#f9fafb}
+  .emp-table .lbl{font-weight:700;color:#15803d;width:110px;white-space:nowrap}
+  .emp-table .val{color:#111827;font-weight:500}
+  .emp-divider{height:3px;background:linear-gradient(90deg,#14532d,#22c55e)}
+
+  /* SALARY SECTION */
+  .sal-section{display:flex;border-top:none}
+  .earn-side,.ded-side{flex:1;vertical-align:top}
+  .earn-side{border-right:2px solid #d1fae5}
+  .col-head{padding:7px 14px;font-size:10.5px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+  .col-head.earn{background:#166534;color:#fff}
+  .col-head.ded{background:#7f1d1d;color:#fff}
+  .sal-table{width:100%;border-collapse:collapse}
+  .sal-table .ec,.sal-table .dc{padding:5px 14px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6;width:70%}
+  .sal-table .ev{padding:5px 14px;font-size:11px;font-weight:700;color:#15803d;border-bottom:1px solid #f3f4f6;text-align:right}
+  .sal-table .dv{padding:5px 14px;font-size:11px;font-weight:700;color:#b91c1c;border-bottom:1px solid #f3f4f6;text-align:right}
+  .sal-table tr:nth-child(even) .ec,.sal-table tr:nth-child(even) .ev{background:#f0fdf4}
+  .sal-table tr:nth-child(even) .dc,.sal-table tr:nth-child(even) .dv{background:#fff5f5}
+  .nil-row{padding:6px 14px;font-size:11px;color:#9ca3af;font-style:italic}
+  .sub-row-earn{display:flex;justify-content:space-between;padding:7px 14px;font-size:12.5px;font-weight:800;background:#dcfce7;color:#15803d;border-top:2px solid #16a34a}
+  .sub-row-ded{display:flex;justify-content:space-between;padding:7px 14px;font-size:12.5px;font-weight:800;background:#fee2e2;color:#991b1b;border-top:2px solid #991b1b}
+
+  /* NET PAY */
+  .net-section{background:linear-gradient(90deg,#14532d 0%,#15803d 50%,#16a34a 100%);padding:12px 22px;display:flex;justify-content:space-between;align-items:center;border-top:3px solid #14532d}
+  .net-label{color:#d1fae5;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+  .net-words{color:#bbf7d0;font-size:10px;margin-top:2px;font-style:italic}
+  .net-amount{text-align:right}
+  .net-amt-val{color:#fff;font-size:26px;font-weight:900;letter-spacing:0.5px}
+  .net-amt-label{color:#86efac;font-size:10px;text-align:right;margin-top:1px}
+
+  /* SIGNATURES */
+  .sig-section{display:flex;justify-content:space-between;padding:14px 40px 8px;border-top:1px solid #e5e7eb}
+  .sig-box{text-align:center}
+  .sig-line-box{border-top:1.5px solid #374151;width:140px;padding-top:5px;font-size:10px;color:#374151;font-weight:600}
+  .sig-sub{font-size:9px;color:#9ca3af;margin-top:2px}
+
+  /* FOOTER */
+  .footer{background:#f8fafc;border-top:1px solid #e5e7eb;padding:7px 16px;display:flex;justify-content:space-between;align-items:center}
+  .footer-left{font-size:9.5px;color:#6b7280}
+  .footer-right{font-size:9.5px;color:#6b7280}
+  .footer-badge{display:inline-block;background:#dcfce7;color:#15803d;font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:9px;border:1px solid #86efac;text-transform:uppercase;letter-spacing:0.5px}
+
+  @media print{
+    body{background:#fff}
+    .page{border:2px solid #15803d;max-width:100%;margin:0}
+  }
 </style></head>
-<body><div class="slip">
-<div class="top-bar">
-  <div class="co-name">RISHI HYBRID SEEDS PVT LTD</div>
-  <div class="co-sub">SECUNDERABAD — Agricultural Excellence</div>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo-block">
+      <div class="logo-circle">
+        <svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="28" cy="28" r="27" fill="#fff" stroke="#15803d" stroke-width="2"/>
+          <text x="28" y="22" text-anchor="middle" font-family="Arial" font-size="13" font-weight="900" fill="#dc2626">Rishi</text>
+          <text x="28" y="34" text-anchor="middle" font-family="Arial" font-size="7" font-weight="700" fill="#15803d" letter-spacing="3">SEEDS</text>
+          <ellipse cx="28" cy="42" rx="13" ry="4" fill="none" stroke="#15803d" stroke-width="1.2"/>
+          <path d="M28 38 Q34 30 38 24" stroke="#15803d" stroke-width="1.2" fill="none"/>
+          <circle cx="38" cy="23" r="2" fill="#22c55e"/>
+        </svg>
+      </div>
+      <div class="co-info">
+        <div class="co-name">RISHI HYBRID SEEDS PVT. LTD.<sup style="font-size:8px">TM</sup></div>
+        <div class="co-tagline">Agricultural Excellence | Secunderabad</div>
+        <div class="co-addr">Regd. Office: Secunderabad, Telangana — India</div>
+      </div>
+    </div>
+    <div class="slip-ref">
+      <div>Pay Slip Reference</div>
+      <div class="ref-num">${escapeHtml(employee.employeeId)}-${escapeHtml(payroll.month)}</div>
+      <div>Generated: ${new Date().toLocaleDateString("en-IN", {day:"2-digit",month:"short",year:"numeric"})}</div>
+    </div>
+  </div>
+
+  <!-- TITLE BANNER -->
+  <div class="title-banner">Pay Slip &nbsp;|&nbsp; Month: ${escapeHtml(payroll.month)}</div>
+
+  <!-- EMPLOYEE DETAILS -->
+  <div class="emp-section">
+    <table class="emp-table">
+      <tr>
+        <td class="lbl">Employee Name</td><td class="val">: ${escapeHtml(employee.fullName)}</td>
+        <td class="lbl">Employee Code</td><td class="val">: ${escapeHtml(employee.employeeId)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Designation</td><td class="val">: ${escapeHtml(employee.role)}</td>
+        <td class="lbl">Department</td><td class="val">: ${escapeHtml(employee.department)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Date of Joining</td><td class="val">: ${doj}</td>
+        <td class="lbl">UAN No.</td><td class="val">: ${escapeHtml((employee as any).uan) || "-"}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Pay Period</td><td class="val">: ${escapeHtml(payroll.month)}</td>
+        <td class="lbl">Working Days</td><td class="val">: ${payroll.totalDays} Total &nbsp;|&nbsp; ${payroll.presentDays} Present &nbsp;|&nbsp; ${leaveDays} Leave</td>
+      </tr>
+    </table>
+  </div>
+  <div class="emp-divider"></div>
+
+  <!-- SALARY TABLE -->
+  <div class="sal-section">
+    <div class="earn-side">
+      <div class="col-head earn"><span>Earnings</span><span>Amount (&#8377;)</span></div>
+      <table class="sal-table">
+        ${earRow("Basic Salary", Number(payroll.basicPay))}
+        ${earRow("House Rent Allowance (HRA)", Number((employee as any).hra || 0))}
+        ${earRow("Dearness Allowance (DA)", Number((employee as any).da || 0))}
+        ${earRow("Conveyance / Travel Allow.", Number((employee as any).travelAllowance || 0))}
+        ${earRow("Medical Allowance", Number((employee as any).medicalAllowance || 0))}
+        ${earRow("Other Allowances", Number((employee as any).otherAllowances || 0))}
+        ${earRow("Overtime", Number(payroll.overtimeAmount || 0))}
+        ${gross === 0 ? `<tr><td class="ec" colspan="2"><span class="nil-row">No earnings recorded</span></td></tr>` : ""}
+      </table>
+      <div class="sub-row-earn"><span>GROSS SALARY</span><span>&#8377; ${fmt(gross)}</span></div>
+    </div>
+    <div class="ded-side">
+      <div class="col-head ded"><span>Deductions</span><span>Amount (&#8377;)</span></div>
+      <table class="sal-table">
+        ${dedRow("Provident Fund (PF)", Number((employee as any).pfDeduction || 0))}
+        ${dedRow("ESI Contribution", Number((employee as any).esiDeduction || 0))}
+        ${dedRow("Professional Tax (PT)", profTax)}
+        ${dedRow("TDS (Income Tax)", Number((employee as any).tdsDeduction || 0))}
+        ${dedRow("Other Deductions", Number((employee as any).otherDeductions || 0))}
+        ${dedRow("Monthly Deductions", Number(payroll.deductions || 0))}
+        ${totalDed === 0 ? `<tr><td class="dc" colspan="2"><span class="nil-row">No deductions</span></td></tr>` : ""}
+      </table>
+      <div class="sub-row-ded"><span>TOTAL DEDUCTIONS</span><span>&#8377; ${fmt(totalDed)}</span></div>
+    </div>
+  </div>
+
+  <!-- NET PAY -->
+  <div class="net-section">
+    <div>
+      <div class="net-label">Net Take Home Pay</div>
+      <div class="net-words">Gross &#8377; ${fmt(gross)} &minus; Deductions &#8377; ${fmt(totalDed)}</div>
+    </div>
+    <div class="net-amount">
+      <div class="net-amt-val">&#8377; ${fmt(netPay)}</div>
+      <div class="net-amt-label">Indian Rupees</div>
+    </div>
+  </div>
+
+  <!-- SIGNATURES -->
+  <div class="sig-section">
+    <div class="sig-box">
+      <div class="sig-line-box">Employee Signature</div>
+      <div class="sig-sub">${escapeHtml(employee.fullName)}</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line-box">Authorized Signatory</div>
+      <div class="sig-sub">Rishi Hybrid Seeds Pvt. Ltd.</div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-left">
+      <span class="footer-badge">Computer Generated</span>
+      &nbsp; This is a system-generated pay slip. No physical signature required.
+    </div>
+    <div class="footer-right">Generated on ${new Date().toLocaleDateString("en-IN", {day:"2-digit",month:"long",year:"numeric"})}</div>
+  </div>
+
 </div>
-<div class="title-bar">PAY SLIP FOR THE MONTH OF ${escapeHtml(payroll.month.toUpperCase())}</div>
-<table class="emp-table">
-<tr>
-  <td class="lbl">Date</td><td>: ${doj}</td>
-  <td class="lbl">EMP. Code</td><td>: ${escapeHtml(employee.employeeId)}</td>
-</tr>
-<tr style="background:#f9fafb">
-  <td class="lbl">Emp. Name</td><td>: ${escapeHtml(employee.fullName)}</td>
-  <td class="lbl">UAN</td><td>: ${escapeHtml((employee as any).uan) || "-"}</td>
-</tr>
-<tr>
-  <td class="lbl">Dept.</td><td>: ${escapeHtml(employee.department)}</td>
-  <td class="lbl">Present Days</td><td>: ${payroll.presentDays} / ${payroll.totalDays}</td>
-</tr>
-<tr style="background:#f9fafb">
-  <td class="lbl">Designation</td><td>: ${escapeHtml(employee.role)}</td>
-  <td class="lbl">Leave Days</td><td>: ${leaveDays}</td>
-</tr>
-</table>
-<div class="salary-section">
-<div class="earn-col">
-  <div class="col-head-e"><span>Earnings</span><span>Rs.</span></div>
-  ${earRow("BASIC", Number(payroll.basicPay))}
-  ${earRow("HRA", Number((employee as any).hra || 0))}
-  ${earRow("DA", Number((employee as any).da || 0))}
-  ${earRow("CONV (Travel Allow.)", Number((employee as any).travelAllowance || 0))}
-  ${earRow("MED. ALLOW.", Number((employee as any).medicalAllowance || 0))}
-  ${earRow("OTHER ALLOW.", Number((employee as any).otherAllowances || 0))}
-  ${earRow("OVERTIME", Number(payroll.overtimeAmount || 0))}
-  ${gross === 0 ? '<div class="sal-row"><span style="color:#9ca3af">No earnings recorded</span></div>' : ""}
-  <div class="sub-row-e"><span>GROSS</span><span>Rs. ${gross.toLocaleString()}</span></div>
-</div>
-<div class="ded-col">
-  <div class="col-head-d"><span>Deductions</span><span>Rs.</span></div>
-  ${dedRow("PF", Number((employee as any).pfDeduction || 0))}
-  ${dedRow("ESI", Number((employee as any).esiDeduction || 0))}
-  ${dedRow("PROF. TAX / TDS", Number((employee as any).tdsDeduction || 0))}
-  ${dedRow("OTHER DEDUCTIONS", Number((employee as any).otherDeductions || 0))}
-  ${dedRow("MONTHLY DEDUCTIONS", Number(payroll.deductions || 0))}
-  ${totalDed === 0 ? '<div class="sal-row"><span style="color:#9ca3af">No deductions</span></div>' : ""}
-  <div class="sub-row-d"><span>TOTAL</span><span>Rs. ${totalDed.toLocaleString()}</span></div>
-</div>
-</div>
-<div class="net-bar"><span class="lbl">NET TAKE HOME</span><span class="amt">Rs. ${netPay.toLocaleString()}</span></div>
-<div class="sig-row">
-  <div class="sig-line">Employee Signature</div>
-  <div class="sig-line">Authorized Signatory</div>
-</div>
-<div class="footer">
-  This is a computer generated Pay Slip, Signature not required. &nbsp;|&nbsp; Generated on ${new Date().toLocaleDateString("en-IN")}
-</div>
-</div></body></html>`;
+</body></html>`;
       
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Content-Disposition', `attachment; filename="payslip-${payroll.month}.html"`);

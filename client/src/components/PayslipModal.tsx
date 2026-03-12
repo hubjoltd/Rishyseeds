@@ -34,6 +34,7 @@ export function PayslipModal({ open, onOpenChange, payroll, employee }: PayslipM
   const totalDeductions =
     Number(employee?.pfDeduction || 0) +
     Number(employee?.esiDeduction || 0) +
+    Number((employee as any)?.professionalTax || 0) +
     Number(employee?.tdsDeduction || 0) +
     Number(employee?.otherDeductions || 0) +
     Number(payroll.deductions || 0);
@@ -201,10 +202,11 @@ body{font-family:Arial,sans-serif;background:#fff;color:#222}
                 <span>Deductions</span>
                 <span>Rs.</span>
               </div>
-              <DeductionRow label="PF" value={Number(employee?.pfDeduction || 0)} />
-              <DeductionRow label="ESI" value={Number(employee?.esiDeduction || 0)} />
-              <DeductionRow label="PROF. TAX / TDS" value={Number(employee?.tdsDeduction || 0)} />
-              <DeductionRow label="OTHER DEDUCTIONS" value={Number(employee?.otherDeductions || 0)} />
+              <DeductionRow label="Provident Fund (PF)" value={Number(employee?.pfDeduction || 0)} />
+              <DeductionRow label="ESI Contribution" value={Number(employee?.esiDeduction || 0)} />
+              <DeductionRow label="Professional Tax (PT)" value={Number((employee as any)?.professionalTax || 0)} />
+              <DeductionRow label="TDS (Income Tax)" value={Number(employee?.tdsDeduction || 0)} />
+              <DeductionRow label="Other Deductions" value={Number(employee?.otherDeductions || 0)} />
               <DeductionRow label="MONTHLY DEDUCTIONS" value={Number(payroll.deductions || 0)} />
               {totalDeductions === 0 && (
                 <div className="px-3 py-1.5 text-xs text-gray-400">No deductions</div>
