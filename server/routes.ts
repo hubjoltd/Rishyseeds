@@ -2053,202 +2053,160 @@ export async function registerRoutes(
       const netPay = Number(payroll.netSalary);
 
       const fmt = (v: number) => v.toLocaleString("en-IN");
-      const earRow = (label: string, val: number) => val > 0
-        ? `<tr><td class="ec">${label}</td><td class="ev">&#8377; ${fmt(val)}</td></tr>` : "";
-      const dedRow = (label: string, val: number) => val > 0
-        ? `<tr><td class="dc">${label}</td><td class="dv">&#8377; ${fmt(val)}</td></tr>` : "";
+      const monthLabel = (() => {
+        const [y, m] = payroll.month.split("-");
+        const names = ["","JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+        return `${names[parseInt(m)] || m}'${y}`;
+      })();
+
+      const eRow = (label: string, val: number) =>
+        `<tr><td class="el">${label}</td><td class="ec">:</td><td class="ev">${fmt(val)}</td></tr>`;
+      const dRow = (label: string, val: number) =>
+        `<tr><td class="dl">${label}</td><td class="dc">:</td><td class="dv">${fmt(val)}</td></tr>`;
 
       const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"/><title>Pay Slip - ${escapeHtml(payroll.month)}</title>
 <style>
-  @page{size:A4;margin:10mm}
+  @page{size:A4;margin:12mm}
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Arial',sans-serif;background:#fff;color:#1a1a1a;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .page{max-width:780px;margin:0 auto;border:2px solid #15803d;border-radius:4px;overflow:hidden}
+  body{font-family:'Arial',sans-serif;background:#fff;color:#000;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:760px;margin:20px auto;border:2px solid #000;padding:0}
 
-  /* HEADER */
-  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#fff;border-bottom:3px solid #15803d}
-  .logo-block{display:flex;align-items:center;gap:14px}
-  .logo-circle{width:64px;height:64px;border-radius:50%;border:3px solid #15803d;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
-  .logo-circle svg{width:56px;height:56px}
-  .co-info{line-height:1.4}
-  .co-name{font-size:16px;font-weight:900;color:#15803d;letter-spacing:0.3px}
-  .co-tagline{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-top:1px}
-  .co-addr{font-size:9.5px;color:#374151;margin-top:2px}
-  .slip-ref{text-align:right;font-size:10px;color:#6b7280;line-height:1.8}
-  .slip-ref .ref-num{font-size:13px;font-weight:800;color:#15803d}
-
-  /* TITLE BANNER */
-  .title-banner{background:linear-gradient(90deg,#14532d 0%,#16a34a 60%,#22c55e 100%);color:#fff;text-align:center;padding:7px 0;font-size:13px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
+  /* COMPANY HEADER */
+  .co-header{text-align:center;padding:18px 20px 12px;border-bottom:1px solid #000}
+  .co-header .co-name{font-size:15px;font-weight:900;letter-spacing:0.5px;text-transform:uppercase}
+  .co-header .slip-title{font-size:13px;font-weight:700;margin-top:4px;text-transform:uppercase}
 
   /* EMPLOYEE INFO */
-  .emp-section{padding:0}
-  .emp-table{width:100%;border-collapse:collapse}
-  .emp-table td{padding:5px 14px;font-size:11px;border-bottom:1px solid #e5e7eb}
-  .emp-table tr:nth-child(even) td{background:#f9fafb}
-  .emp-table .lbl{font-weight:700;color:#15803d;width:110px;white-space:nowrap}
-  .emp-table .val{color:#111827;font-weight:500}
-  .emp-divider{height:3px;background:linear-gradient(90deg,#14532d,#22c55e)}
+  .emp-info{padding:10px 16px;border-bottom:1px solid #000}
+  .emp-info table{width:100%;border-collapse:collapse}
+  .emp-info td{padding:3px 6px;font-size:11.5px;vertical-align:top}
+  .emp-info .lbl{font-weight:700;width:100px;white-space:nowrap}
+  .emp-info .sep{width:14px;text-align:center}
+  .emp-info .val{font-weight:700}
 
-  /* SALARY SECTION */
-  .sal-section{display:flex;border-top:none}
-  .earn-side,.ded-side{flex:1;vertical-align:top}
-  .earn-side{border-right:2px solid #d1fae5}
-  .col-head{padding:7px 14px;font-size:10.5px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
-  .col-head.earn{background:#166534;color:#fff}
-  .col-head.ded{background:#7f1d1d;color:#fff}
-  .sal-table{width:100%;border-collapse:collapse}
-  .sal-table .ec,.sal-table .dc{padding:5px 14px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6;width:70%}
-  .sal-table .ev{padding:5px 14px;font-size:11px;font-weight:700;color:#15803d;border-bottom:1px solid #f3f4f6;text-align:right}
-  .sal-table .dv{padding:5px 14px;font-size:11px;font-weight:700;color:#b91c1c;border-bottom:1px solid #f3f4f6;text-align:right}
-  .sal-table tr:nth-child(even) .ec,.sal-table tr:nth-child(even) .ev{background:#f0fdf4}
-  .sal-table tr:nth-child(even) .dc,.sal-table tr:nth-child(even) .dv{background:#fff5f5}
-  .nil-row{padding:6px 14px;font-size:11px;color:#9ca3af;font-style:italic}
-  .sub-row-earn{display:flex;justify-content:space-between;padding:7px 14px;font-size:12.5px;font-weight:800;background:#dcfce7;color:#15803d;border-top:2px solid #16a34a}
-  .sub-row-ded{display:flex;justify-content:space-between;padding:7px 14px;font-size:12.5px;font-weight:800;background:#fee2e2;color:#991b1b;border-top:2px solid #991b1b}
+  /* SALARY GRID */
+  .sal-grid{display:flex;border-bottom:1px solid #000}
+  .earn-col{flex:1;border-right:1px solid #000}
+  .ded-col{flex:1}
 
-  /* NET PAY */
-  .net-section{background:linear-gradient(90deg,#14532d 0%,#15803d 50%,#16a34a 100%);padding:12px 22px;display:flex;justify-content:space-between;align-items:center;border-top:3px solid #14532d}
-  .net-label{color:#d1fae5;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
-  .net-words{color:#bbf7d0;font-size:10px;margin-top:2px;font-style:italic}
-  .net-amount{text-align:right}
-  .net-amt-val{color:#fff;font-size:26px;font-weight:900;letter-spacing:0.5px}
-  .net-amt-label{color:#86efac;font-size:10px;text-align:right;margin-top:1px}
+  /* Column headers */
+  .col-hdr{display:flex;justify-content:space-between;padding:5px 8px;font-size:11.5px;font-weight:900;border-bottom:1px solid #000;text-transform:uppercase}
+  .col-hdr .ch-amt{font-weight:900}
 
-  /* SIGNATURES */
-  .sig-section{display:flex;justify-content:space-between;padding:14px 40px 8px;border-top:1px solid #e5e7eb}
-  .sig-box{text-align:center}
-  .sig-line-box{border-top:1.5px solid #374151;width:140px;padding-top:5px;font-size:10px;color:#374151;font-weight:600}
-  .sig-sub{font-size:9px;color:#9ca3af;margin-top:2px}
+  /* Salary rows */
+  .st{width:100%;border-collapse:collapse}
+  .st .el,.st .dl{padding:4px 8px;font-size:11px;width:55%}
+  .st .ec,.st .dc{padding:4px 2px;font-size:11px;width:8%;text-align:center}
+  .st .ev,.st .dv{padding:4px 8px;font-size:11px;width:37%;text-align:right;font-weight:600}
+  .st tr{border-bottom:1px dotted #ccc}
+
+  /* GROSS / TOTAL rows */
+  .gross-row,.total-row{display:flex;justify-content:space-between;padding:5px 8px;font-size:12px;font-weight:900;border-top:1px solid #000;text-transform:uppercase}
+
+  /* NET TAKE HOME */
+  .net-row{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid #000;font-size:12.5px;font-weight:900;text-transform:uppercase}
+  .net-row .net-val{font-size:14px;font-weight:900}
 
   /* FOOTER */
-  .footer{background:#f8fafc;border-top:1px solid #e5e7eb;padding:7px 16px;display:flex;justify-content:space-between;align-items:center}
-  .footer-left{font-size:9.5px;color:#6b7280}
-  .footer-right{font-size:9.5px;color:#6b7280}
-  .footer-badge{display:inline-block;background:#dcfce7;color:#15803d;font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:9px;border:1px solid #86efac;text-transform:uppercase;letter-spacing:0.5px}
+  .slip-footer{text-align:center;padding:10px 16px;font-size:11px;font-style:italic}
 
   @media print{
     body{background:#fff}
-    .page{border:2px solid #15803d;max-width:100%;margin:0}
+    .page{border:2px solid #000;max-width:100%;margin:0}
   }
 </style></head>
 <body>
 <div class="page">
 
-  <!-- HEADER -->
-  <div class="header">
-    <div class="logo-block">
-      <div class="logo-circle">
-        <svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="28" cy="28" r="27" fill="#fff" stroke="#15803d" stroke-width="2"/>
-          <text x="28" y="22" text-anchor="middle" font-family="Arial" font-size="13" font-weight="900" fill="#dc2626">Rishi</text>
-          <text x="28" y="34" text-anchor="middle" font-family="Arial" font-size="7" font-weight="700" fill="#15803d" letter-spacing="3">SEEDS</text>
-          <ellipse cx="28" cy="42" rx="13" ry="4" fill="none" stroke="#15803d" stroke-width="1.2"/>
-          <path d="M28 38 Q34 30 38 24" stroke="#15803d" stroke-width="1.2" fill="none"/>
-          <circle cx="38" cy="23" r="2" fill="#22c55e"/>
-        </svg>
-      </div>
-      <div class="co-info">
-        <div class="co-name">RISHI HYBRID SEEDS PVT. LTD.<sup style="font-size:8px">TM</sup></div>
-        <div class="co-tagline">Agricultural Excellence | Secunderabad</div>
-        <div class="co-addr">Regd. Office: Secunderabad, Telangana — India</div>
-      </div>
-    </div>
-    <div class="slip-ref">
-      <div>Pay Slip Reference</div>
-      <div class="ref-num">${escapeHtml(employee.employeeId)}-${escapeHtml(payroll.month)}</div>
-      <div>Generated: ${new Date().toLocaleDateString("en-IN", {day:"2-digit",month:"short",year:"numeric"})}</div>
-    </div>
+  <!-- COMPANY HEADER -->
+  <div class="co-header">
+    <div class="co-name">RISHI HYBRID SEEDS PVT LTD, SECUNDERABAD</div>
+    <div class="slip-title">Pay Slip For The Month Of ${monthLabel}</div>
   </div>
 
-  <!-- TITLE BANNER -->
-  <div class="title-banner">Pay Slip &nbsp;|&nbsp; Month: ${escapeHtml(payroll.month)}</div>
-
-  <!-- EMPLOYEE DETAILS -->
-  <div class="emp-section">
-    <table class="emp-table">
+  <!-- EMPLOYEE INFO -->
+  <div class="emp-info">
+    <table>
       <tr>
-        <td class="lbl">Employee Name</td><td class="val">: ${escapeHtml(employee.fullName)}</td>
-        <td class="lbl">Employee Code</td><td class="val">: ${escapeHtml(employee.employeeId)}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Designation</td><td class="val">: ${escapeHtml(employee.role)}</td>
-        <td class="lbl">Department</td><td class="val">: ${escapeHtml(employee.department)}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Date of Joining</td><td class="val">: ${doj}</td>
-        <td class="lbl">UAN No.</td><td class="val">: ${escapeHtml((employee as any).uan) || "-"}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Pay Period</td><td class="val">: ${escapeHtml(payroll.month)}</td>
-        <td class="lbl">Working Days</td><td class="val">: ${payroll.totalDays} Total &nbsp;|&nbsp; ${payroll.presentDays} Present &nbsp;|&nbsp; ${leaveDays} Leave</td>
+        <td>
+          <table>
+            <tr>
+              <td class="lbl">EMP. NAME</td><td class="sep">:</td><td class="val">${escapeHtml(employee.fullName)}</td>
+            </tr>
+            <tr>
+              <td class="lbl">DEPT.</td><td class="sep">:</td><td class="val">${escapeHtml(employee.department)}</td>
+            </tr>
+            <tr>
+              <td class="lbl">DESG.</td><td class="sep">:</td><td class="val">${escapeHtml(employee.role)}</td>
+            </tr>
+            <tr>
+              <td class="lbl">PRESENT DAYS</td><td class="sep">:</td><td class="val">${payroll.presentDays} / ${payroll.totalDays}</td>
+            </tr>
+          </table>
+        </td>
+        <td style="width:50%">
+          <table>
+            <tr>
+              <td class="lbl">D.O.J</td><td class="sep">:</td><td class="val">${doj}</td>
+            </tr>
+            <tr>
+              <td class="lbl">EMP CODE</td><td class="sep">:</td><td class="val">${escapeHtml(employee.employeeId)}</td>
+            </tr>
+            <tr>
+              <td class="lbl">UAN</td><td class="sep">:</td><td class="val">${escapeHtml((employee as any).uan) || "0"}</td>
+            </tr>
+            <tr>
+              <td class="lbl">LEAVE DAYS</td><td class="sep">:</td><td class="val">${leaveDays}</td>
+            </tr>
+          </table>
+        </td>
       </tr>
     </table>
   </div>
-  <div class="emp-divider"></div>
 
-  <!-- SALARY TABLE -->
-  <div class="sal-section">
-    <div class="earn-side">
-      <div class="col-head earn"><span>Earnings</span><span>Amount (&#8377;)</span></div>
-      <table class="sal-table">
-        ${earRow("Basic Salary", Number(payroll.basicPay))}
-        ${earRow("House Rent Allowance (HRA)", Number((employee as any).hra || 0))}
-        ${earRow("Dearness Allowance (DA)", Number((employee as any).da || 0))}
-        ${earRow("Conveyance / Travel Allow.", Number((employee as any).travelAllowance || 0))}
-        ${earRow("Medical Allowance", Number((employee as any).medicalAllowance || 0))}
-        ${earRow("Other Allowances", Number((employee as any).otherAllowances || 0))}
-        ${earRow("Overtime", Number(payroll.overtimeAmount || 0))}
-        ${gross === 0 ? `<tr><td class="ec" colspan="2"><span class="nil-row">No earnings recorded</span></td></tr>` : ""}
+  <!-- SALARY GRID -->
+  <div class="sal-grid">
+    <!-- EARNINGS -->
+    <div class="earn-col">
+      <div class="col-hdr"><span>EARNINGS</span><span class="ch-amt">RS.</span></div>
+      <table class="st">
+        ${eRow("BASIC", Number(payroll.basicPay))}
+        ${eRow("HRA", Number((employee as any).hra || 0))}
+        ${eRow("DA", Number((employee as any).da || 0))}
+        ${eRow("CONV", Number((employee as any).travelAllowance || 0))}
+        ${eRow("SPL ALLOW", Number((employee as any).otherAllowances || 0))}
+        ${eRow("MED.ALLOW", Number((employee as any).medicalAllowance || 0))}
+        ${eRow("OVERTIME", Number(payroll.overtimeAmount || 0))}
       </table>
-      <div class="sub-row-earn"><span>GROSS SALARY</span><span>&#8377; ${fmt(gross)}</span></div>
+      <div class="gross-row"><span>GROSS</span><span>:</span><span>${fmt(gross)}</span></div>
     </div>
-    <div class="ded-side">
-      <div class="col-head ded"><span>Deductions</span><span>Amount (&#8377;)</span></div>
-      <table class="sal-table">
-        ${dedRow("Provident Fund (PF)", Number((employee as any).pfDeduction || 0))}
-        ${dedRow("ESI Contribution", Number((employee as any).esiDeduction || 0))}
-        ${dedRow("Professional Tax (PT)", profTax)}
-        ${dedRow("TDS (Income Tax)", Number((employee as any).tdsDeduction || 0))}
-        ${dedRow("Other Deductions", Number((employee as any).otherDeductions || 0))}
-        ${dedRow("Monthly Deductions", Number(payroll.deductions || 0))}
-        ${totalDed === 0 ? `<tr><td class="dc" colspan="2"><span class="nil-row">No deductions</span></td></tr>` : ""}
+    <!-- DEDUCTIONS -->
+    <div class="ded-col">
+      <div class="col-hdr"><span>DEDUCTIONS</span><span>:</span><span class="ch-amt">RS</span></div>
+      <table class="st">
+        ${dRow("PF", Number((employee as any).pfDeduction || 0))}
+        ${dRow("VPF", 0)}
+        ${dRow("ESI", Number((employee as any).esiDeduction || 0))}
+        ${dRow("PROF.TAX", profTax)}
+        ${dRow("I.TAX (TDS)", Number((employee as any).tdsDeduction || 0))}
+        ${dRow("SAL.ADV", 0)}
+        ${dRow("OTHERS", Number((employee as any).otherDeductions || 0) + Number(payroll.deductions || 0))}
       </table>
-      <div class="sub-row-ded"><span>TOTAL DEDUCTIONS</span><span>&#8377; ${fmt(totalDed)}</span></div>
+      <div class="total-row"><span>TOTAL</span><span>:</span><span>${fmt(totalDed)}</span></div>
     </div>
   </div>
 
-  <!-- NET PAY -->
-  <div class="net-section">
-    <div>
-      <div class="net-label">Net Take Home Pay</div>
-      <div class="net-words">Gross &#8377; ${fmt(gross)} &minus; Deductions &#8377; ${fmt(totalDed)}</div>
-    </div>
-    <div class="net-amount">
-      <div class="net-amt-val">&#8377; ${fmt(netPay)}</div>
-      <div class="net-amt-label">Indian Rupees</div>
-    </div>
-  </div>
-
-  <!-- SIGNATURES -->
-  <div class="sig-section">
-    <div class="sig-box">
-      <div class="sig-line-box">Employee Signature</div>
-      <div class="sig-sub">${escapeHtml(employee.fullName)}</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-line-box">Authorized Signatory</div>
-      <div class="sig-sub">Rishi Hybrid Seeds Pvt. Ltd.</div>
-    </div>
+  <!-- NET TAKE HOME -->
+  <div class="net-row">
+    <span>NET TAKE HOME</span>
+    <span>:</span>
+    <span class="net-val">${fmt(netPay)}</span>
   </div>
 
   <!-- FOOTER -->
-  <div class="footer">
-    <div class="footer-left">
-      <span class="footer-badge">Computer Generated</span>
-      &nbsp; This is a system-generated pay slip. No physical signature required.
-    </div>
-    <div class="footer-right">Generated on ${new Date().toLocaleDateString("en-IN", {day:"2-digit",month:"long",year:"numeric"})}</div>
+  <div class="slip-footer">
+    This is computer generated Pay Slip, Signature not required
   </div>
 
 </div>
