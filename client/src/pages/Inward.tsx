@@ -462,6 +462,7 @@ export default function Inward() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Inward Date</TableHead>
                   <TableHead>Lot Number</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Initial Qty</TableHead>
@@ -471,7 +472,6 @@ export default function Inward() {
                   <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-xs">Storage<br/>Main Office</TableHead>
                   <TableHead>Current Balance (Loose)</TableHead>
                   <TableHead>Stock Form</TableHead>
-                  <TableHead>Inward Date</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -487,6 +487,7 @@ export default function Inward() {
                 ) : (
                   filteredLots.map((lot: Lot) => (
                     <TableRow key={lot.id} data-testid={`row-lot-${lot.id}`}>
+                      <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
                       <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
                       <TableCell>{getProductDetails(lot.productId)}</TableCell>
                       <TableCell>{lot.initialQuantity} kg</TableCell>
@@ -526,7 +527,6 @@ export default function Inward() {
                           {lot.stockForm === 'loose' ? 'Raw Seeds' : lot.stockForm === 'cobs' ? 'Cobs' : lot.stockForm}
                         </Badge>
                       </TableCell>
-                      <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
                       <TableCell>{getCreatedByName(lot.createdBy)}</TableCell>
                       <TableCell>
                         <Badge variant={lot.status === 'active' ? 'default' : 'outline'}>
