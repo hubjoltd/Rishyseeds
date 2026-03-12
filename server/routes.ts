@@ -2039,58 +2039,110 @@ export async function registerRoutes(
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
       };
       
-      // Generate simple HTML payslip (can be converted to PDF later)
-      const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Payslip - ${escapeHtml(payroll.month)}</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 40px; }
-    .header { text-align: center; margin-bottom: 30px; }
-    .company { font-size: 24px; font-weight: bold; }
-    .title { font-size: 18px; color: #666; margin-top: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background: #f5f5f5; }
-    .total { font-weight: bold; background: #f0f0f0; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="company">Rishi Seeds Pvt Ltd</div>
-    <div class="title">Payslip for ${escapeHtml(payroll.month)}</div>
-  </div>
-  
-  <table>
-    <tr><th>Employee ID</th><td>${escapeHtml(employee.employeeId)}</td></tr>
-    <tr><th>Name</th><td>${escapeHtml(employee.fullName)}</td></tr>
-    <tr><th>Department</th><td>${escapeHtml(employee.department)}</td></tr>
-    <tr><th>Designation</th><td>${escapeHtml(employee.role)}</td></tr>
-  </table>
-  
-  <h3>Earnings</h3>
-  <table>
-    <tr><th>Basic Pay</th><td>${Number(payroll.basicPay).toLocaleString()}</td></tr>
-    <tr><th>Allowances</th><td>${Number(payroll.allowances || 0).toLocaleString()}</td></tr>
-    <tr><th>Overtime</th><td>${Number(payroll.overtimeAmount || 0).toLocaleString()}</td></tr>
-  </table>
-  
-  <h3>Deductions</h3>
-  <table>
-    <tr><th>Total Deductions</th><td>${Number(payroll.deductions || 0).toLocaleString()}</td></tr>
-  </table>
-  
-  <table>
-    <tr class="total"><th>Net Salary</th><td>${Number(payroll.netSalary).toLocaleString()}</td></tr>
-  </table>
-  
-  <p style="margin-top: 40px; text-align: center; color: #666;">
-    Generated on ${new Date().toLocaleDateString()}
-  </p>
-</body>
-</html>
-      `;
+      const doj = (employee as any).joinDate
+        ? new Date((employee as any).joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" })
+        : "-";
+      const gross = Number(payroll.basicPay) + Number((employee as any).hra || 0) + Number((employee as any).da || 0) +
+        Number((employee as any).travelAllowance || 0) + Number((employee as any).medicalAllowance || 0) +
+        Number((employee as any).otherAllowances || 0) + Number(payroll.overtimeAmount || 0);
+      const totalDed = Number((employee as any).pfDeduction || 0) + Number((employee as any).esiDeduction || 0) +
+        Number((employee as any).tdsDeduction || 0) + Number((employee as any).otherDeductions || 0) +
+        Number(payroll.deductions || 0);
+      const leaveDays = Number(payroll.totalDays) - Number(payroll.presentDays);
+      const netPay = Number(payroll.netSalary);
+
+      const earRow = (label: string, val: number) => val > 0
+        ? `<div class="sal-row"><span class="comp">${label}</span><span class="amt">Rs. ${val.toLocaleString()}</span></div>` : "";
+      const dedRow = (label: string, val: number) => val > 0
+        ? `<div class="sal-row ded"><span class="comp">${label}</span><span class="amt" style="color:#b91c1c">Rs. ${val.toLocaleString()}</span></div>` : "";
+
+      const html = `<!DOCTYPE html>
+<html><head><title>Pay Slip - ${escapeHtml(payroll.month)}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f3f4f6;padding:24px}
+.slip{max-width:800px;margin:0 auto;background:#fff;border:1.5px solid #16a34a}
+.top-bar{background:linear-gradient(135deg,#14532d 0%,#16a34a 100%);color:#fff;padding:16px 20px}
+.top-bar .co-name{font-size:20px;font-weight:800;letter-spacing:0.5px}
+.top-bar .co-sub{font-size:11px;opacity:0.8;margin-top:2px}
+.title-bar{background:#166534;color:#fff;text-align:center;padding:6px;font-size:13px;font-weight:700;letter-spacing:2px}
+.emp-table{width:100%;border-collapse:collapse;border-bottom:2px solid #16a34a}
+.emp-table td{padding:5px 14px;font-size:12px;border-bottom:1px solid #e5e7eb}
+.emp-table .lbl{font-weight:700;color:#166534;width:120px}
+.salary-section{display:flex;border-bottom:2px solid #16a34a}
+.earn-col,.ded-col{flex:1}
+.earn-col{border-right:1px solid #d1fae5}
+.col-head-e{background:#166534;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:6px 12px;text-transform:uppercase;display:flex;justify-content:space-between}
+.col-head-d{background:#991b1b;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:6px 12px;text-transform:uppercase;display:flex;justify-content:space-between}
+.sal-row{display:flex;justify-content:space-between;padding:5px 12px;font-size:11.5px;border-bottom:1px solid #f0fdf4}
+.sal-row:nth-child(even){background:#f9fafb}
+.comp{color:#374151}.amt{font-weight:600}
+.sub-row-e{display:flex;justify-content:space-between;padding:6px 12px;font-size:13px;font-weight:700;background:#dcfce7;color:#15803d;border-top:2px solid #16a34a}
+.sub-row-d{display:flex;justify-content:space-between;padding:6px 12px;font-size:13px;font-weight:700;background:#fee2e2;color:#b91c1c;border-top:2px solid #b91c1c}
+.net-bar{background:linear-gradient(135deg,#14532d,#16a34a);color:#fff;display:flex;justify-content:space-between;align-items:center;padding:10px 20px}
+.net-bar .lbl{font-size:15px;font-weight:800;letter-spacing:0.5px}
+.net-bar .amt{font-size:22px;font-weight:900}
+.footer{text-align:center;padding:8px;border-top:1.5px solid #16a34a;font-size:10px;color:#6b7280;background:#f9fafb}
+.sig-row{display:flex;justify-content:space-between;padding:16px 40px 6px;font-size:11px;color:#6b7280}
+.sig-line{border-top:1px solid #9ca3af;width:130px;padding-top:3px;text-align:center}
+</style></head>
+<body><div class="slip">
+<div class="top-bar">
+  <div class="co-name">RISHI HYBRID SEEDS PVT LTD</div>
+  <div class="co-sub">SECUNDERABAD — Agricultural Excellence</div>
+</div>
+<div class="title-bar">PAY SLIP FOR THE MONTH OF ${escapeHtml(payroll.month.toUpperCase())}</div>
+<table class="emp-table">
+<tr>
+  <td class="lbl">Date</td><td>: ${doj}</td>
+  <td class="lbl">EMP. Code</td><td>: ${escapeHtml(employee.employeeId)}</td>
+</tr>
+<tr style="background:#f9fafb">
+  <td class="lbl">Emp. Name</td><td>: ${escapeHtml(employee.fullName)}</td>
+  <td class="lbl">UAN</td><td>: ${escapeHtml((employee as any).uan) || "-"}</td>
+</tr>
+<tr>
+  <td class="lbl">Dept.</td><td>: ${escapeHtml(employee.department)}</td>
+  <td class="lbl">Present Days</td><td>: ${payroll.presentDays} / ${payroll.totalDays}</td>
+</tr>
+<tr style="background:#f9fafb">
+  <td class="lbl">Designation</td><td>: ${escapeHtml(employee.role)}</td>
+  <td class="lbl">Leave Days</td><td>: ${leaveDays}</td>
+</tr>
+</table>
+<div class="salary-section">
+<div class="earn-col">
+  <div class="col-head-e"><span>Earnings</span><span>Rs.</span></div>
+  ${earRow("BASIC", Number(payroll.basicPay))}
+  ${earRow("HRA", Number((employee as any).hra || 0))}
+  ${earRow("DA", Number((employee as any).da || 0))}
+  ${earRow("CONV (Travel Allow.)", Number((employee as any).travelAllowance || 0))}
+  ${earRow("MED. ALLOW.", Number((employee as any).medicalAllowance || 0))}
+  ${earRow("OTHER ALLOW.", Number((employee as any).otherAllowances || 0))}
+  ${earRow("OVERTIME", Number(payroll.overtimeAmount || 0))}
+  ${gross === 0 ? '<div class="sal-row"><span style="color:#9ca3af">No earnings recorded</span></div>' : ""}
+  <div class="sub-row-e"><span>GROSS</span><span>Rs. ${gross.toLocaleString()}</span></div>
+</div>
+<div class="ded-col">
+  <div class="col-head-d"><span>Deductions</span><span>Rs.</span></div>
+  ${dedRow("PF", Number((employee as any).pfDeduction || 0))}
+  ${dedRow("ESI", Number((employee as any).esiDeduction || 0))}
+  ${dedRow("PROF. TAX / TDS", Number((employee as any).tdsDeduction || 0))}
+  ${dedRow("OTHER DEDUCTIONS", Number((employee as any).otherDeductions || 0))}
+  ${dedRow("MONTHLY DEDUCTIONS", Number(payroll.deductions || 0))}
+  ${totalDed === 0 ? '<div class="sal-row"><span style="color:#9ca3af">No deductions</span></div>' : ""}
+  <div class="sub-row-d"><span>TOTAL</span><span>Rs. ${totalDed.toLocaleString()}</span></div>
+</div>
+</div>
+<div class="net-bar"><span class="lbl">NET TAKE HOME</span><span class="amt">Rs. ${netPay.toLocaleString()}</span></div>
+<div class="sig-row">
+  <div class="sig-line">Employee Signature</div>
+  <div class="sig-line">Authorized Signatory</div>
+</div>
+<div class="footer">
+  This is a computer generated Pay Slip, Signature not required. &nbsp;|&nbsp; Generated on ${new Date().toLocaleDateString("en-IN")}
+</div>
+</div></body></html>`;
       
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Content-Disposition', `attachment; filename="payslip-${payroll.month}.html"`);
