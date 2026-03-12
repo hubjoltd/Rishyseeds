@@ -389,7 +389,7 @@ export default function Outward() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Lot</TableHead>
-                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
                   <TableHead>Form</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
                   <TableHead>State</TableHead>
@@ -411,7 +411,10 @@ export default function Outward() {
                   filteredRecords.map((record: OutwardRecord) => (
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
                       <TableCell className="font-mono text-sm">{getLotDetails(record.lotId)}</TableCell>
-                      <TableCell>{getLocationName(record.locationId)}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{record.destinationName || '-'}</div>
+                        <div className="text-xs text-muted-foreground">{record.destinationType}</div>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={record.stockForm === 'packed' ? 'default' : 'secondary'}>
                           {record.stockForm === 'loose' ? 'Raw Seeds' : record.stockForm === 'cobs' ? 'Cobs' : record.stockForm}
