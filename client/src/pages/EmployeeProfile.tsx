@@ -195,6 +195,17 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
   );
 }
 
+function fmtPopupTime(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  try {
+    const d = new Date(iso);
+    const h = d.getHours(), m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hh = h % 12 || 12;
+    return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
+  } catch { return "-"; }
+}
+
 function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -232,9 +243,20 @@ function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string })
             html: `<div style="background:#2563eb;color:white;width:22px;height:22px;border-radius:50%;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;box-shadow:0 0 4px rgba(0,0,0,0.4)">${ti * 10 + vi + 1}</div>`,
             iconSize: [22, 22], iconAnchor: [11, 11],
           });
+          const inTime = fmtPopupTime(v.punchInTime as unknown as string);
+          const outTime = fmtPopupTime(v.punchOutTime as unknown as string);
+          const loc = v.punchInLocationName || v.punchOutLocationName || "";
           L.marker([Number(v.punchInLatitude!), Number(v.punchInLongitude!)], { icon })
             .addTo(map)
-            .bindPopup(`<b>Check-in ${ti * 10 + vi + 1}</b><br/>${v.punchInLocationName || ""}`);
+            .bindPopup(
+              `<div style="min-width:160px;font-family:sans-serif;font-size:13px">` +
+              `<b style="font-size:14px">Check-in ${ti * 10 + vi + 1}</b>` +
+              (loc ? `<div style="color:#555;margin-top:2px;font-size:11px">${loc}</div>` : "") +
+              `<table style="margin-top:6px;width:100%;border-collapse:collapse">` +
+              `<tr><td style="color:#16a34a;font-weight:600;padding:2px 6px 2px 0">Punch In</td><td style="font-weight:600">${inTime}</td></tr>` +
+              `<tr><td style="color:#dc2626;font-weight:600;padding:2px 6px 2px 0">Punch Out</td><td style="font-weight:600">${outTime}</td></tr>` +
+              `</table></div>`
+            );
         });
       });
       if (points.length > 1) map.fitBounds(pl.getBounds().pad(0.2));
