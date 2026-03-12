@@ -724,7 +724,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Lot and Location are required" });
       }
       
-      const totalQuantityKg = Number(input.totalQuantityKg) || 0;
+      // Compute totalQuantityKg authoritatively from the DB packaging size record
+      // Never trust the client-sent totalQuantityKg — unit mismatches cause wrong deductions
+      let totalQuantityKg = Number(input.totalQuantityKg) || 0;
+      if (input.packagingSizeId) {
+        const pSize = await storage.getPackagingSize(input.packagingSizeId);
+        if (pSize) {
+          const sizeKg = pSize.unit.toLowerCase() === 'g'
+            ? Number(pSize.size) / 1000
+            : Number(pSize.size);
+          totalQuantityKg = sizeKg * (input.numberOfPackets || 1);
+        }
+      }
       const wasteQuantity = Number(input.wasteQuantity) || 0;
       const looseUsed = totalQuantityKg + wasteQuantity;
       
@@ -742,8 +753,11 @@ export async function registerRoutes(
         });
       }
       
-      // Create packaging record
-      const output = await storage.createPackagingOutput(input);
+      // Create packaging record — override totalQuantityKg with server-computed value
+      const output = await storage.createPackagingOutput({
+        ...input,
+        totalQuantityKg: String(totalQuantityKg)
+      });
       
       // Decrease loose stock by total used (packed + waste)
       await storage.adjustStockBalance(
