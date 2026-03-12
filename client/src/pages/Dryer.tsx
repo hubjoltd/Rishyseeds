@@ -214,7 +214,7 @@ export default function Dryer() {
   };
 
   const binOccupancy = (bin: number) => {
-    return entries?.filter(e => e.binNo === bin && (e.status === "pending" || e.status === "intake" || e.status === "outtake")) || [];
+    return entries?.filter(e => e.binNo === bin && (e.status === "pending" || e.status === "intake")) || [];
   };
 
   const filteredEntries = (entries || []).filter(e => {
@@ -224,6 +224,12 @@ export default function Dryer() {
     if (filterStatus === "outtake") return e.status === "outtake";
     if (filterStatus === "overdue") return e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5;
     return true;
+  });
+
+  const activeEntries = filteredEntries.filter(e => e.status !== "outtake");
+  const reportEntries = (entries || []).filter(e => {
+    if (selectedBin && e.binNo !== selectedBin) return false;
+    return e.status === "outtake";
   });
 
   const overdueCount = (entries || []).filter(e => e.status === "intake" && getDaysSinceIntake(e.dateOfIntake) >= 5).length;
@@ -443,7 +449,7 @@ export default function Dryer() {
           <div className="flex items-center gap-2">
             <Fan className="h-5 w-5 text-primary" />
             <CardTitle>
-              {selectedBin ? `Bin ${selectedBin} Entries` : "All Bin Entries"}
+              {selectedBin ? `Bin ${selectedBin} - Active Entries` : "Active Bin Entries"}
             </CardTitle>
             {selectedBin && (
               <Button variant="ghost" size="sm" onClick={() => setSelectedBin(null)} data-testid="button-clear-bin-filter">
@@ -455,12 +461,12 @@ export default function Dryer() {
         <CardContent className="pt-4">
           {isLoading ? (
             <p className="text-muted-foreground">Loading...</p>
-          ) : filteredEntries.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No entries found. Add a new dryer entry above.</p>
+          ) : activeEntries.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No active entries. All completed entries are in the Report section below.</p>
           ) : (
             <div className="space-y-4">
               {(selectedBin ? [selectedBin] : BINS).map(bin => {
-                const binEntries = filteredEntries.filter(e => e.binNo === bin);
+                const binEntries = activeEntries.filter(e => e.binNo === bin);
                 if (binEntries.length === 0) return null;
                 return (
                   <div key={bin} data-testid={`section-bin-${bin}`}>
@@ -527,6 +533,92 @@ export default function Dryer() {
                               </TableRow>
                             );
                           })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 shadow-lg shadow-green-500/10 border-green-200 dark:border-green-800">
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-green-700 dark:text-green-400">
+              {selectedBin ? `Bin ${selectedBin} - Report (Shell Completed)` : "Report — Shell Completed"}
+            </CardTitle>
+            <Badge className="bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400">
+              {reportEntries.length} entr{reportEntries.length === 1 ? "y" : "ies"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {reportEntries.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No completed (outtake) entries yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {(selectedBin ? [selectedBin] : BINS).map(bin => {
+                const binEntries = reportEntries.filter(e => e.binNo === bin);
+                if (binEntries.length === 0) return null;
+                return (
+                  <div key={bin} data-testid={`section-report-bin-${bin}`}>
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      <Fan className="h-4 w-4 text-green-600" />
+                      <h3 className="font-bold text-sm text-green-700 dark:text-green-400">Bin {bin}</h3>
+                      <Badge variant="outline" className="text-xs border-green-300 text-green-700">{binEntries.length} completed</Badge>
+                    </div>
+                    <div className="overflow-x-auto border border-green-200 dark:border-green-800 rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-green-50/80 dark:bg-green-950/20">
+                            <TableHead className="w-[50px]">S.No</TableHead>
+                            <TableHead>Bin</TableHead>
+                            <TableHead>Organiser</TableHead>
+                            <TableHead>Variety</TableHead>
+                            <TableHead>Intake Qty</TableHead>
+                            <TableHead>Date of Intake</TableHead>
+                            <TableHead>5-Day Due</TableHead>
+                            <TableHead>Shelling Date</TableHead>
+                            <TableHead>Shelling Qty</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Remarks</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {binEntries.map((entry, idx) => (
+                            <TableRow key={entry.id} className="bg-green-50/30 dark:bg-green-950/10" data-testid={`row-report-${entry.id}`}>
+                              <TableCell>{idx + 1}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="font-bold border-green-300 text-green-700">Bin {entry.binNo}</Badge>
+                              </TableCell>
+                              <TableCell>{entry.organiser || "-"}</TableCell>
+                              <TableCell>{entry.variety || "-"}</TableCell>
+                              <TableCell>{entry.intakeQuantity ? `${Number(entry.intakeQuantity).toLocaleString()} Kg` : "-"}</TableCell>
+                              <TableCell>{entry.dateOfIntake}</TableCell>
+                              <TableCell>{entry.fiveDayDueDate}</TableCell>
+                              <TableCell>{entry.shellingDate || "-"}</TableCell>
+                              <TableCell>{entry.shellingQty ? `${Number(entry.shellingQty).toLocaleString()} Kg` : "-"}</TableCell>
+                              <TableCell>{getStatusBadge(entry)}</TableCell>
+                              <TableCell className="max-w-[150px] truncate text-xs" title={entry.remarks || ""}>
+                                {entry.remarks || "-"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button variant="ghost" size="icon" onClick={() => handleEdit(entry)} data-testid={`button-edit-report-${entry.id}`}>
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" onClick={() => setDeleteId(entry.id)} data-testid={`button-delete-report-${entry.id}`}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
                     </div>

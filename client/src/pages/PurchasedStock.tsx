@@ -237,7 +237,7 @@ export default function PurchasedStock() {
                             </td>
                             <td key={`co-${lot.id}-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10">
                               {outward > 0 ? (
-                                <span className="text-red-600 dark:text-red-400 font-medium">{outward.toFixed(0)}</span>
+                                <span className="text-red-600 dark:text-red-400 font-medium">-{outward.toFixed(0)}</span>
                               ) : (
                                 <span className="text-muted-foreground text-xs">-</span>
                               )}
@@ -283,9 +283,10 @@ export default function PurchasedStock() {
                           : <span className="text-muted-foreground">-</span>}
                       </td>
                       <td key={`ct-out-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10 text-red-600 dark:text-red-400">
-                        {filteredLots.reduce((s, l) => s + getColdStorageOutward(l.id, cs.id), 0).toFixed(0) !== "0"
-                          ? filteredLots.reduce((s, l) => s + getColdStorageOutward(l.id, cs.id), 0).toFixed(0)
-                          : <span className="text-muted-foreground">-</span>}
+                        {(() => {
+                          const total = filteredLots.reduce((s, l) => s + getColdStorageOutward(l.id, cs.id), 0);
+                          return total > 0 ? `-${total.toFixed(0)}` : <span className="text-muted-foreground">-</span>;
+                        })()}
                       </td>
                     </>
                   ))}
