@@ -29,7 +29,8 @@ import {
   BanknoteIcon,
   ClipboardList,
   Radio,
-  Warehouse
+  Warehouse,
+  BarChart2
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -64,6 +65,7 @@ const allMenuItems: MenuItem[] = [
     roles: ["admin", "manager", "godown_operator", "production_operator", "dispatch_operator"],
     children: [
       { icon: PackagePlus, label: "Inward", href: "/inward", roles: ["admin", "manager", "godown_operator"] },
+      { icon: BarChart2, label: "Variety Stock", href: "/variety-stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: Cog, label: "Processing", href: "/processing", roles: ["admin", "manager", "production_operator"] },
       { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager", "production_operator"] },
