@@ -35,6 +35,7 @@ import Customers from "@/pages/Customers";
 import Feeds from "@/pages/Feeds";
 import Dryer from "@/pages/Dryer";
 import Expenses from "@/pages/Expenses";
+import PurchasedStock from "@/pages/PurchasedStock";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -144,6 +145,9 @@ function Router() {
       </Route>
       <Route path="/expenses">
         <ProtectedRoute component={Expenses} />
+      </Route>
+      <Route path="/purchased-stock">
+        <ProtectedRoute component={PurchasedStock} />
       </Route>
 
       <Route component={NotFound} />

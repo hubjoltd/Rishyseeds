@@ -28,7 +28,8 @@ import {
   Fan,
   BanknoteIcon,
   ClipboardList,
-  Radio
+  Radio,
+  Warehouse
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -92,6 +93,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Users, label: "Customers", href: "/customers", roles: ["admin", "manager"] },
   { icon: Radio, label: "Feeds", href: "/feeds", roles: ["admin", "manager"] },
   { icon: BanknoteIcon, label: "Expenses", href: "/expenses", roles: ["admin", "manager", "hr"] },
+  { icon: Warehouse, label: "Purchased Stock", href: "/purchased-stock", roles: ["admin", "manager", "godown_operator"] },
   { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
   {
     label: "Administration",
