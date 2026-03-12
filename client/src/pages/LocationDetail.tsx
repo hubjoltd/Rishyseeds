@@ -148,7 +148,7 @@ export default function LocationDetail() {
     return qty;
   };
 
-  // Calculate total stock at location (converting packed packets → kg)
+  // Calculate total stock at location (converting packed packets to kg)
   const totalStockAtLocation = locationStockBalances.reduce((sum, sb) => sum + parseBalanceToKg(sb), 0);
 
   useEffect(() => {
