@@ -112,6 +112,7 @@ export default function Employees() {
       pfDeduction: "0",
       esiDeduction: "0",
       tdsDeduction: "0",
+      professionalTax: "0",
       otherDeductions: "0",
     }
   });
@@ -129,6 +130,7 @@ export default function Employees() {
       pfDeduction: "0",
       esiDeduction: "0",
       tdsDeduction: "0",
+      professionalTax: "0",
       otherDeductions: "0",
     }
   });
@@ -153,6 +155,7 @@ export default function Employees() {
         pfDeduction: editingEmployee.pfDeduction || "0",
         esiDeduction: editingEmployee.esiDeduction || "0",
         tdsDeduction: editingEmployee.tdsDeduction || "0",
+        professionalTax: editingEmployee.professionalTax || "0",
         otherDeductions: editingEmployee.otherDeductions || "0",
         bankName: editingEmployee.bankName || "",
         bankAccountNumber: editingEmployee.bankAccountNumber || "",
@@ -415,6 +418,10 @@ export default function Employees() {
                         <Input type="number" {...form.register("tdsDeduction")} placeholder="0" data-testid="input-tds" />
                       </div>
                       <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Professional Tax</label>
+                        <Input type="number" {...form.register("professionalTax")} placeholder="0" data-testid="input-professional-tax" />
+                      </div>
+                      <div className="space-y-2">
                         <label className="text-sm text-muted-foreground">Other Deductions</label>
                         <Input type="number" {...form.register("otherDeductions")} placeholder="0" data-testid="input-other-deductions" />
                       </div>
@@ -634,6 +641,10 @@ export default function Employees() {
                       <div className="space-y-2">
                         <label className="text-sm text-muted-foreground">TDS Deduction</label>
                         <Input type="number" {...editForm.register("tdsDeduction")} placeholder="0" data-testid="input-edit-tds" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Professional Tax</label>
+                        <Input type="number" {...editForm.register("professionalTax")} placeholder="0" data-testid="input-edit-professional-tax" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm text-muted-foreground">Other Deductions</label>

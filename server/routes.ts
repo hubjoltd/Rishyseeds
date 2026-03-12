@@ -1067,9 +1067,10 @@ export async function registerRoutes(
         const pfDeduction = Number(emp.pfDeduction || 0);
         const esiDeduction = Number(emp.esiDeduction || 0);
         const tdsDeduction = Number(emp.tdsDeduction || 0);
+        const professionalTax = Number(emp.professionalTax || 0);
         const otherDeductions = Number(emp.otherDeductions || 0);
         
-        const totalDeductions = pfDeduction + esiDeduction + tdsDeduction + otherDeductions;
+        const totalDeductions = pfDeduction + esiDeduction + tdsDeduction + professionalTax + otherDeductions;
         
         const grossSalary = basic + totalAllowances;
         const netSalary = grossSalary - totalDeductions;

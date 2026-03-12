@@ -90,6 +90,8 @@ function avatarColor(name: string) {
 function LiveMap({ trips }: { trips: TripWithVisits[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(true);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -112,8 +114,8 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
     });
 
     const defaultCenter: [number, number] = [22.8, 80.0];
-    const center = points.length > 0 ? points[points.length - 1] : defaultCenter;
-    const map = L.map(mapRef.current).setView(center, 13);
+    const initialCenter = points.length > 0 ? points[points.length - 1] : defaultCenter;
+    const map = L.map(mapRef.current).setView(initialCenter, 13);
     mapInstanceRef.current = map;
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
 
@@ -132,11 +134,65 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
       if (points.length > 1) map.fitBounds(pl.getBounds().pad(0.2));
     }
 
+    // Request admin's current location
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGeoLoading(false);
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const adminIcon = L.divIcon({
+            className: "",
+            html: `<div style="width:20px;height:20px;background:#16a34a;border-radius:50%;border:3px solid white;box-shadow:0 0 0 5px rgba(22,163,74,0.25),0 2px 8px rgba(0,0,0,0.3)"></div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          });
+          if (mapInstanceRef.current) {
+            L.marker([lat, lng], { icon: adminIcon })
+              .bindPopup("<b>Your Location</b><br>Admin current position")
+              .addTo(mapInstanceRef.current);
+            if (points.length === 0) {
+              mapInstanceRef.current.setView([lat, lng], 14);
+            }
+          }
+        },
+        (err) => {
+          setGeoLoading(false);
+          setGeoError(err.code === 1 ? "Location permission denied" : "Could not get location");
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      setGeoLoading(false);
+      setGeoError("Geolocation not supported in this browser");
+    }
+
     setTimeout(() => map.invalidateSize(), 100);
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
   }, [trips]);
 
-  return <div ref={mapRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={mapRef} className="h-full w-full" />
+      {geoLoading && (
+        <div className="absolute top-3 right-3 z-[1000] bg-white/90 dark:bg-black/70 text-xs px-3 py-1.5 rounded-full shadow flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin text-green-600" />
+          <span>Getting your location...</span>
+        </div>
+      )}
+      {!geoLoading && geoError && (
+        <div className="absolute top-3 right-3 z-[1000] bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-1.5 rounded-full shadow">
+          {geoError}
+        </div>
+      )}
+      {!geoLoading && !geoError && (
+        <div className="absolute top-3 right-3 z-[1000] bg-green-50 border border-green-200 text-green-700 text-xs px-3 py-1.5 rounded-full shadow flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-green-500" />
+          Live
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string }) {

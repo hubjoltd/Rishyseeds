@@ -138,6 +138,7 @@ export const employees = pgTable("employees", {
   pfDeduction: decimal("pf_deduction").default("0"), // Provident Fund
   esiDeduction: decimal("esi_deduction").default("0"), // ESI
   tdsDeduction: decimal("tds_deduction").default("0"), // TDS
+  professionalTax: decimal("professional_tax").default("0"), // Professional Tax
   otherDeductions: decimal("other_deductions").default("0"),
   bankName: text("bank_name"),
   bankAccountNumber: text("bank_account_number"),
