@@ -1420,41 +1420,108 @@ export async function registerRoutes(
     try {
       const validatedData = insertOutwardRecordSchema.parse(req.body);
       
-      // Stock validation: check if sufficient stock is available
-      const stockBalance = await storage.getStockBalanceByLotAndLocation(
-        validatedData.lotId,
-        validatedData.locationId,
-        validatedData.stockForm,
-        validatedData.packetSize || undefined
-      );
-      
-      const requestedQty = parseFloat(validatedData.quantity);
-      const availableQty = stockBalance ? parseFloat(stockBalance.quantity) : 0;
-      
-      if (requestedQty > availableQty) {
-        return res.status(400).json({ 
-          message: `Insufficient stock. Available: ${availableQty.toFixed(2)} ${validatedData.stockForm === 'packed' ? 'packets' : 'KG'}, Requested: ${requestedQty.toFixed(2)}` 
-        });
-      }
-      
-      const record = await storage.createOutwardRecord(validatedData);
-      
-      // Create notification if employee created the record
-      if (req.employeeId && validatedData.createdBy) {
-        const employee = await storage.getEmployee(req.employeeId);
-        if (employee) {
-          await storage.createNotification({
-            type: "outward",
-            message: `${employee.fullName} created dispatch record to ${validatedData.destinationType} (${validatedData.quantity} ${validatedData.stockForm === 'packed' ? 'packets' : 'kg'})`,
-            employeeId: employee.id,
-            employeeName: employee.fullName,
-            resourceType: "outward_record",
-            resourceId: record.id,
+      const requestedKg = parseFloat(validatedData.quantity);
+
+      // Helper to parse packet size string to KG (e.g. "100g" → 0.1, "1kg" → 1)
+      const parsePacketSizeKg = (size: string): number => {
+        const s = size.toLowerCase().trim();
+        if (s.endsWith('kg')) return parseFloat(s);
+        if (s.endsWith('g')) return parseFloat(s) / 1000;
+        return 1;
+      };
+
+      // Stock validation & deduction
+      if (validatedData.stockForm === 'packed') {
+        // Packed stock: balance is stored as packet COUNT; quantity entered in KG
+        const ps = validatedData.packetSize;
+        if (!ps) {
+          return res.status(400).json({ message: "Packet size is required for packed stock dispatch" });
+        }
+        const pktKg = parsePacketSizeKg(ps);
+        const packetsNeeded = Math.round(requestedKg / pktKg);
+
+        const stockBalance = await storage.getStockBalanceByLotAndLocation(
+          validatedData.lotId,
+          validatedData.locationId,
+          'packed',
+          ps
+        );
+        const availablePackets = stockBalance ? parseFloat(stockBalance.quantity) : 0;
+        const availableKg = availablePackets * pktKg;
+
+        if (requestedKg > availableKg + 0.001) {
+          return res.status(400).json({
+            message: `Insufficient packed stock. Available: ${availableKg.toFixed(2)} KG (${availablePackets} packets of ${ps}), Requested: ${requestedKg.toFixed(2)} KG`
           });
         }
+
+        const record = await storage.createOutwardRecord(validatedData);
+
+        // Deduct packet count from packed balance
+        await storage.adjustStockBalance(
+          validatedData.lotId,
+          validatedData.locationId,
+          'packed',
+          -packetsNeeded,
+          ps
+        );
+
+        if (req.employeeId && validatedData.createdBy) {
+          const employee = await storage.getEmployee(req.employeeId);
+          if (employee) {
+            await storage.createNotification({
+              type: "outward",
+              message: `${employee.fullName} dispatched ${requestedKg} KG (${packetsNeeded} × ${ps} bags) to ${validatedData.destinationType}`,
+              employeeId: employee.id,
+              employeeName: employee.fullName,
+              resourceType: "outward_record",
+              resourceId: record.id,
+            });
+          }
+        }
+
+        return res.status(201).json(record);
+      } else {
+        // Loose / cobs: balance stored in KG
+        const stockBalance = await storage.getStockBalanceByLotAndLocation(
+          validatedData.lotId,
+          validatedData.locationId,
+          validatedData.stockForm
+        );
+        const availableKg = stockBalance ? parseFloat(stockBalance.quantity) : 0;
+
+        if (requestedKg > availableKg + 0.001) {
+          return res.status(400).json({
+            message: `Insufficient stock. Available: ${availableKg.toFixed(2)} KG, Requested: ${requestedKg.toFixed(2)} KG`
+          });
+        }
+
+        const record = await storage.createOutwardRecord(validatedData);
+
+        // Deduct KG from loose/cobs balance
+        await storage.adjustStockBalance(
+          validatedData.lotId,
+          validatedData.locationId,
+          validatedData.stockForm,
+          -requestedKg
+        );
+
+        if (req.employeeId && validatedData.createdBy) {
+          const employee = await storage.getEmployee(req.employeeId);
+          if (employee) {
+            await storage.createNotification({
+              type: "outward",
+              message: `${employee.fullName} dispatched ${requestedKg} KG to ${validatedData.destinationType}`,
+              employeeId: employee.id,
+              employeeName: employee.fullName,
+              resourceType: "outward_record",
+              resourceId: record.id,
+            });
+          }
+        }
+
+        return res.status(201).json(record);
       }
-      
-      res.status(201).json(record);
     } catch (e: any) {
       if (e.name === 'ZodError') {
         return res.status(400).json({ message: "Validation error", errors: e.errors });

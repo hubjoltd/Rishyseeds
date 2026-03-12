@@ -51,6 +51,7 @@ const outwardFormSchema = z.object({
   lotId: z.coerce.number().min(1, "Please select a lot"),
   locationId: z.coerce.number().min(1, "Please select a warehouse"),
   stockForm: z.string().min(1, "Please select stock form"),
+  packetSize: z.string().optional(),
   quantity: z.coerce.number().positive("Quantity must be positive"),
   destinationType: z.string().min(1, "Please select destination type"),
   destinationName: z.string().optional(),
@@ -93,11 +94,27 @@ export default function Outward() {
     }
   });
 
+  const watchedLotId = form.watch("lotId");
+  const watchedLocationId = form.watch("locationId");
+  const watchedStockForm = form.watch("stockForm");
+
+  const availablePacketSizes = (stockBalances as StockBalance[] || [])
+    .filter((b: StockBalance) =>
+      b.lotId === watchedLotId &&
+      b.locationId === watchedLocationId &&
+      b.stockForm === 'packed' &&
+      b.packetSize &&
+      Number(b.quantity) > 0
+    )
+    .map((b: StockBalance) => b.packetSize as string)
+    .filter((v, i, a) => a.indexOf(v) === i);
+
   const onSubmit = (data: z.infer<typeof outwardFormSchema>) => {
     createRecord({
       lotId: data.lotId,
       locationId: data.locationId,
       stockForm: data.stockForm,
+      packetSize: data.stockForm === 'packed' ? (data.packetSize || null) : null,
       quantity: String(data.quantity),
       destinationType: data.destinationType,
       destinationName: data.destinationName || null,
@@ -235,15 +252,34 @@ export default function Outward() {
                 </div>
               </div>
 
+              {watchedStockForm === 'packed' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Packet Size</label>
+                  <Select onValueChange={(val) => form.setValue("packetSize", val)}>
+                    <SelectTrigger data-testid="select-packet-size">
+                      <SelectValue placeholder="Select packet size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePacketSizes.length > 0 ? (
+                        availablePacketSizes.map((ps) => (
+                          <SelectItem key={ps} value={ps}>{ps}</SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="100g">100g</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {form.watch("stockForm") === 'packed' ? 'No. of Packets/Bags' : 'Quantity (KG)'}
-                  </label>
+                  <label className="text-sm font-medium">Quantity (KG)</label>
                   <Input 
                     type="number" 
+                    step="0.01"
                     {...form.register("quantity")}
-                    placeholder={form.watch("stockForm") === 'packed' ? 'Number of bags' : 'Quantity in KG'}
+                    placeholder="Quantity in KG"
                     data-testid="input-quantity"
                   />
                 </div>
@@ -355,7 +391,7 @@ export default function Outward() {
                   <TableHead>Lot</TableHead>
                   <TableHead>From</TableHead>
                   <TableHead>Form</TableHead>
-                  <TableHead className="text-right">Packets/Bags</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
                   <TableHead>State</TableHead>
                   <TableHead>Variety</TableHead>
                   <TableHead>Invoice</TableHead>
@@ -382,10 +418,9 @@ export default function Outward() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {record.stockForm === 'packed' ? (
-                          <span>{record.quantity} <span className="text-muted-foreground text-xs">bags</span></span>
-                        ) : (
-                          <span>{record.quantity} <span className="text-muted-foreground text-xs">KG</span></span>
+                        <span>{Number(record.quantity).toFixed(2)} <span className="text-muted-foreground text-xs">KG</span></span>
+                        {record.stockForm === 'packed' && record.packetSize && (
+                          <div className="text-xs text-muted-foreground">{record.packetSize} bags</div>
                         )}
                       </TableCell>
                       <TableCell>
