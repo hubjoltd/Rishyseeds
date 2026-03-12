@@ -146,6 +146,12 @@ export default function Outward() {
     return `${lot.lotNumber} (${product?.crop} - ${product?.variety || 'Unknown'})`;
   };
 
+  const getLotBalance = (lotId: number): number => {
+    return (stockBalances as StockBalance[] || [])
+      .filter((b: StockBalance) => b.lotId === lotId && b.stockForm === 'loose')
+      .reduce((sum: number, b: StockBalance) => sum + Number(b.quantity || 0), 0);
+  };
+
   const getLocationName = (locationId: number) => {
     const location = (locations as Location[] || []).find((l: Location) => l.id === locationId);
     return location?.name || "Unknown";
@@ -301,25 +307,13 @@ export default function Outward() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Destination Name</label>
-                  <Input 
-                    {...form.register("destinationName")}
-                    placeholder="Dealer/farmer name"
-                    data-testid="input-destination-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Variety (auto-filled)</label>
-                  <Input 
-                    value={form.watch("variety") || ""}
-                    readOnly
-                    className="bg-muted"
-                    placeholder="Select a product first"
-                    data-testid="input-variety"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Destination Name</label>
+                <Input 
+                  {...form.register("destinationName")}
+                  placeholder="Dealer/farmer name"
+                  data-testid="input-destination-name"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -394,7 +388,7 @@ export default function Outward() {
                   <TableHead>To</TableHead>
                   <TableHead>Form</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
-                  <TableHead>Variety</TableHead>
+                  <TableHead className="text-right bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300">Closing Balance</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -431,7 +425,16 @@ export default function Outward() {
                           <div className="text-xs text-muted-foreground">{record.packetSize} bags</div>
                         )}
                       </TableCell>
-                      <TableCell>{record.variety || '-'}</TableCell>
+                      <TableCell className="text-right bg-amber-50/40 dark:bg-amber-950/10">
+                        {(() => {
+                          const bal = getLotBalance(record.lotId);
+                          return (
+                            <span className={`font-semibold ${bal <= 0 ? "text-red-600 dark:text-red-400" : bal < 100 ? "text-orange-600 dark:text-orange-400" : "text-green-700 dark:text-green-400"}`}>
+                              {bal.toFixed(2)} <span className="text-muted-foreground text-xs font-normal">kg</span>
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
                       <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right">
