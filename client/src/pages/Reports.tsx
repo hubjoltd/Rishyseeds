@@ -51,6 +51,21 @@ export default function Reports() {
     return lot?.lotNumber || `Lot #${lotId}`;
   };
 
+  const parseBalanceToKg = (b: StockBalance): number => {
+    const qty = Number(b.quantity);
+    if (b.stockForm === 'packed' && b.packetSize) {
+      const s = b.packetSize.toLowerCase().trim();
+      if (s.endsWith('kg')) return qty * parseFloat(s);
+      if (s.endsWith('g')) return qty * parseFloat(s) / 1000;
+    }
+    return qty;
+  };
+
+  const getLotCurrentBalance = (lotId: number): number => {
+    const balances = (stockBalances || []).filter(b => b.lotId === lotId);
+    return balances.reduce((sum, b) => sum + parseBalanceToKg(b), 0);
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -64,7 +79,7 @@ export default function Reports() {
       const rows = lots?.map(l => [
         l.lotNumber, 
         getProductName(l.productId), 
-        l.initialQuantity, 
+        getLotCurrentBalance(l.id).toFixed(2),
         l.sourceName || '-',
         l.status, 
         l.inwardDate ? format(new Date(l.inwardDate), "yyyy-MM-dd") : ""
@@ -76,7 +91,7 @@ export default function Reports() {
       const productGroups = Array.from(new Set(lots?.map(l => l.productId) || []));
       const rows = productGroups.map(productId => {
         const productLots = lots?.filter(l => l.productId === productId) || [];
-        const totalStock = productLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+        const totalStock = productLots.reduce((sum, l) => sum + getLotCurrentBalance(l.id), 0);
         return [getProductName(productId), productLots.length, totalStock.toFixed(2)];
       });
       data = [headers, ...rows].map(row => row.join(",")).join("\n");
@@ -131,7 +146,7 @@ export default function Reports() {
   };
 
   const activeLots = lots?.filter(l => l.status === 'active') || [];
-  const totalStock = activeLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+  const totalStock = activeLots.reduce((sum, l) => sum + getLotCurrentBalance(l.id), 0);
   const completedProcessing = processingRecords?.filter(p => p.status === 'completed') || [];
   const totalOutward = outwardRecords?.reduce((sum, o) => sum + Number(o.quantity), 0) || 0;
 
@@ -261,7 +276,7 @@ export default function Reports() {
                       <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
                       <TableCell>{getProductName(lot.productId)}</TableCell>
                       <TableCell>{lot.sourceName || '-'}</TableCell>
-                      <TableCell className="text-right font-bold text-primary">{Number(lot.initialQuantity).toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-bold text-primary">{getLotCurrentBalance(lot.id).toFixed(2)}</TableCell>
                       <TableCell>
                         <Badge className={lot.status === "active" ? "badge-success" : "badge-warning"}>
                           {lot.status}
@@ -295,7 +310,7 @@ export default function Reports() {
                     }
                     return productIds.map(productId => {
                       const productLots = lots?.filter(l => l.productId === productId && l.status === 'active') || [];
-                      const totalStock = productLots.reduce((sum, l) => sum + Number(l.initialQuantity), 0);
+                      const totalStock = productLots.reduce((sum, l) => sum + getLotCurrentBalance(l.id), 0);
                       return (
                         <TableRow key={productId} data-testid={`row-variety-${productId}`}>
                           <TableCell className="font-medium">{getProductName(productId)}</TableCell>
