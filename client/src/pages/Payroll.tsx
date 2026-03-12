@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { usePayroll, useGeneratePayroll, useEmployees } from "@/hooks/use-hrms";
+import { getAuthToken } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,8 +44,26 @@ export default function Payroll() {
     setPayslipOpen(true);
   };
 
-  const handleDownloadPayslip = (payroll: PayrollType) => {
-    window.open(`/api/payroll/${payroll.id}/download`, "_blank");
+  const handleDownloadPayslip = async (payroll: PayrollType) => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/payroll/${payroll.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        console.error("Download failed:", res.status);
+        return;
+      }
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (win) {
+        win.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+      }
+    } catch (err) {
+      console.error("Download error:", err);
+    }
   };
 
   const getEmployeeForPayroll = (employeeId: number) => {
