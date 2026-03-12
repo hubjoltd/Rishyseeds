@@ -389,10 +389,10 @@ export default function Outward() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Lot</TableHead>
+                  <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead>Form</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
-                  <TableHead>State</TableHead>
                   <TableHead>Variety</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Date</TableHead>
@@ -412,6 +412,10 @@ export default function Outward() {
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
                       <TableCell className="font-mono text-sm">{getLotDetails(record.lotId)}</TableCell>
                       <TableCell>
+                        <div className="font-medium">{getLocationName(record.locationId)}</div>
+                        <div className="text-xs text-muted-foreground">Warehouse</div>
+                      </TableCell>
+                      <TableCell>
                         <div className="font-medium">{record.destinationName || '-'}</div>
                         <div className="text-xs text-muted-foreground">{record.destinationType}</div>
                       </TableCell>
@@ -425,9 +429,6 @@ export default function Outward() {
                         {record.stockForm === 'packed' && record.packetSize && (
                           <div className="text-xs text-muted-foreground">{record.packetSize} bags</div>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="w-fit">{record.destinationType}</Badge>
                       </TableCell>
                       <TableCell>{record.variety || '-'}</TableCell>
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>

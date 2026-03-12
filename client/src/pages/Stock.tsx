@@ -108,6 +108,13 @@ export default function Stock() {
     return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
   };
 
+  const getStockBalanceAtLocation = (lotId: number, locationId: number) => {
+    const balances = (stockBalances as StockBalance[] || []).filter(
+      sb => sb.lotId === lotId && sb.locationId === locationId && Number(sb.quantity) > 0
+    );
+    return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
+  };
+
   const getStockByWarehouse = (lotId: number) => {
     const balances = (stockBalances as StockBalance[] || []).filter(
       sb => sb.lotId === lotId && sb.stockForm === 'loose' && Number(sb.quantity) > 0
@@ -403,6 +410,7 @@ export default function Stock() {
                 <TableHead>From Warehouse</TableHead>
                 <TableHead>To Warehouse</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
                 <TableHead>Person</TableHead>
                 <TableHead>Created By</TableHead>
                 {(canEditStock || canDeleteStock) && <TableHead className="text-right">Actions</TableHead>}
@@ -410,9 +418,9 @@ export default function Stock() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 9 : 8} className="text-center">Loading...</TableCell></TableRow>
               ) : movements?.length === 0 ? (
-                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 8 : 7} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={(canEditStock || canDeleteStock) ? 9 : 8} className="text-center text-muted-foreground">No movements recorded.</TableCell></TableRow>
               ) : (
                 movements?.map((m) => {
                   const lot = (lots as Lot[] || []).find(l => l.id === m.lotId);
@@ -441,6 +449,16 @@ export default function Stock() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
+                      <TableCell className="text-right">
+                        {m.lotId && m.fromLocationId ? (
+                          <div>
+                            <div className="font-medium text-sm">
+                              {getStockBalanceAtLocation(m.lotId, m.fromLocationId).toFixed(2)} kg
+                            </div>
+                            <div className="text-xs text-muted-foreground">at source</div>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
                       <TableCell>{m.responsiblePerson || '-'}</TableCell>
                       <TableCell>{getCreatedByName(m.createdBy)}</TableCell>
                       {(canEditStock || canDeleteStock) && (
