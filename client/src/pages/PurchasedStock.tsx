@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLots, useLocations, useStockMovements, useStockBalances, useProducts } from "@/hooks/use-inventory";
+import { useLots, useLocations, useStockMovements, useStockBalances, useProducts, useOutwardRecords, usePackagingOutputs, useProcessingRecords } from "@/hooks/use-inventory";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Warehouse } from "lucide-react";
@@ -15,6 +15,9 @@ export default function PurchasedStock() {
   const { data: locations = [] } = useLocations() as { data: Location[] };
   const { data: movements = [] } = useStockMovements() as { data: StockMovement[] };
   const { data: stockBalances = [] } = useStockBalances() as { data: StockBalance[] };
+  const { data: outwardRecords = [] } = useOutwardRecords();
+  const { data: packagingOutputs = [] } = usePackagingOutputs();
+  const { data: processingRecords = [] } = useProcessingRecords();
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -66,6 +69,19 @@ export default function PurchasedStock() {
 
   const getProduct = (productId: number) =>
     (products as Product[]).find(p => p.id === productId);
+
+  const getLotBalance = (lotId: number, initialQty: number | string): number => {
+    const outward = ((outwardRecords as any[]) || [])
+      .filter(r => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    const packaged = ((packagingOutputs as any[]) || [])
+      .filter(p => p.lotId === lotId)
+      .reduce((s: number, p: any) => s + Number(p.totalQuantityKg || 0) + Number(p.wasteQuantity || 0), 0);
+    const processed = ((processingRecords as any[]) || [])
+      .filter(p => p.inputLotId === lotId)
+      .reduce((s: number, p: any) => s + Number(p.inputQuantity || 0), 0);
+    return Math.max(0, Number(initialQty || 0) - outward - packaged - processed);
+  };
 
   const getColdStorageInward = (lotId: number, locationId: number) =>
     (movements as StockMovement[])
@@ -170,6 +186,12 @@ export default function PurchasedStock() {
                       Storage<br/>Main Office
                     </th>
                   )}
+                  <th
+                    className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase tracking-wide bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300"
+                    rowSpan={2}
+                  >
+                    Closing<br/>Balance (KG)
+                  </th>
                 </tr>
                 {activeColdStorages.length > 0 && (
                   <tr className="bg-muted/30">
@@ -263,6 +285,16 @@ export default function PurchasedStock() {
                           )}
                         </td>
                       )}
+                      {(() => {
+                        const bal = getLotBalance(lot.id, lot.initialQuantity);
+                        return (
+                          <td className="border border-border px-3 py-2 text-center bg-rose-50/30 dark:bg-rose-950/10 font-bold">
+                            <span className={bal <= 0 ? "text-muted-foreground text-xs" : bal < 500 ? "text-amber-600 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}>
+                              {bal > 0 ? `${bal.toFixed(0)} KG` : "-"}
+                            </span>
+                          </td>
+                        );
+                      })()}
                     </tr>
                   );
                 })}
@@ -300,6 +332,9 @@ export default function PurchasedStock() {
                       {filteredLots.reduce((s, l) => s + getLocationBalance(l.id, officeLocationIds), 0).toFixed(0)}
                     </td>
                   )}
+                  <td className="border border-border px-3 py-2 text-center bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400">
+                    {filteredLots.reduce((s, l) => s + getLotBalance(l.id, l.initialQuantity), 0).toFixed(0)} KG
+                  </td>
                 </tr>
               </tbody>
             </table>

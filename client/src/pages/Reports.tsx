@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { usePackagingOutputs } from "@/hooks/use-inventory";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +34,8 @@ export default function Reports() {
   const { data: stockBalances, isLoading: stockLoading } = useQuery<StockBalance[]>({ queryKey: ["/api/stock-balances"] });
   const { data: outwardRecords, isLoading: outwardLoading } = useQuery<OutwardRecord[]>({ queryKey: ["/api/outward"] });
   const { data: processingRecords, isLoading: processingLoading } = useQuery<ProcessingRecord[]>({ queryKey: ["/api/processing"] });
-  
+  const { data: packagingOutputs = [] } = usePackagingOutputs();
+
   const isLoading = lotsLoading || productsLoading || locationsLoading || stockLoading || outwardLoading || processingLoading;
 
   const getProductName = (productId: number) => {
@@ -62,8 +64,18 @@ export default function Reports() {
   };
 
   const getLotCurrentBalance = (lotId: number): number => {
-    const balances = (stockBalances || []).filter(b => b.lotId === lotId && b.stockForm === 'loose');
-    return balances.reduce((sum, b) => sum + Number(b.quantity), 0);
+    const lot = (lots || []).find(l => l.id === lotId);
+    if (!lot) return 0;
+    const outward = (outwardRecords || [])
+      .filter(r => r.lotId === lotId)
+      .reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const packaged = ((packagingOutputs as any[]) || [])
+      .filter(p => p.lotId === lotId)
+      .reduce((s, p) => s + Number(p.totalQuantityKg || 0) + Number(p.wasteQuantity || 0), 0);
+    const processed = (processingRecords || [])
+      .filter(p => p.inputLotId === lotId)
+      .reduce((s, p) => s + Number(p.inputQuantity || 0), 0);
+    return Math.max(0, Number(lot.initialQuantity || 0) - outward - packaged - processed);
   };
 
   const handlePrint = () => {
