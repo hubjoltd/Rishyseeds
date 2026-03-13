@@ -437,7 +437,7 @@ export default function Outward() {
                       <TableCell className="text-right font-medium">
                         <span>{Number(record.quantity).toFixed(2)} <span className="text-muted-foreground text-xs">KG</span></span>
                         {record.stockForm === 'packed' && record.packetSize && (
-                          <div className="text-xs text-muted-foreground">{record.packetSize} bags</div>
+                          <div className="text-xs text-muted-foreground">{record.packetSize}</div>
                         )}
                       </TableCell>
                       <TableCell className="text-right bg-amber-50/40 dark:bg-amber-950/10">

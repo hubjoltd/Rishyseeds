@@ -339,7 +339,7 @@ export default function Packaging() {
                   {form.formState.errors.packagingSizeId && <p className="text-xs text-red-500">Required</p>}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Number of Bags</label>
+                  <label className="text-sm font-medium">Quantity</label>
                   <Input 
                     type="number" 
                     {...form.register("numberOfPackets")}
@@ -461,7 +461,7 @@ export default function Packaging() {
                 <TableHead>Lot</TableHead>
                 <TableHead>Warehouse</TableHead>
                 <TableHead>Packet Size</TableHead>
-                <TableHead className="text-right">Bags</TableHead>
+                <TableHead className="text-right">Quantity</TableHead>
                 <TableHead className="text-right">Total (KG)</TableHead>
                 <TableHead className="text-right">Waste (KG)</TableHead>
                 <TableHead>Created By</TableHead>
@@ -600,7 +600,7 @@ export default function Packaging() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Number of Bags</label>
+                    <label className="text-sm font-medium">Quantity</label>
                     <Input 
                       type="number" 
                       {...editForm.register("numberOfPackets")}

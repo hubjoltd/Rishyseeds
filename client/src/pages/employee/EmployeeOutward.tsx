@@ -411,12 +411,12 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">
-                      {stockForm === 'packed' ? 'No. of Bags' : 'Quantity (KG)'} <span className="text-destructive">*</span>
+                      {'Quantity'} <span className="text-destructive">*</span>
                     </label>
                     <Input 
                       type="number" 
                       {...form.register("quantity")} 
-                      placeholder={stockForm === 'packed' ? 'Number of bags' : 'Quantity in KG'}
+                      placeholder={stockForm === 'packed' ? 'Enter quantity' : 'Quantity in KG'}
                     />
                   </div>
                   <div className="space-y-2">
@@ -540,7 +540,7 @@ export default function EmployeeOutward({ employee, permissions = {} }: Employee
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {Number(record.quantity)?.toLocaleString()} {record.stockForm === 'packed' ? 'bags' : 'KG'}
+                        {Number(record.quantity)?.toLocaleString()} {record.stockForm === 'packed' ? '' : 'KG'}
                       </TableCell>
                       <TableCell>{record.invoiceNumber || "-"}</TableCell>
                       <TableCell>{record.vehicleNumber || "-"}</TableCell>
