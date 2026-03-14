@@ -263,6 +263,7 @@ export const lots = pgTable("lots", {
   quantityUnit: text("quantity_unit").notNull().default("kg"), // kg, tons
   stockForm: text("stock_form").notNull().default("loose"), // loose, packed, raw_seed, cobs
   germinationPercentage: decimal("germination_percentage"), // Optional germination %
+  numberOfBags: integer("number_of_bags"), // Optional bag count
   status: text("status").notNull().default("active"), // active, exhausted, expired
   inwardDate: date("inward_date").defaultNow(),
   expiryDate: date("expiry_date"),
