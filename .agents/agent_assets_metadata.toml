@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Ul0d4TMS4SYLbdkPyuvPu"
+uri = "file://DEPLOY.md"
+type = "text"
+title = "Rishi Seeds — Server Deployment Guide"
