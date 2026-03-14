@@ -348,9 +348,17 @@ export default function Inward() {
     });
   };
 
-  const filteredLots = ((lots as Lot[]) || []).filter((lot: Lot) =>
-    lot.lotNumber.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredLots = ((lots as Lot[]) || []).filter((lot: Lot) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const product = (products as Product[]).find(p => p.id === lot.productId);
+    return (
+      lot.lotNumber.toLowerCase().includes(q) ||
+      product?.crop?.toLowerCase().includes(q) ||
+      product?.variety?.toLowerCase().includes(q) ||
+      lot.sourceName?.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -514,7 +522,7 @@ export default function Inward() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search by lot number..."
+          placeholder="Search by lot, crop, variety, organiser..."
           className="pl-10 max-w-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -536,72 +544,96 @@ export default function Inward() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Inward Date</TableHead>
-                  <TableHead>Lot Number</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Initial Qty</TableHead>
-                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-xs">
+                  <TableHead className="text-xs whitespace-nowrap">Date</TableHead>
+                  <TableHead className="text-xs">Crop</TableHead>
+                  <TableHead className="text-xs">Variety</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Lot No.</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Organiser</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Quantity</TableHead>
+                  <TableHead className="text-center text-xs bg-blue-50 dark:bg-blue-950/20 text-green-700 dark:text-green-400 whitespace-nowrap">
                     Cold Storage<br />Inward
                   </TableHead>
-                  <TableHead className="text-center bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400 text-xs">
+                  <TableHead className="text-center text-xs bg-blue-50 dark:bg-blue-950/20 text-red-600 dark:text-red-400 whitespace-nowrap">
                     Cold Storage<br />Outward
                   </TableHead>
-                  <TableHead className="text-center bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 text-xs">
+                  <TableHead className="text-center text-xs bg-cyan-50 dark:bg-cyan-950/20 text-cyan-700 dark:text-cyan-400 whitespace-nowrap">
+                    Cold Storage<br />Remaining
+                  </TableHead>
+                  <TableHead className="text-center text-xs bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 whitespace-nowrap">
                     Storage<br />Plant
                   </TableHead>
-                  <TableHead className="text-center bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-xs">
+                  <TableHead className="text-center text-xs bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 whitespace-nowrap">
                     Storage<br />Main Office
                   </TableHead>
-                  <TableHead>Current Balance</TableHead>
-                  <TableHead>Stock Form</TableHead>
-                  <TableHead>Created By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Current Stock<br />Balance</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Plan By</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-right text-xs">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredLots.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={16} className="text-center text-muted-foreground py-8">
                       No lots found. Record your first inward entry above.
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredLots.map((lot: Lot) => {
+                    const product = (products as Product[]).find(p => p.id === lot.productId);
                     const csIn = getColBalance(lot.id, coldStorageIds, "cs_inward");
                     const csOut = getColBalance(lot.id, coldStorageIds, "cs_outward");
+                    const csRem = Math.max(0, csIn - csOut);
                     const plant = getColBalance(lot.id, plantIds, "loose");
                     const office = getColBalance(lot.id, officeIds, "loose");
                     return (
                       <TableRow key={lot.id} data-testid={`row-lot-${lot.id}`}>
-                        <TableCell>{lot.inwardDate ? format(new Date(lot.inwardDate), "PP") : "-"}</TableCell>
-                        <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
-                        <TableCell>{getProductDetails(lot.productId)}</TableCell>
-                        <TableCell>{lot.initialQuantity} kg</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {lot.inwardDate ? format(new Date(lot.inwardDate), "dd MMM yy") : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">{product?.crop || "-"}</TableCell>
+                        <TableCell className="text-xs">
+                          <div>{product?.variety || "-"}</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {lot.stockForm === "loose" ? "Raw Seeds" : lot.stockForm === "cobs" ? "Cobs" : lot.stockForm}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-medium whitespace-nowrap">{lot.lotNumber}</TableCell>
+                        <TableCell className="text-xs">{lot.sourceName || <span className="text-muted-foreground">-</span>}</TableCell>
+                        <TableCell className="text-xs font-semibold text-green-700 dark:text-green-400 whitespace-nowrap">
+                          {Number(lot.initialQuantity).toFixed(0)} {lot.quantityUnit || "kg"}
+                        </TableCell>
                         <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
                           {csIn > 0 ? (
-                            <span className="text-green-700 dark:text-green-400 font-medium">{csIn.toFixed(0)} kg</span>
+                            <span className="text-green-700 dark:text-green-400 font-medium text-xs">{csIn.toFixed(0)}</span>
                           ) : (
                             <span className="text-muted-foreground text-xs">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center bg-blue-50/40 dark:bg-blue-950/10">
                           {csOut > 0 ? (
-                            <span className="text-red-600 dark:text-red-400 font-medium">-{csOut.toFixed(0)} kg</span>
+                            <span className="text-red-600 dark:text-red-400 font-medium text-xs">-{csOut.toFixed(0)}</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center bg-cyan-50/40 dark:bg-cyan-950/10">
+                          {csRem > 0 ? (
+                            <span className="text-cyan-700 dark:text-cyan-400 font-semibold text-xs">{csRem.toFixed(0)}</span>
                           ) : (
                             <span className="text-muted-foreground text-xs">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center bg-orange-50/40 dark:bg-orange-950/10">
                           {plant > 0 ? (
-                            <span className="text-orange-700 dark:text-orange-400 font-medium">{plant.toFixed(0)} kg</span>
+                            <span className="text-orange-700 dark:text-orange-400 font-medium text-xs">{plant.toFixed(0)}</span>
                           ) : (
                             <span className="text-muted-foreground text-xs">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center bg-purple-50/40 dark:bg-purple-950/10">
                           {office > 0 ? (
-                            <span className="text-purple-700 dark:text-purple-400 font-medium">{office.toFixed(0)} kg</span>
+                            <span className="text-purple-700 dark:text-purple-400 font-medium text-xs">{office.toFixed(0)}</span>
                           ) : (
                             <span className="text-muted-foreground text-xs">-</span>
                           )}
@@ -612,26 +644,19 @@ export default function Inward() {
                             const dispatched = getLotDispatched(lot.id);
                             return (
                               <div>
-                                <span className={bal < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : "text-green-700 dark:text-green-400"}>
-                                  {bal.toFixed(2)} kg
+                                <span className={`text-xs ${bal < Number(lot.initialQuantity) ? "text-orange-600 dark:text-orange-400" : "text-green-700 dark:text-green-400"}`}>
+                                  {bal.toFixed(0)} kg
                                 </span>
                                 {dispatched > 0 && (
-                                  <div className="text-xs text-muted-foreground">
-                                    -{dispatched.toFixed(0)} dispatched
-                                  </div>
+                                  <div className="text-[10px] text-muted-foreground">-{dispatched.toFixed(0)} dispatched</div>
                                 )}
                               </div>
                             );
                           })()}
                         </TableCell>
+                        <TableCell className="text-xs">{getCreatedByName(lot.createdBy)}</TableCell>
                         <TableCell>
-                          <Badge variant={lot.stockForm === "packed" ? "default" : "secondary"}>
-                            {lot.stockForm === "loose" ? "Raw Seeds" : lot.stockForm === "cobs" ? "Cobs" : lot.stockForm}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{getCreatedByName(lot.createdBy)}</TableCell>
-                        <TableCell>
-                          <Badge variant={lot.status === "active" ? "default" : "outline"}>{lot.status}</Badge>
+                          <Badge variant={lot.status === "active" ? "default" : "outline"} className="text-xs">{lot.status}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
