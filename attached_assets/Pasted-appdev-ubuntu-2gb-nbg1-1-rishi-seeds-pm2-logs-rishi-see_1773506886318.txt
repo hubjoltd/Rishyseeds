@@ -1,0 +1,19 @@
+appdev@ubuntu-2gb-nbg1-1:~/rishi-seeds$ pm2 logs rishi-seeds
+[TAILING] Tailing last 15 lines for [rishi-seeds] process (change the value with --lines option)
+/home/appdev/.pm2/logs/rishi-seeds-out.log last 15 lines:
+/home/appdev/.pm2/logs/rishi-seeds-error.log last 15 lines:
+0|rishi-se | TABASE_URL)throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");var qF=new FF({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:!1}}),E=Ac(qF,{schema:Bf});var $f=class{async getUser(e){let[a]=await E.select().from(kt).where(O(kt.id,e));return a}async getUserByUsername(e){let[a]=await E.select().from(kt).where(O(kt.username,e));return a}async createUser(e){let[a]=await E.insert(kt).values(e).returning();return a}async getUsers(){return await E.select().from(kt).orderBy(ge(kt.createdAt))}async updateUser(e,a){let[n]=await E.update(kt).set(a).where(O(kt.id,e)).returning();return n}async deleteUser(e){let a=await E.delete(kt).where(O(kt.id,e));return!0}async getLocations(){return await E.select().from(at)}async getLocation(e){let[a]=await E.select().from(at).where(O(at.id,e));return a}async createLocation(e){let[a]=await E.insert(at).values(e).returning();return a}async updateLocation(e,a){let[n]=await E.update(at).set(a).where(O(at.id,e)).returning();return n}async deleteLocation(e){return await E.delete(at).where(O(at.id,e)),!0}async getBatches(){return await E.select().from(Kt).orderBy(ge(Kt.createdAt))}async getBatch(e){let[a]=await E.select().from(Kt).where(O(Kt.id,e));return a}async createBatch(e){let[a]=await E.insert(Kt).values({...e,currentQuantity:e.lotSize}).returning();return a}async updateBatchQuantity(e,a){await E.execute(w`
+0|rishi-se |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+0|rishi-se |
+0|rishi-se | Error: DATABASE_URL must be set. Did you forget to provision a database?
+0|rishi-se |     at Object.<anonymous> (/home/appdev/rishi-seeds/dist/index.cjs:76:114585)
+0|rishi-se |     at Module._compile (node:internal/modules/cjs/loader:1521:14)
+0|rishi-se |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+0|rishi-se |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+0|rishi-se |     at Module._load (node:internal/modules/cjs/loader:1091:12)
+0|rishi-se |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+0|rishi-se |     at node:internal/main/run_main_module:28:49
+0|rishi-se |
+0|rishi-se | Node.js v20.20.1
+
+
