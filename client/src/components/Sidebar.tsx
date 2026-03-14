@@ -65,6 +65,7 @@ const allMenuItems: MenuItem[] = [
     icon: Sprout,
     roles: ["admin", "manager", "godown_operator", "production_operator", "dispatch_operator"],
     children: [
+      { icon: Warehouse, label: "Purchased Stock", href: "/purchased-stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: PackagePlus, label: "Inward", href: "/inward", roles: ["admin", "manager", "godown_operator"] },
       { icon: BarChart2, label: "Variety Stock", href: "/variety-stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager", "godown_operator"] },
@@ -97,7 +98,6 @@ const allMenuItems: MenuItem[] = [
   { icon: Users, label: "Customers", href: "/customers", roles: ["admin", "manager"] },
   { icon: Radio, label: "Feeds", href: "/feeds", roles: ["admin", "manager"] },
   { icon: BanknoteIcon, label: "Expenses", href: "/expenses", roles: ["admin", "manager", "hr"] },
-  { icon: Warehouse, label: "Purchased Stock", href: "/purchased-stock", roles: ["admin", "manager", "godown_operator"] },
   { icon: FileText, label: "Reports", href: "/reports", roles: ["admin", "manager", "hr", "godown_operator", "production_operator", "dispatch_operator"] },
   {
     label: "Administration",
