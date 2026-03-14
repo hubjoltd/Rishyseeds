@@ -351,7 +351,7 @@ export default function Inward() {
   const filteredLots = ((lots as Lot[]) || []).filter((lot: Lot) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    const product = (products as Product[]).find(p => p.id === lot.productId);
+    const product = ((products as Product[]) || []).find(p => p.id === lot.productId);
     return (
       lot.lotNumber.toLowerCase().includes(q) ||
       product?.crop?.toLowerCase().includes(q) ||
@@ -580,7 +580,7 @@ export default function Inward() {
                   </TableRow>
                 ) : (
                   filteredLots.map((lot: Lot) => {
-                    const product = (products as Product[]).find(p => p.id === lot.productId);
+                    const product = ((products as Product[]) || []).find(p => p.id === lot.productId);
                     const csIn = getColBalance(lot.id, coldStorageIds, "cs_inward");
                     const csOut = getColBalance(lot.id, coldStorageIds, "cs_outward");
                     const csRem = Math.max(0, csIn - csOut);

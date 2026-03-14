@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances } from "@/hooks/use-inventory";
+import { useLots, useProducts, useCreateStockMovement, useStockMovements, useLocations, useDeleteStockMovement, useUpdateStockMovement, useStockBalances, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -62,6 +62,8 @@ export default function Stock() {
   const { data: products } = useProducts();
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
+  const { data: outwardRecords = [] } = useOutwardRecords();
+  const { data: outwardReturnsData = [] } = useOutwardReturns();
   const { data: employees } = useEmployees();
   const { mutate: moveStock, isPending } = useCreateStockMovement();
   const { mutate: deleteMovement, isPending: isDeleting } = useDeleteStockMovement();
@@ -108,6 +110,16 @@ export default function Stock() {
     return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
   };
 
+  const getLotClosingBalance = (lot: Lot): number => {
+    const dispatched = ((outwardRecords as any[]) || [])
+      .filter(r => r.lotId === lot.id)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    const returned = ((outwardReturnsData as any[]) || [])
+      .filter(r => r.lotId === lot.id)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, Number(lot.initialQuantity || 0) - dispatched + returned);
+  };
+
   const getStockBalanceAtLocation = (lotId: number, locationId: number) => {
     const balances = (stockBalances as StockBalance[] || []).filter(
       sb => sb.lotId === lotId && sb.locationId === locationId && Number(sb.quantity) > 0
@@ -150,9 +162,10 @@ export default function Stock() {
   const onEditSubmit = (data: z.infer<typeof movementFormSchema>) => {
     if (!editingMovement) return;
     
-    const availableStock = getLooseStockForLot(data.lotId);
+    const lot = (lots as Lot[] || []).find(l => l.id === data.lotId);
+    const baseBalance = lot ? getLotClosingBalance(lot) : 0;
     const originalQty = editingMovement.lotId === data.lotId ? Number(editingMovement.quantity) : 0;
-    const effectiveAvailable = availableStock + originalQty;
+    const effectiveAvailable = baseBalance + originalQty;
     
     if (data.quantity > effectiveAvailable) {
       toast({
@@ -200,14 +213,16 @@ export default function Stock() {
     return (lots as Lot[] || []).find(l => l.id === selectedLotId);
   }, [lots, selectedLotId]);
 
-  const availableStock = selectedLot ? getLooseStockForLot(selectedLot.id) : 0;
+  const availableStock = selectedLot ? getLotClosingBalance(selectedLot) : 0;
   const quantityExceedsAvailable = enteredQuantity > availableStock;
 
   const onSubmit = (data: z.infer<typeof movementFormSchema>) => {
-    if (data.quantity > availableStock) {
+    const lot = (lots as Lot[] || []).find(l => l.id === data.lotId);
+    const maxAvailable = lot ? getLotClosingBalance(lot) : 0;
+    if (data.quantity > maxAvailable) {
       toast({
         title: "Invalid Quantity",
-        description: `Cannot move ${data.quantity}kg. Only ${availableStock.toFixed(2)}kg available in stock.`,
+        description: `Cannot move ${data.quantity}kg. Only ${maxAvailable.toFixed(2)}kg available in stock.`,
         variant: "destructive",
       });
       return;
