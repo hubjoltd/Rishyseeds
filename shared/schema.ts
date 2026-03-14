@@ -261,7 +261,8 @@ export const lots = pgTable("lots", {
   sourceName: text("source_name"), // Supplier/Party name (optional)
   initialQuantity: decimal("initial_quantity").notNull(), // Quantity in KG
   quantityUnit: text("quantity_unit").notNull().default("kg"), // kg, tons
-  stockForm: text("stock_form").notNull().default("loose"), // loose, packed
+  stockForm: text("stock_form").notNull().default("loose"), // loose, packed, raw_seed, cobs
+  germinationPercentage: decimal("germination_percentage"), // Optional germination %
   status: text("status").notNull().default("active"), // active, exhausted, expired
   inwardDate: date("inward_date").defaultNow(),
   expiryDate: date("expiry_date"),

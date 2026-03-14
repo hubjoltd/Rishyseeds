@@ -60,12 +60,12 @@ const allMenuItems: MenuItem[] = [
       { icon: Package, label: "Packaging Sizes", href: "/packaging-sizes", roles: ["admin", "manager"] },
     ]
   },
+  { icon: Warehouse, label: "Purchased Stock", href: "/purchased-stock", roles: ["admin", "manager", "godown_operator"] },
   {
     label: "Plant Operations",
     icon: Sprout,
     roles: ["admin", "manager", "godown_operator", "production_operator", "dispatch_operator"],
     children: [
-      { icon: Warehouse, label: "Purchased Stock", href: "/purchased-stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: PackagePlus, label: "Inward", href: "/inward", roles: ["admin", "manager", "godown_operator"] },
       { icon: BarChart2, label: "Variety Stock", href: "/variety-stock", roles: ["admin", "manager", "godown_operator"] },
       { icon: ArrowRightLeft, label: "Stock Movement", href: "/stock", roles: ["admin", "manager", "godown_operator"] },
