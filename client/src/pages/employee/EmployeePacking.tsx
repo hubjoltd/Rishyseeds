@@ -438,7 +438,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Quantity <span className="text-destructive">*</span></label>
+                    <label className="text-sm font-medium">Number of Bags <span className="text-destructive">*</span></label>
                     <Input type="number" {...form.register("numberOfPackets")} />
                   </div>
                 </div>
@@ -505,7 +505,7 @@ export default function EmployeePacking({ employee, permissions = {} }: Employee
                     <TableHead>Lot Number</TableHead>
                     <TableHead>Warehouse</TableHead>
                     <TableHead>Package Size</TableHead>
-                    <TableHead>Quantity</TableHead>
+                    <TableHead>Bags</TableHead>
                     <TableHead>Total (KG)</TableHead>
                     <TableHead>Packed By</TableHead>
                     <TableHead>Waste (KG)</TableHead>

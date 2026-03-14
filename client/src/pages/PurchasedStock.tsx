@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLots, useLocations, useStockMovements, useStockBalances, useProducts, useOutwardRecords, usePackagingOutputs, useProcessingRecords } from "@/hooks/use-inventory";
+import { useLots, useLocations, useStockMovements, useStockBalances, useProducts, useOutwardRecords } from "@/hooks/use-inventory";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Warehouse } from "lucide-react";
@@ -16,8 +16,6 @@ export default function PurchasedStock() {
   const { data: movements = [] } = useStockMovements() as { data: StockMovement[] };
   const { data: stockBalances = [] } = useStockBalances() as { data: StockBalance[] };
   const { data: outwardRecords = [] } = useOutwardRecords();
-  const { data: packagingOutputs = [] } = usePackagingOutputs();
-  const { data: processingRecords = [] } = useProcessingRecords();
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -74,13 +72,7 @@ export default function PurchasedStock() {
     const outward = ((outwardRecords as any[]) || [])
       .filter(r => r.lotId === lotId)
       .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
-    const packaged = ((packagingOutputs as any[]) || [])
-      .filter(p => p.lotId === lotId)
-      .reduce((s: number, p: any) => s + Number(p.totalQuantityKg || 0) + Number(p.wasteQuantity || 0), 0);
-    const processed = ((processingRecords as any[]) || [])
-      .filter(p => p.inputLotId === lotId)
-      .reduce((s: number, p: any) => s + Number(p.inputQuantity || 0), 0);
-    return Math.max(0, Number(initialQty || 0) - outward - packaged - processed);
+    return Math.max(0, Number(initialQty || 0) - outward);
   };
 
   const getColdStorageInward = (lotId: number, locationId: number) =>

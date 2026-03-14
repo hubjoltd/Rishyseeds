@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords, usePackagingOutputs, useProcessingRecords } from "@/hooks/use-inventory";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -179,8 +179,6 @@ export default function Inward() {
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
   const { mutate: setStockBalance, isPending: isSavingDist } = useSetStockBalance();
   const { data: outwardRecords } = useOutwardRecords();
-  const { data: packagingOutputs = [] } = usePackagingOutputs();
-  const { data: processingRecords = [] } = useProcessingRecords();
   const { canDelete, canEdit } = useAuth();
 
   const getCreatedByName = (createdById: number | null | undefined) => {
@@ -323,16 +321,9 @@ export default function Inward() {
       .reduce((s, b) => s + Number(b.quantity || 0), 0);
 
   const getLotDispatched = (lotId: number) => {
-    const outward = ((outwardRecords as OutwardRecord[]) || [])
+    return ((outwardRecords as OutwardRecord[]) || [])
       .filter((r) => r.lotId === lotId)
       .reduce((s, r) => s + Number(r.quantity || 0), 0);
-    const packaged = ((packagingOutputs as any[]) || [])
-      .filter((p) => p.lotId === lotId)
-      .reduce((s, p) => s + Number(p.totalQuantityKg || 0) + Number(p.wasteQuantity || 0), 0);
-    const processed = ((processingRecords as any[]) || [])
-      .filter((p) => p.inputLotId === lotId)
-      .reduce((s, p) => s + Number(p.inputQuantity || 0), 0);
-    return outward + packaged + processed;
   };
 
   const getLotBalance = (lotId: number, initialQty: number | string) => {

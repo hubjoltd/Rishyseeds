@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useLots, useProducts, useLocations, useStockBalances, usePackagingOutputs, useProcessingRecords } from "@/hooks/use-inventory";
+import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useLots, useProducts, useLocations, useStockBalances } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -69,8 +69,6 @@ export default function Outward() {
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
   const { data: employees } = useEmployees();
-  const { data: packagingOutputs = [] } = usePackagingOutputs();
-  const { data: processingRecords = [] } = useProcessingRecords();
   const { mutate: createRecord, isPending } = useCreateOutwardRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteOutwardRecord();
   const { canDelete } = useAuth();
@@ -149,16 +147,9 @@ export default function Outward() {
   };
 
   const getLotDispatched = (lotId: number): number => {
-    const outward = (records as OutwardRecord[] || [])
+    return (records as OutwardRecord[] || [])
       .filter((r: OutwardRecord) => r.lotId === lotId)
       .reduce((sum: number, r: OutwardRecord) => sum + Number(r.quantity || 0), 0);
-    const packaged = ((packagingOutputs as any[]) || [])
-      .filter((p: any) => p.lotId === lotId)
-      .reduce((s: number, p: any) => s + Number(p.totalQuantityKg || 0) + Number(p.wasteQuantity || 0), 0);
-    const processed = ((processingRecords as any[]) || [])
-      .filter((p: any) => p.inputLotId === lotId)
-      .reduce((s: number, p: any) => s + Number(p.inputQuantity || 0), 0);
-    return outward + packaged + processed;
   };
 
   const getLotBalance = (lotId: number): number => {
