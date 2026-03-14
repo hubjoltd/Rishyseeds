@@ -208,21 +208,38 @@ export default function Stock() {
 
   const selectedLotId = form.watch("lotId");
   const enteredQuantity = form.watch("quantity");
+  const selectedFromLocationId = form.watch("fromLocationId");
 
   const selectedLot = useMemo(() => {
     return (lots as Lot[] || []).find(l => l.id === selectedLotId);
   }, [lots, selectedLotId]);
 
-  const availableStock = selectedLot ? getLotClosingBalance(selectedLot) : 0;
+  const selectedFromLocation = useMemo(() => {
+    return (locations || []).find((l: any) => l.id === selectedFromLocationId);
+  }, [locations, selectedFromLocationId]);
+
+  const availableAtSource = useMemo(() => {
+    if (!selectedLot || !selectedFromLocationId) return 0;
+    const balances = (stockBalances as StockBalance[] || []);
+    const fromLocType = (selectedFromLocation as any)?.type;
+    if (fromLocType === 'cold_storage') {
+      const csIn = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_inward');
+      const csOut = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_outward');
+      return Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0));
+    }
+    const loose = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'loose');
+    if (loose) return Math.max(0, Number(loose.quantity));
+    return getLotClosingBalance(selectedLot);
+  }, [selectedLot, selectedFromLocationId, selectedFromLocation, stockBalances]);
+
+  const availableStock = selectedFromLocationId ? availableAtSource : (selectedLot ? getLotClosingBalance(selectedLot) : 0);
   const quantityExceedsAvailable = enteredQuantity > availableStock;
 
   const onSubmit = (data: z.infer<typeof movementFormSchema>) => {
-    const lot = (lots as Lot[] || []).find(l => l.id === data.lotId);
-    const maxAvailable = lot ? getLotClosingBalance(lot) : 0;
-    if (data.quantity > maxAvailable) {
+    if (data.quantity > availableStock + 0.001) {
       toast({
         title: "Invalid Quantity",
-        description: `Cannot move ${data.quantity}kg. Only ${maxAvailable.toFixed(2)}kg available in stock.`,
+        description: `Cannot move ${data.quantity}kg. Only ${availableStock.toFixed(2)}kg available at selected source.`,
         variant: "destructive",
       });
       return;
@@ -326,7 +343,9 @@ export default function Stock() {
                     </div>
                   </div>
                   <div className="text-sm">
-                    <span className="text-muted-foreground">Total Available:</span>
+                    <span className="text-muted-foreground">
+                      {selectedFromLocationId ? `Available at ${(locations || []).find((l: any) => l.id === selectedFromLocationId)?.name || 'Source'}:` : 'Total Lot Balance:'}
+                    </span>
                     <p className="font-bold text-primary">{availableStock.toFixed(2)} KG</p>
                   </div>
                   {getStockByWarehouse(selectedLot.id).length > 0 && (

@@ -343,18 +343,8 @@ export class DatabaseStorage implements IStorage {
     const fromIsColdStorage = fromLoc?.type === 'cold_storage';
     const toIsColdStorage = toLoc?.type === 'cold_storage';
 
-    // Validate against lot's total closing balance
-    // (initialQty - total outward dispatched + total returns)
-    const [lot] = await db.select().from(lots).where(eq(lots.id, movement.lotId));
-    if (!lot) throw new Error("Lot not found");
-    const allOutward = await db.select().from(outwardRecords).where(eq(outwardRecords.lotId, movement.lotId));
-    const allReturns = await db.select().from(outwardReturns).where(eq(outwardReturns.lotId, movement.lotId));
-    const totalDispatched = allOutward.reduce((s, r) => s + Number(r.quantity || 0), 0);
-    const totalReturned = allReturns.reduce((s, r) => s + Number(r.quantity || 0), 0);
-    const lotClosingBalance = Math.max(0, Number(lot.initialQuantity || 0) - totalDispatched + totalReturned);
-
-    // For cold storage source: also validate cs remaining
     if (fromIsColdStorage) {
+      // For cold storage source: validate cs remaining at that location
       const csIn = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'cs_inward');
       const csOut = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'cs_outward');
       const csRemaining = Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0));
@@ -362,8 +352,26 @@ export class DatabaseStorage implements IStorage {
         throw new Error(`Cannot move ${requestedQty}kg from cold storage. Only ${csRemaining.toFixed(2)}kg remaining.`);
       }
     } else {
-      if (requestedQty > lotClosingBalance + 0.001) {
-        throw new Error(`Cannot move ${requestedQty}kg. Only ${lotClosingBalance.toFixed(2)}kg available in this lot.`);
+      // For regular locations: validate against the loose balance at source location
+      // Fall back to lot closing balance if no stock_balance record exists yet
+      const sourceBalance = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'loose');
+      if (sourceBalance) {
+        const available = Math.max(0, Number(sourceBalance.quantity));
+        if (requestedQty > available + 0.001) {
+          throw new Error(`Cannot move ${requestedQty}kg. Only ${available.toFixed(2)}kg available at source location.`);
+        }
+      } else {
+        // No pre-existing balance record — validate against lot closing balance as fallback
+        const [lot] = await db.select().from(lots).where(eq(lots.id, movement.lotId));
+        if (!lot) throw new Error("Lot not found");
+        const allOutward = await db.select().from(outwardRecords).where(eq(outwardRecords.lotId, movement.lotId));
+        const allReturns = await db.select().from(outwardReturns).where(eq(outwardReturns.lotId, movement.lotId));
+        const totalDispatched = allOutward.reduce((s, r) => s + Number(r.quantity || 0), 0);
+        const totalReturned = allReturns.reduce((s, r) => s + Number(r.quantity || 0), 0);
+        const lotClosingBalance = Math.max(0, Number(lot.initialQuantity || 0) - totalDispatched + totalReturned);
+        if (requestedQty > lotClosingBalance + 0.001) {
+          throw new Error(`Cannot move ${requestedQty}kg. Only ${lotClosingBalance.toFixed(2)}kg available in this lot.`);
+        }
       }
     }
 
