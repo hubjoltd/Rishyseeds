@@ -342,9 +342,16 @@ export type InsertOutwardRecord = z.infer<typeof insertOutwardRecordSchema>;
 // === OUTWARD RETURNS (STOCK RETURNED AFTER DISPATCH) ===
 export const outwardReturns = pgTable("outward_returns", {
   id: serial("id").primaryKey(),
-  outwardRecordId: integer("outward_record_id").notNull(),
+  outwardRecordId: integer("outward_record_id"),
   lotId: integer("lot_id").notNull(),
+  partyName: text("party_name"),
+  stateName: text("state_name"),
+  location: text("location"),
   quantity: decimal("quantity").notNull(),
+  unit: text("unit"),
+  stockForm: text("stock_form"),
+  inwardDate: date("inward_date"),
+  expiryDate: date("expiry_date"),
   returnDate: date("return_date").defaultNow(),
   reason: text("reason"),
   returnedBy: text("returned_by"),
