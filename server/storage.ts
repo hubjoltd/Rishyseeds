@@ -328,7 +328,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
-    // Use lot-based stock movement
     if (!movement.lotId) {
       throw new Error("Lot is required for stock movement");
     }
@@ -338,25 +337,52 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Quantity must be positive");
     }
 
-    // Get available stock at source location (loose stock)
-    const sourceBalance = await this.getStockBalanceByLotAndLocation(
-      movement.lotId, 
-      movement.fromLocationId, 
-      'loose'
-    );
-    const availableQty = sourceBalance ? Number(sourceBalance.quantity) : 0;
+    // Look up location types
+    const [fromLoc] = await db.select().from(locations).where(eq(locations.id, movement.fromLocationId));
+    const [toLoc] = await db.select().from(locations).where(eq(locations.id, movement.toLocationId));
+    const fromIsColdStorage = fromLoc?.type === 'cold_storage';
+    const toIsColdStorage = toLoc?.type === 'cold_storage';
 
-    // Server-side validation: Cannot move more than available
-    if (requestedQty > availableQty) {
-      throw new Error(`Cannot move ${requestedQty}kg. Only ${availableQty.toFixed(2)}kg available at source location.`);
+    // Validate against lot's total closing balance
+    // (initialQty - total outward dispatched + total returns)
+    const [lot] = await db.select().from(lots).where(eq(lots.id, movement.lotId));
+    if (!lot) throw new Error("Lot not found");
+    const allOutward = await db.select().from(outwardRecords).where(eq(outwardRecords.lotId, movement.lotId));
+    const allReturns = await db.select().from(outwardReturns).where(eq(outwardReturns.lotId, movement.lotId));
+    const totalDispatched = allOutward.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const totalReturned = allReturns.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const lotClosingBalance = Math.max(0, Number(lot.initialQuantity || 0) - totalDispatched + totalReturned);
+
+    // For cold storage source: also validate cs remaining
+    if (fromIsColdStorage) {
+      const csIn = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'cs_inward');
+      const csOut = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'cs_outward');
+      const csRemaining = Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0));
+      if (requestedQty > csRemaining + 0.001) {
+        throw new Error(`Cannot move ${requestedQty}kg from cold storage. Only ${csRemaining.toFixed(2)}kg remaining.`);
+      }
+    } else {
+      if (requestedQty > lotClosingBalance + 0.001) {
+        throw new Error(`Cannot move ${requestedQty}kg. Only ${lotClosingBalance.toFixed(2)}kg available in this lot.`);
+      }
     }
 
-    // Decrease stock at source location
-    await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'loose', -requestedQty);
-    
-    // Increase stock at destination location
-    await this.adjustStockBalance(movement.lotId, movement.toLocationId, 'loose', requestedQty);
-    
+    // Update source: if cold storage, increase cs_outward (tracking cumulative outflow)
+    // else decrease loose
+    if (fromIsColdStorage) {
+      await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'cs_outward', requestedQty);
+    } else {
+      await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'loose', -requestedQty);
+    }
+
+    // Update destination: if cold storage, increase cs_inward (tracking cumulative inflow)
+    // else increase loose
+    if (toIsColdStorage) {
+      await this.adjustStockBalance(movement.lotId, movement.toLocationId, 'cs_inward', requestedQty);
+    } else {
+      await this.adjustStockBalance(movement.lotId, movement.toLocationId, 'loose', requestedQty);
+    }
+
     const [newMovement] = await db.insert(stockMovements).values(movement).returning();
     return newMovement;
   }
