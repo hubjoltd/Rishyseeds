@@ -33,6 +33,7 @@ export default function Reports() {
   const { data: stockBalances, isLoading: stockLoading } = useQuery<StockBalance[]>({ queryKey: ["/api/stock-balances"] });
   const { data: outwardRecords, isLoading: outwardLoading } = useQuery<OutwardRecord[]>({ queryKey: ["/api/outward"] });
   const { data: processingRecords, isLoading: processingLoading } = useQuery<ProcessingRecord[]>({ queryKey: ["/api/processing"] });
+  const { data: outwardReturnsData = [] } = useQuery<any[]>({ queryKey: ["/api/outward-returns"], queryFn: async () => { const r = await fetch("/api/outward-returns", { headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` } }); return r.ok ? r.json() : []; } });
 
   const isLoading = lotsLoading || productsLoading || locationsLoading || stockLoading || outwardLoading || processingLoading;
 
@@ -67,7 +68,10 @@ export default function Reports() {
     const outward = (outwardRecords || [])
       .filter(r => r.lotId === lotId)
       .reduce((s, r) => s + Number(r.quantity || 0), 0);
-    return Math.max(0, Number(lot.initialQuantity || 0) - outward);
+    const returned = (outwardReturnsData || [])
+      .filter((r: any) => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, Number(lot.initialQuantity || 0) - outward + returned);
   };
 
   const handlePrint = () => {

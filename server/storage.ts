@@ -3,7 +3,7 @@ import { db } from "./db";
 import { 
   users, batches, locations, stockEntries, stockMovements, 
   packagingOutputs, employees, attendance, payrolls, products,
-  lots, stockBalances, processingRecords, outwardRecords, packagingSizes, roles, notifications,
+  lots, stockBalances, processingRecords, outwardRecords, outwardReturns, packagingSizes, roles, notifications,
   trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
   customers,
   tasks, taskComments,
@@ -19,6 +19,7 @@ import {
   type StockBalance, type InsertStockBalance,
   type ProcessingRecord, type InsertProcessingRecord,
   type OutwardRecord, type InsertOutwardRecord,
+  type OutwardReturn, type InsertOutwardReturn,
   type PackagingSize, type InsertPackagingSize,
   type Role, type InsertRole,
   type Notification, type InsertNotification,
@@ -142,6 +143,12 @@ export interface IStorage {
   createOutwardRecord(record: InsertOutwardRecord): Promise<OutwardRecord>;
   updateOutwardRecord(id: number, updates: Partial<InsertOutwardRecord>): Promise<OutwardRecord | undefined>;
   deleteOutwardRecord(id: number): Promise<boolean>;
+
+  // Outward Returns
+  getOutwardReturns(): Promise<OutwardReturn[]>;
+  getOutwardReturnsByRecord(outwardRecordId: number): Promise<OutwardReturn[]>;
+  createOutwardReturn(ret: InsertOutwardReturn): Promise<OutwardReturn>;
+  deleteOutwardReturn(id: number): Promise<boolean>;
 
   // Packaging Sizes Master
   getPackagingSizes(): Promise<PackagingSize[]>;
@@ -727,6 +734,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOutwardRecord(id: number): Promise<boolean> {
     await db.delete(outwardRecords).where(eq(outwardRecords.id, id));
+    return true;
+  }
+
+  // Outward Returns
+  async getOutwardReturns(): Promise<OutwardReturn[]> {
+    return await db.select().from(outwardReturns).orderBy(desc(outwardReturns.createdAt));
+  }
+
+  async getOutwardReturnsByRecord(outwardRecordId: number): Promise<OutwardReturn[]> {
+    return await db.select().from(outwardReturns).where(eq(outwardReturns.outwardRecordId, outwardRecordId));
+  }
+
+  async createOutwardReturn(ret: InsertOutwardReturn): Promise<OutwardReturn> {
+    const [newReturn] = await db.insert(outwardReturns).values(ret).returning();
+    return newReturn;
+  }
+
+  async deleteOutwardReturn(id: number): Promise<boolean> {
+    await db.delete(outwardReturns).where(eq(outwardReturns.id, id));
     return true;
   }
 

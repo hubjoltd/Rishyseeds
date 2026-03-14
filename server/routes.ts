@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertPackagingSizeSchema } from "@shared/schema";
+import { createUserSchema, updateUserSchema, insertLotSchema, insertProcessingRecordSchema, insertOutwardRecordSchema, insertOutwardReturnSchema, insertPackagingSizeSchema } from "@shared/schema";
 import { seedProductsAndWarehouses, seedEmployees, seedRoles } from "./seed-data";
 import crypto from "crypto";
 import multer from "multer";
@@ -1802,6 +1802,39 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to delete outward record" });
+    }
+  });
+
+  // === OUTWARD RETURNS ===
+  app.get("/api/outward-returns", checkPermission('outward', 'view'), async (req, res) => {
+    const returns = await storage.getOutwardReturns();
+    res.json(returns);
+  });
+
+  app.get("/api/outward-returns/by-record/:recordId", checkPermission('outward', 'view'), async (req, res) => {
+    const returns = await storage.getOutwardReturnsByRecord(parseInt(req.params.recordId));
+    res.json(returns);
+  });
+
+  app.post("/api/outward-returns", checkPermission('outward', 'create'), async (req: any, res) => {
+    try {
+      const validatedData = insertOutwardReturnSchema.parse({
+        ...req.body,
+        createdBy: req.employee?.id || req.user?.id || null,
+      });
+      const ret = await storage.createOutwardReturn(validatedData);
+      res.json(ret);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to create outward return" });
+    }
+  });
+
+  app.delete("/api/outward-returns/:id", checkPermission('outward', 'delete'), async (req, res) => {
+    try {
+      await storage.deleteOutwardReturn(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to delete outward return" });
     }
   });
 

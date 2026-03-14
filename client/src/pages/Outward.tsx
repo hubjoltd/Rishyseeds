@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useLots, useProducts, useLocations, useStockBalances } from "@/hooks/use-inventory";
+import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useOutwardReturns, useCreateOutwardReturn, useLots, useProducts, useLocations, useStockBalances } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { OutwardRecord, Lot, Product, Location, StockBalance } from "@shared/schema";
+import type { OutwardRecord, Lot, Product, Location, StockBalance, OutwardReturn } from "@shared/schema";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Truck, Trash2 } from "lucide-react";
+import { Plus, Search, Truck, Trash2, RotateCcw, History } from "lucide-react";
 import { format } from "date-fns";
 
 const outwardFormSchema = z.object({
@@ -69,8 +69,10 @@ export default function Outward() {
   const { data: locations } = useLocations();
   const { data: stockBalances } = useStockBalances();
   const { data: employees } = useEmployees();
+  const { data: outwardReturnsData = [] } = useOutwardReturns();
   const { mutate: createRecord, isPending } = useCreateOutwardRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteOutwardRecord();
+  const { mutate: createReturn, isPending: isReturning } = useCreateOutwardReturn();
   const { canDelete } = useAuth();
   
   const getCreatedByName = (createdById: number | null | undefined) => {
@@ -81,6 +83,10 @@ export default function Outward() {
   
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
+  const [returnRecord, setReturnRecord] = useState<OutwardRecord | null>(null);
+  const [returnQty, setReturnQty] = useState("");
+  const [returnReason, setReturnReason] = useState("");
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().split("T")[0]);
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
@@ -152,10 +158,34 @@ export default function Outward() {
       .reduce((sum: number, r: OutwardRecord) => sum + Number(r.quantity || 0), 0);
   };
 
+  const getLotReturned = (lotId: number): number => {
+    return ((outwardReturnsData as OutwardReturn[]) || [])
+      .filter((r: OutwardReturn) => r.lotId === lotId)
+      .reduce((sum: number, r: OutwardReturn) => sum + Number(r.quantity || 0), 0);
+  };
+
   const getLotBalance = (lotId: number): number => {
     const lot = (lots as Lot[] || []).find((l: Lot) => l.id === lotId);
     if (!lot) return 0;
-    return Math.max(0, Number(lot.initialQuantity || 0) - getLotDispatched(lotId));
+    return Math.max(0, Number(lot.initialQuantity || 0) - getLotDispatched(lotId) + getLotReturned(lotId));
+  };
+
+  const handleReturn = () => {
+    if (!returnRecord || !returnQty || Number(returnQty) <= 0) return;
+    createReturn({
+      outwardRecordId: returnRecord.id,
+      lotId: returnRecord.lotId,
+      quantity: String(returnQty),
+      returnDate: returnDate,
+      reason: returnReason || null,
+    }, {
+      onSuccess: () => {
+        setReturnRecord(null);
+        setReturnQty("");
+        setReturnReason("");
+        setReturnDate(new Date().toISOString().split("T")[0]);
+      },
+    });
   };
 
   const getLocationName = (locationId: number) => {
@@ -444,16 +474,32 @@ export default function Outward() {
                       <TableCell className="font-mono text-sm">{record.invoiceNumber || '-'}</TableCell>
                       <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
                       <TableCell className="text-right">
-                        {canDeleteOutward && (
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setDeleteRecordId(record.id)}
-                            data-testid={`button-delete-outward-${record.id}`}
+                            onClick={() => {
+                              setReturnRecord(record);
+                              setReturnQty("");
+                              setReturnReason("");
+                              setReturnDate(new Date().toISOString().split("T")[0]);
+                            }}
+                            title="Return Stock"
+                            data-testid={`button-return-outward-${record.id}`}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <RotateCcw className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                           </Button>
-                        )}
+                          {canDeleteOutward && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteRecordId(record.id)}
+                              data-testid={`button-delete-outward-${record.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -463,6 +509,74 @@ export default function Outward() {
           )}
         </CardContent>
       </Card>
+
+      {/* Return Stock Dialog */}
+      <Dialog open={!!returnRecord} onOpenChange={(v) => { if (!v) setReturnRecord(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-blue-600" />
+              Return Stock
+            </DialogTitle>
+            <DialogDescription>
+              Record returned stock for: <span className="font-semibold">{returnRecord ? getLotDetails(returnRecord.lotId) : ""}</span>
+              <br />
+              <span className="text-xs text-muted-foreground">Original dispatch: {returnRecord ? Number(returnRecord.quantity).toFixed(2) + " KG" : ""}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Return Quantity (KG) <span className="text-destructive">*</span></label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={returnRecord ? Number(returnRecord.quantity) : undefined}
+                value={returnQty}
+                onChange={e => setReturnQty(e.target.value)}
+                placeholder="Enter quantity to return"
+                data-testid="input-return-quantity"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Return Date</label>
+              <Input
+                type="date"
+                value={returnDate}
+                onChange={e => setReturnDate(e.target.value)}
+                data-testid="input-return-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Reason / Remarks</label>
+              <Input
+                value={returnReason}
+                onChange={e => setReturnReason(e.target.value)}
+                placeholder="Reason for return (optional)"
+                data-testid="input-return-reason"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setReturnRecord(null)}
+                disabled={isReturning}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={handleReturn}
+                disabled={isReturning || !returnQty || Number(returnQty) <= 0}
+                data-testid="button-confirm-return"
+              >
+                {isReturning ? "Processing..." : "Confirm Return"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteRecordId} onOpenChange={() => setDeleteRecordId(null)}>
         <AlertDialogContent>

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLots, useLocations, useStockMovements, useStockBalances, useProducts, useOutwardRecords } from "@/hooks/use-inventory";
+import { useLots, useLocations, useStockMovements, useStockBalances, useProducts, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Warehouse } from "lucide-react";
@@ -16,6 +16,7 @@ export default function PurchasedStock() {
   const { data: movements = [] } = useStockMovements() as { data: StockMovement[] };
   const { data: stockBalances = [] } = useStockBalances() as { data: StockBalance[] };
   const { data: outwardRecords = [] } = useOutwardRecords();
+  const { data: outwardReturnsData = [] } = useOutwardReturns();
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -68,11 +69,16 @@ export default function PurchasedStock() {
   const getProduct = (productId: number) =>
     (products as Product[]).find(p => p.id === productId);
 
+  const getLotReturned = (lotId: number): number =>
+    ((outwardReturnsData as any[]) || [])
+      .filter(r => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+
   const getLotBalance = (lotId: number, initialQty: number | string): number => {
     const outward = ((outwardRecords as any[]) || [])
       .filter(r => r.lotId === lotId)
       .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
-    return Math.max(0, Number(initialQty || 0) - outward);
+    return Math.max(0, Number(initialQty || 0) - outward + getLotReturned(lotId));
   };
 
   const getColdStorageInward = (lotId: number, locationId: number) =>
@@ -157,7 +163,7 @@ export default function PurchasedStock() {
                   {activeColdStorages.length > 0 && (
                     <th
                       className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase tracking-wide bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300"
-                      colSpan={activeColdStorages.length * 2}
+                      colSpan={activeColdStorages.length * 3}
                     >
                       Storage — Cold Storage
                     </th>
@@ -191,21 +197,30 @@ export default function PurchasedStock() {
                       <>
                         <th
                           key={`cs-in-${cs.id}`}
-                          className="border border-border px-2 py-1.5 text-center font-medium text-xs bg-blue-50/60 dark:bg-blue-950/20 max-w-[120px]"
+                          className="border border-border px-2 py-1.5 text-center font-medium text-xs bg-blue-50/60 dark:bg-blue-950/20 max-w-[110px]"
                         >
                           <div className="text-[10px] text-blue-600 dark:text-blue-400 leading-tight whitespace-nowrap overflow-hidden text-ellipsis" title={cs.name}>
-                            {cs.name.length > 20 ? cs.name.slice(0, 20) + "..." : cs.name}
+                            {cs.name.length > 16 ? cs.name.slice(0, 16) + "..." : cs.name}
                           </div>
                           <div className="text-green-600 font-semibold">Inward</div>
                         </th>
                         <th
                           key={`cs-out-${cs.id}`}
-                          className="border border-border px-2 py-1.5 text-center font-medium text-xs bg-blue-50/60 dark:bg-blue-950/20 max-w-[120px]"
+                          className="border border-border px-2 py-1.5 text-center font-medium text-xs bg-blue-50/60 dark:bg-blue-950/20 max-w-[110px]"
                         >
                           <div className="text-[10px] text-blue-600 dark:text-blue-400 leading-tight whitespace-nowrap overflow-hidden text-ellipsis" title={cs.name}>
-                            {cs.name.length > 20 ? cs.name.slice(0, 20) + "..." : cs.name}
+                            {cs.name.length > 16 ? cs.name.slice(0, 16) + "..." : cs.name}
                           </div>
                           <div className="text-red-600 font-semibold">Outward</div>
+                        </th>
+                        <th
+                          key={`cs-rem-${cs.id}`}
+                          className="border border-border px-2 py-1.5 text-center font-medium text-xs bg-cyan-50/60 dark:bg-cyan-950/20 max-w-[110px]"
+                        >
+                          <div className="text-[10px] text-cyan-600 dark:text-cyan-400 leading-tight whitespace-nowrap overflow-hidden text-ellipsis" title={cs.name}>
+                            {cs.name.length > 16 ? cs.name.slice(0, 16) + "..." : cs.name}
+                          </div>
+                          <div className="text-cyan-700 dark:text-cyan-400 font-semibold">Remaining</div>
                         </th>
                       </>
                     ))}
@@ -240,6 +255,7 @@ export default function PurchasedStock() {
                       {activeColdStorages.map(cs => {
                         const inward = getColdStorageInward(lot.id, cs.id);
                         const outward = getColdStorageOutward(lot.id, cs.id);
+                        const remaining = Math.max(0, inward - outward);
                         return (
                           <>
                             <td key={`ci-${lot.id}-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10">
@@ -252,6 +268,13 @@ export default function PurchasedStock() {
                             <td key={`co-${lot.id}-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10">
                               {outward > 0 ? (
                                 <span className="text-red-600 dark:text-red-400 font-medium">-{outward.toFixed(0)}</span>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
+                            </td>
+                            <td key={`cr-${lot.id}-${cs.id}`} className="border border-border px-3 py-2 text-center bg-cyan-50/30 dark:bg-cyan-950/10">
+                              {remaining > 0 ? (
+                                <span className="text-cyan-700 dark:text-cyan-400 font-semibold">{remaining.toFixed(0)}</span>
                               ) : (
                                 <span className="text-muted-foreground text-xs">-</span>
                               )}
@@ -299,21 +322,24 @@ export default function PurchasedStock() {
                     {filteredLots.reduce((s, l) => s + Number(l.initialQuantity || 0), 0).toFixed(0)}
                     <span className="text-xs font-normal text-muted-foreground ml-1">KG</span>
                   </td>
-                  {activeColdStorages.map(cs => (
-                    <>
-                      <td key={`ct-in-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10 text-green-700 dark:text-green-400">
-                        {filteredLots.reduce((s, l) => s + getColdStorageInward(l.id, cs.id), 0).toFixed(0) !== "0"
-                          ? filteredLots.reduce((s, l) => s + getColdStorageInward(l.id, cs.id), 0).toFixed(0)
-                          : <span className="text-muted-foreground">-</span>}
-                      </td>
-                      <td key={`ct-out-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10 text-red-600 dark:text-red-400">
-                        {(() => {
-                          const total = filteredLots.reduce((s, l) => s + getColdStorageOutward(l.id, cs.id), 0);
-                          return total > 0 ? `-${total.toFixed(0)}` : <span className="text-muted-foreground">-</span>;
-                        })()}
-                      </td>
-                    </>
-                  ))}
+                  {activeColdStorages.map(cs => {
+                    const totalIn = filteredLots.reduce((s, l) => s + getColdStorageInward(l.id, cs.id), 0);
+                    const totalOut = filteredLots.reduce((s, l) => s + getColdStorageOutward(l.id, cs.id), 0);
+                    const totalRem = Math.max(0, totalIn - totalOut);
+                    return (
+                      <>
+                        <td key={`ct-in-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10 text-green-700 dark:text-green-400">
+                          {totalIn > 0 ? totalIn.toFixed(0) : <span className="text-muted-foreground">-</span>}
+                        </td>
+                        <td key={`ct-out-${cs.id}`} className="border border-border px-3 py-2 text-center bg-blue-50/30 dark:bg-blue-950/10 text-red-600 dark:text-red-400">
+                          {totalOut > 0 ? `-${totalOut.toFixed(0)}` : <span className="text-muted-foreground">-</span>}
+                        </td>
+                        <td key={`ct-rem-${cs.id}`} className="border border-border px-3 py-2 text-center bg-cyan-50/30 dark:bg-cyan-950/10 text-cyan-700 dark:text-cyan-400 font-semibold">
+                          {totalRem > 0 ? totalRem.toFixed(0) : <span className="text-muted-foreground font-normal">-</span>}
+                        </td>
+                      </>
+                    );
+                  })}
                   {plantLocations.length > 0 && (
                     <td className="border border-border px-3 py-2 text-center bg-orange-50/30 dark:bg-orange-950/10 text-orange-700 dark:text-orange-400">
                       {filteredLots.reduce((s, l) => s + getLocationBalance(l.id, plantLocationIds), 0).toFixed(0)}
@@ -340,6 +366,10 @@ export default function PurchasedStock() {
           <span>Cold Storage</span>
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-cyan-200 dark:bg-cyan-800" />
+          <span>Remaining in CS</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-sm bg-orange-200 dark:bg-orange-800" />
           <span>Plant Storage</span>
         </div>
@@ -347,7 +377,7 @@ export default function PurchasedStock() {
           <div className="w-3 h-3 rounded-sm bg-purple-200 dark:bg-purple-800" />
           <span>Main Office</span>
         </div>
-        <span className="ml-2">Green = Inward KG | Red = Outward KG</span>
+        <span className="ml-2">Green = Inward KG | Red = Outward KG | Cyan = Remaining in Cold Storage</span>
       </div>
     </div>
   );

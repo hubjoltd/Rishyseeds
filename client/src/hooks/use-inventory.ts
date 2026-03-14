@@ -750,6 +750,65 @@ export function useDeleteOutwardRecord() {
   });
 }
 
+// === OUTWARD RETURNS ===
+export function useOutwardReturns() {
+  return useQuery({
+    queryKey: ["/api/outward-returns"],
+    queryFn: async () => {
+      const res = await fetch("/api/outward-returns", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch outward returns");
+      return res.json();
+    },
+  });
+}
+
+export function useCreateOutwardReturn() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/outward-returns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create outward return");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outward-returns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      toast({ title: "Stock Returned", description: "Stock has been returned and added back to inward balance." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+export function useDeleteOutwardReturn() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/outward-returns/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to delete return");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outward-returns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outward"] });
+      toast({ title: "Return deleted", description: "Outward return has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
 // === PACKAGING SIZES MASTER ===
 export function usePackagingSizes() {
   return useQuery({

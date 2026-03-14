@@ -339,6 +339,24 @@ export const insertOutwardRecordSchema = createInsertSchema(outwardRecords).omit
 export type OutwardRecord = typeof outwardRecords.$inferSelect;
 export type InsertOutwardRecord = z.infer<typeof insertOutwardRecordSchema>;
 
+// === OUTWARD RETURNS (STOCK RETURNED AFTER DISPATCH) ===
+export const outwardReturns = pgTable("outward_returns", {
+  id: serial("id").primaryKey(),
+  outwardRecordId: integer("outward_record_id").notNull(),
+  lotId: integer("lot_id").notNull(),
+  quantity: decimal("quantity").notNull(),
+  returnDate: date("return_date").defaultNow(),
+  reason: text("reason"),
+  returnedBy: text("returned_by"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOutwardReturnSchema = createInsertSchema(outwardReturns).omit({ id: true, createdAt: true });
+
+export type OutwardReturn = typeof outwardReturns.$inferSelect;
+export type InsertOutwardReturn = z.infer<typeof insertOutwardReturnSchema>;
+
 // === TRIP TRACKING ===
 export const trips = pgTable("trips", {
   id: serial("id").primaryKey(),

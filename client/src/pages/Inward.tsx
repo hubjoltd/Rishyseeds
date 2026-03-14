@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords } from "@/hooks/use-inventory";
+import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -179,6 +179,7 @@ export default function Inward() {
   const { mutateAsync: generateLotNumber, isPending: isGenerating } = useGenerateLotNumber();
   const { mutate: setStockBalance, isPending: isSavingDist } = useSetStockBalance();
   const { data: outwardRecords } = useOutwardRecords();
+  const { data: outwardReturnsData = [] } = useOutwardReturns();
   const { canDelete, canEdit } = useAuth();
 
   const getCreatedByName = (createdById: number | null | undefined) => {
@@ -321,9 +322,13 @@ export default function Inward() {
       .reduce((s, b) => s + Number(b.quantity || 0), 0);
 
   const getLotDispatched = (lotId: number) => {
-    return ((outwardRecords as OutwardRecord[]) || [])
+    const outward = ((outwardRecords as OutwardRecord[]) || [])
       .filter((r) => r.lotId === lotId)
       .reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const returned = ((outwardReturnsData as any[]) || [])
+      .filter((r) => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, outward - returned);
   };
 
   const getLotBalance = (lotId: number, initialQty: number | string) => {

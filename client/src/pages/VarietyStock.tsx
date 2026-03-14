@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useLots, useProducts, useOutwardRecords } from "@/hooks/use-inventory";
+import { useLots, useProducts, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
 import type { Lot, Product, OutwardRecord } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ export default function VarietyStock() {
   const { data: lots = [] } = useLots() as { data: Lot[] };
   const { data: products = [] } = useProducts() as { data: Product[] };
   const { data: outwardRecords = [] } = useOutwardRecords() as { data: OutwardRecord[] };
+  const { data: outwardReturnsData = [] } = useOutwardReturns();
 
   const [search, setSearch] = useState("");
   const [selectedYear, setSelectedYear] = useState("all");
@@ -47,9 +48,13 @@ export default function VarietyStock() {
   );
 
   const getLotOutward = (lotId: number): number => {
-    return (outwardRecords as OutwardRecord[])
+    const outward = (outwardRecords as OutwardRecord[])
       .filter((r) => r.lotId === lotId)
       .reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const returned = ((outwardReturnsData as any[]) || [])
+      .filter((r) => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, outward - returned);
   };
 
   const getLotBalance = (lot: Lot): number =>
