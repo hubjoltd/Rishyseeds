@@ -4,7 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   useLots, useLocations, useStockMovements, useStockBalances,
-  useProducts, useOutwardRecords, useOutwardReturns, useCreateLot
+  useProducts, useOutwardRecords, useOutwardReturns, useCreateLot,
+  useUpdateLot, useDeleteLot
 } from "@/hooks/use-inventory";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Warehouse, Plus, Search, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
+import { Warehouse, Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { Lot, Location, StockMovement, StockBalance, Product } from "@shared/schema";
 
 const STOCK_FORM_OPTIONS = [
@@ -64,7 +66,8 @@ export default function PurchasedStock() {
   const [selectedYear, setSelectedYear] = useState(String(currentYear));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [showDistribution, setShowDistribution] = useState(false);
+  const [editingLot, setEditingLot] = useState<Lot | null>(null);
+  const [deletingLot, setDeletingLot] = useState<Lot | null>(null);
 
   const { data: lots = [] } = useLots() as { data: Lot[] };
   const { data: products = [] } = useProducts() as { data: Product[] };
@@ -74,6 +77,8 @@ export default function PurchasedStock() {
   const { data: outwardRecords = [] } = useOutwardRecords();
   const { data: outwardReturnsData = [] } = useOutwardReturns();
   const createLot = useCreateLot();
+  const updateLot = useUpdateLot();
+  const deleteLot = useDeleteLot();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -201,6 +206,48 @@ export default function PurchasedStock() {
     });
   };
 
+  const onUpdate = (values: FormValues) => {
+    if (!editingLot) return;
+    updateLot.mutate({ id: editingLot.id, data: {
+      productId: values.productId,
+      lotNumber: values.lotNumber,
+      sourceType: "inward",
+      sourceName: values.sourceName || null,
+      locationId: values.locationId,
+      germinationPercentage: values.germinationPercentage !== "" && values.germinationPercentage != null
+        ? String(values.germinationPercentage) : null,
+      numberOfBags: values.numberOfBags !== "" && values.numberOfBags != null
+        ? Number(values.numberOfBags) : null,
+      initialQuantity: String(values.initialQuantity),
+      quantityUnit: values.quantityUnit,
+      stockForm: values.stockForm,
+      inwardDate: values.inwardDate,
+      remarks: values.remarks || null,
+    } as any }, {
+      onSuccess: () => {
+        setEditingLot(null);
+        form.reset(defaultValues);
+      },
+    });
+  };
+
+  const openEdit = (lot: Lot) => {
+    setEditingLot(lot);
+    form.reset({
+      productId: lot.productId,
+      lotNumber: lot.lotNumber,
+      sourceName: lot.sourceName || "",
+      locationId: lot.locationId || 0,
+      germinationPercentage: (lot as any).germinationPercentage ?? "",
+      initialQuantity: Number(lot.initialQuantity),
+      quantityUnit: lot.quantityUnit || "kg",
+      numberOfBags: (lot as any).numberOfBags ?? "",
+      stockForm: lot.stockForm || "raw_seed",
+      inwardDate: lot.inwardDate || new Date().toISOString().split("T")[0],
+      remarks: lot.remarks || "",
+    });
+  };
+
   const formatDate = (d: string | null | undefined) => {
     if (!d) return "-";
     try { return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
@@ -294,12 +341,13 @@ export default function PurchasedStock() {
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">Germination %</th>
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">Total Qty (KGs/Tons)</th>
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Bags</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center">
+                <td colSpan={10} className="px-4 py-10 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Warehouse className="h-8 w-8 opacity-30" />
                     <p className="text-sm">
@@ -360,6 +408,22 @@ export default function PurchasedStock() {
                       ? <span className="font-medium">{bags}</span>
                       : <span className="text-muted-foreground">-</span>}
                   </td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => openEdit(lot)}
+                      data-testid={`btn-edit-purchased-${lot.id}`}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors mr-1"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingLot(lot)}
+                      data-testid={`btn-delete-purchased-${lot.id}`}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -367,7 +431,7 @@ export default function PurchasedStock() {
           {sorted.length > 0 && (
             <tfoot>
               <tr className="bg-muted/40 border-t-2 border-border font-semibold text-xs">
-                <td colSpan={6} className="px-3 py-2 text-muted-foreground uppercase tracking-wide">
+                <td colSpan={7} className="px-3 py-2 text-muted-foreground uppercase tracking-wide">
                   {sorted.length} record{sorted.length !== 1 ? "s" : ""}{search ? " (filtered)" : ""}
                 </td>
                 <td className="px-3 py-2 text-center text-muted-foreground">—</td>
@@ -383,119 +447,6 @@ export default function PurchasedStock() {
         </table>
       </div>
 
-      {/* Collapsible Storage Distribution */}
-      {filteredLots.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-sm font-semibold"
-            onClick={() => setShowDistribution(v => !v)}
-            data-testid="btn-toggle-distribution"
-          >
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-              Storage Distribution — Cold Storage / Plant / Office
-            </div>
-            {showDistribution ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-          {showDistribution && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="border border-border px-3 py-2 text-left font-semibold text-xs uppercase" rowSpan={2}>Crop</th>
-                    <th className="border border-border px-3 py-2 text-left font-semibold text-xs uppercase" rowSpan={2}>Variety</th>
-                    <th className="border border-border px-3 py-2 text-left font-semibold text-xs uppercase" rowSpan={2}>Organiser</th>
-                    <th className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase" rowSpan={2}>Inward (KG)</th>
-                    {activeColdStorages.length > 0 && (
-                      <th className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300" colSpan={activeColdStorages.length * 3}>
-                        Cold Storage
-                      </th>
-                    )}
-                    {plantLocations.length > 0 && (
-                      <th className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase bg-orange-50 dark:bg-orange-950/30 text-orange-700" rowSpan={2}>Plant</th>
-                    )}
-                    {officeLocations.length > 0 && (
-                      <th className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase bg-purple-50 dark:bg-purple-950/30 text-purple-700" rowSpan={2}>Office</th>
-                    )}
-                    <th className="border border-border px-3 py-2 text-center font-semibold text-xs uppercase bg-rose-50 dark:bg-rose-950/30 text-rose-700" rowSpan={2}>Closing</th>
-                  </tr>
-                  {activeColdStorages.length > 0 && (
-                    <tr className="bg-muted/30">
-                      {activeColdStorages.map(cs => (
-                        <>
-                          <th key={`in-${cs.id}`} className="border border-border px-2 py-1.5 text-center text-xs bg-blue-50/60 dark:bg-blue-950/20">
-                            <div className="text-[10px] text-blue-600 truncate max-w-[80px]">{cs.name.length > 12 ? cs.name.slice(0, 12) + "..." : cs.name}</div>
-                            <div className="text-green-600 font-semibold">In</div>
-                          </th>
-                          <th key={`out-${cs.id}`} className="border border-border px-2 py-1.5 text-center text-xs bg-blue-50/60 dark:bg-blue-950/20">
-                            <div className="text-[10px] text-blue-600 truncate max-w-[80px]">{cs.name.length > 12 ? cs.name.slice(0, 12) + "..." : cs.name}</div>
-                            <div className="text-red-600 font-semibold">Out</div>
-                          </th>
-                          <th key={`rem-${cs.id}`} className="border border-border px-2 py-1.5 text-center text-xs bg-cyan-50/60 dark:bg-cyan-950/20">
-                            <div className="text-[10px] text-cyan-600 truncate max-w-[80px]">{cs.name.length > 12 ? cs.name.slice(0, 12) + "..." : cs.name}</div>
-                            <div className="text-cyan-700 font-semibold">Rem.</div>
-                          </th>
-                        </>
-                      ))}
-                    </tr>
-                  )}
-                </thead>
-                <tbody>
-                  {filteredLots.map(lot => {
-                    const product = getProduct(lot.productId);
-                    const plantBal = getLocationBalance(lot.id, plantLocationIds);
-                    const officeBal = getLocationBalance(lot.id, officeLocationIds);
-                    return (
-                      <tr key={lot.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="border border-border px-3 py-2 text-xs font-medium">{product?.crop || "-"}</td>
-                        <td className="border border-border px-3 py-2 text-xs">
-                          <div>{product?.variety || "-"}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{lot.lotNumber}</div>
-                        </td>
-                        <td className="border border-border px-3 py-2 text-xs">{lot.sourceName || <span className="text-muted-foreground">-</span>}</td>
-                        <td className="border border-border px-3 py-2 text-center text-xs font-semibold text-green-700 dark:text-green-400">
-                          {Number(lot.initialQuantity).toFixed(0)} KG
-                        </td>
-                        {activeColdStorages.map(cs => {
-                          const inward = getColdStorageInward(lot.id, cs.id);
-                          const outward = getColdStorageOutward(lot.id, cs.id);
-                          const remaining = Math.max(0, inward - outward);
-                          return (
-                            <>
-                              <td key={`ci-${lot.id}-${cs.id}`} className="border border-border px-2 py-2 text-center text-xs bg-blue-50/30 dark:bg-blue-950/10">
-                                {inward > 0 ? <span className="text-green-700 font-medium">{inward.toFixed(0)}</span> : <span className="text-muted-foreground">-</span>}
-                              </td>
-                              <td key={`co-${lot.id}-${cs.id}`} className="border border-border px-2 py-2 text-center text-xs bg-blue-50/30 dark:bg-blue-950/10">
-                                {outward > 0 ? <span className="text-red-600 font-medium">-{outward.toFixed(0)}</span> : <span className="text-muted-foreground">-</span>}
-                              </td>
-                              <td key={`cr-${lot.id}-${cs.id}`} className="border border-border px-2 py-2 text-center text-xs bg-cyan-50/30 dark:bg-cyan-950/10">
-                                {remaining > 0 ? <span className="text-cyan-700 font-semibold">{remaining.toFixed(0)}</span> : <span className="text-muted-foreground">-</span>}
-                              </td>
-                            </>
-                          );
-                        })}
-                        {plantLocations.length > 0 && (
-                          <td className="border border-border px-2 py-2 text-center text-xs bg-orange-50/30 dark:bg-orange-950/10">
-                            {plantBal > 0 ? <span className="text-orange-700 font-medium">{plantBal.toFixed(0)}</span> : <span className="text-muted-foreground">-</span>}
-                          </td>
-                        )}
-                        {officeLocations.length > 0 && (
-                          <td className="border border-border px-2 py-2 text-center text-xs bg-purple-50/30 dark:bg-purple-950/10">
-                            {officeBal > 0 ? <span className="text-purple-700 font-medium">{officeBal.toFixed(0)}</span> : <span className="text-muted-foreground">-</span>}
-                          </td>
-                        )}
-                        <td className="border border-border px-3 py-2 text-center text-xs font-semibold text-rose-700 dark:text-rose-400">
-                          {getLotBalance(lot.id, lot.initialQuantity).toFixed(0)} KG
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Add Purchased Stock Dialog */}
       <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); form.reset(defaultValues); } }}>
@@ -695,6 +646,160 @@ export default function PurchasedStock() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingLot} onOpenChange={v => { if (!v) { setEditingLot(null); form.reset(defaultValues); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Edit Purchased Stock
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onUpdate)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="productId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Product <span className="text-destructive">*</span></FormLabel>
+                    <Select onValueChange={v => field.onChange(Number(v))} value={field.value ? String(field.value) : ""}>
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-select-product"><SelectValue placeholder="Select product" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.entries(productsGrouped).map(([crop, prods]) => (
+                          <div key={crop}>
+                            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">{crop}</div>
+                            {prods.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.variety}</SelectItem>)}
+                          </div>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="stockForm" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stock Form <span className="text-destructive">*</span></FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-select-stock-form"><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {STOCK_FORM_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="lotNumber" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lot Number <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input data-testid="edit-input-lot-number" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="sourceName" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Organiser Name</FormLabel>
+                    <FormControl><Input data-testid="edit-input-source-name" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="initialQuantity" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quantity <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input data-testid="edit-input-quantity" type="number" min={0} step="0.01" {...field} onChange={e => field.onChange(Number(e.target.value))} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="quantityUnit" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Unit</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-select-unit"><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="kg">KG</SelectItem>
+                        <SelectItem value="ton">Ton</SelectItem>
+                        <SelectItem value="quintal">Quintal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="germinationPercentage" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Germination %</FormLabel>
+                    <FormControl><Input data-testid="edit-input-germination" type="number" min={0} max={100} step="0.1" placeholder="e.g. 92" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="numberOfBags" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Number of Bags</FormLabel>
+                    <FormControl><Input data-testid="edit-input-bags" type="number" min={0} placeholder="e.g. 50" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="inwardDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input data-testid="edit-input-inward-date" type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <FormField control={form.control} name="remarks" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Remarks</FormLabel>
+                  <FormControl><Textarea data-testid="edit-textarea-remarks" placeholder="Additional notes..." rows={2} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="flex gap-3 pt-1">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => { setEditingLot(null); form.reset(defaultValues); }}>
+                  Cancel
+                </Button>
+                <Button
+                  data-testid="btn-save-edit-purchased"
+                  type="submit"
+                  className="flex-1"
+                  disabled={updateLot.isPending}
+                >
+                  {updateLot.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deletingLot} onOpenChange={v => { if (!v) setDeletingLot(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Purchased Stock?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete lot <strong>{deletingLot?.lotNumber}</strong>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="btn-cancel-delete-purchased">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="btn-confirm-delete-purchased"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!deletingLot) return;
+                deleteLot.mutate(deletingLot.id, { onSuccess: () => setDeletingLot(null) });
+              }}
+            >
+              {deleteLot.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
