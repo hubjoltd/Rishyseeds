@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { RotateCcw, Trash2, PlusCircle, PackageOpen } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RotateCcw, Trash2, Plus, PackageOpen, Search } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +22,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const STATE_OPTIONS = [
   { value: "AP", label: "Andhra Pradesh (AP)" },
@@ -39,7 +38,6 @@ const STATE_OPTIONS = [
   { value: "PB", label: "Punjab (PB)" },
   { value: "OTHER", label: "Other" },
 ];
-
 
 const STOCK_FORM_OPTIONS = [
   { value: "raw_seed", label: "Raw Seed" },
@@ -69,6 +67,19 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+const defaultValues: FormValues = {
+  lotId: 0,
+  partyName: "",
+  stateName: "",
+  location: "",
+  quantity: 0,
+  unit: "KG",
+  stockForm: "",
+  inwardDate: new Date().toISOString().split("T")[0],
+  expiryDate: "",
+  reason: "",
+};
+
 export default function OutwardReturns() {
   const { data: returns = [], isLoading } = useOutwardReturns();
   const { data: lots = [] } = useLots() as { data: Lot[] };
@@ -77,27 +88,22 @@ export default function OutwardReturns() {
   const createReturn = useCreateOutwardReturn();
   const deleteReturn = useDeleteOutwardReturn();
 
+  const [open, setOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      lotId: 0,
-      partyName: "",
-      stateName: "",
-      location: "",
-      quantity: 0,
-      unit: "KG",
-      stockForm: "",
-      inwardDate: new Date().toISOString().split("T")[0],
-      expiryDate: "",
-      reason: "",
-    },
+    defaultValues,
   });
 
   const getLot = (lotId: number) => (lots as Lot[]).find(l => l.id === lotId);
   const getProduct = (productId: number) => (products as Product[]).find(p => p.id === productId);
+  const getLocationName = (v: string) => {
+    const loc = (locations as Location[]).find(l => String(l.id) === v);
+    return loc?.name || v || "-";
+  };
 
   const selectedLot = selectedLotId ? getLot(selectedLotId) : null;
   const selectedProduct = selectedLot ? getProduct(selectedLot.productId) : null;
@@ -111,7 +117,7 @@ export default function OutwardReturns() {
   }, {} as Record<string, Lot[]>);
 
   const onSubmit = (values: FormValues) => {
-    createReturn.mutate({
+    createReturn({
       lotId: values.lotId,
       partyName: values.partyName,
       stateName: values.stateName,
@@ -125,72 +131,215 @@ export default function OutwardReturns() {
       returnDate: values.inwardDate,
     } as any, {
       onSuccess: () => {
-        form.reset({
-          lotId: 0,
-          partyName: "",
-          stateName: "",
-          location: "",
-          quantity: 0,
-          unit: "KG",
-          stockForm: "",
-          inwardDate: new Date().toISOString().split("T")[0],
-          expiryDate: "",
-          reason: "",
-        });
+        form.reset(defaultValues);
         setSelectedLotId(null);
+        setOpen(false);
       },
     });
   };
 
-  const formatDate = (d: string) => {
+  const formatDate = (d: string | null | undefined) => {
     if (!d) return "-";
-    return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    try { return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
+    catch { return d; }
   };
 
   const getStockFormLabel = (v: string) => STOCK_FORM_OPTIONS.find(o => o.value === v)?.label || v;
   const getStateLabel = (v: string) => STATE_OPTIONS.find(o => o.value === v)?.label || v;
-  const getLocationLabel = (v: string) => {
-    const loc = (locations as Location[]).find(l => String(l.id) === v);
-    return loc?.name || v;
-  };
 
   const totalReturned = (returns as any[]).reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
 
+  const filtered = (returns as any[]).filter(r => {
+    if (!search.trim()) return true;
+    const lot = getLot(r.lotId);
+    const product = lot ? getProduct(lot.productId) : null;
+    const q = search.toLowerCase();
+    return (
+      lot?.lotNumber?.toLowerCase().includes(q) ||
+      product?.crop?.toLowerCase().includes(q) ||
+      product?.variety?.toLowerCase().includes(q) ||
+      r.partyName?.toLowerCase().includes(q) ||
+      r.stateName?.toLowerCase().includes(q) ||
+      r.reason?.toLowerCase().includes(q)
+    );
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const da = new Date(a.inwardDate || a.returnDate || a.createdAt || 0).getTime();
+    const db = new Date(b.inwardDate || b.returnDate || b.createdAt || 0).getTime();
+    return db - da;
+  });
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-          <RotateCcw className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+    <div className="p-6 space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+            <RotateCcw className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Return Stock</h1>
+            <p className="text-sm text-muted-foreground">Stock returned from parties and dealers</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Return Stock</h1>
-          <p className="text-sm text-muted-foreground">Record stock returned from parties and dealers</p>
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary" className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 px-3 py-1.5">
+            <PackageOpen className="h-3.5 w-3.5 mr-1.5" />
+            {(returns as any[]).length} Returns &bull; {totalReturned.toFixed(0)} KG
+          </Badge>
+          <Button
+            data-testid="btn-add-return"
+            onClick={() => { form.reset(defaultValues); setSelectedLotId(null); setOpen(true); }}
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Return
+          </Button>
         </div>
       </div>
 
-      <Card className="border-amber-200 dark:border-amber-800/50">
-        <CardHeader className="pb-4 border-b border-border">
-          <CardTitle className="text-base flex items-center gap-2 text-amber-700 dark:text-amber-300">
-            <PlusCircle className="h-4 w-4" />
-            New Return Entry
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-5">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            data-testid="input-return-search"
+            placeholder="Search lot, crop, party, state..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/50 border-b border-border">
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">#</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Lot No</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Crop / Variety</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Party Name</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">State</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Location</th>
+              <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Qty</th>
+              <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Stock Form</th>
+              <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Inward Date</th>
+              <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Expiry Date</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Remarks</th>
+              <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Del</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={12} className="px-4 py-8 text-center text-muted-foreground text-sm">Loading...</td>
+              </tr>
+            ) : sorted.length === 0 ? (
+              <tr>
+                <td colSpan={12} className="px-4 py-10 text-center">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <RotateCcw className="h-8 w-8 opacity-30" />
+                    <p className="text-sm">{search ? "No records match your search." : 'No return records yet. Click "Add Return" to record one.'}</p>
+                  </div>
+                </td>
+              </tr>
+            ) : sorted.map((r: any, idx: number) => {
+              const lot = getLot(r.lotId);
+              const product = lot ? getProduct(lot.productId) : null;
+              return (
+                <tr
+                  key={r.id}
+                  data-testid={`row-return-${r.id}`}
+                  className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                >
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs">{idx + 1}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono font-medium text-xs text-foreground">
+                      {lot?.lotNumber || `#${r.lotId}`}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {product ? (
+                      <div>
+                        <div className="font-medium text-xs text-foreground">{product.crop}</div>
+                        <div className="text-xs text-muted-foreground">{product.variety}</div>
+                      </div>
+                    ) : <span className="text-muted-foreground text-xs">-</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-sm text-foreground">{r.partyName || <span className="text-muted-foreground text-xs">-</span>}</td>
+                  <td className="px-3 py-2.5">
+                    {r.stateName ? (
+                      <Badge variant="outline" className="text-xs">{r.stateName}</Badge>
+                    ) : <span className="text-muted-foreground text-xs">-</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs text-foreground max-w-[120px] truncate" title={r.location ? getLocationName(r.location) : ""}>
+                    {r.location ? getLocationName(r.location) : <span className="text-muted-foreground">-</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-semibold text-xs whitespace-nowrap">
+                      +{Number(r.quantity).toFixed(0)} {r.unit || "KG"}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-xs text-foreground">
+                    {r.stockForm ? getStockFormLabel(r.stockForm) : <span className="text-muted-foreground">-</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-xs text-muted-foreground whitespace-nowrap">{formatDate(r.inwardDate || r.returnDate)}</td>
+                  <td className="px-3 py-2.5 text-center text-xs text-muted-foreground whitespace-nowrap">{formatDate(r.expiryDate)}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[150px]">
+                    <span className="line-clamp-2">{r.reason || "-"}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <Button
+                      data-testid={`btn-delete-return-${r.id}`}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      onClick={() => setDeleteId(r.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {sorted.length > 0 && (
+            <tfoot>
+              <tr className="bg-muted/40 border-t-2 border-border font-semibold text-xs">
+                <td colSpan={6} className="px-3 py-2 text-muted-foreground uppercase tracking-wide">
+                  {sorted.length} record{sorted.length !== 1 ? "s" : ""}{search ? " (filtered)" : ""}
+                </td>
+                <td className="px-3 py-2 text-center text-amber-700 dark:text-amber-300">
+                  {sorted.reduce((s: number, r: any) => s + Number(r.quantity || 0), 0).toFixed(0)} KG
+                </td>
+                <td colSpan={5} />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {/* Add Return Dialog */}
+      <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); form.reset(defaultValues); setSelectedLotId(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-amber-600" />
+              Record Return Stock
+            </DialogTitle>
+          </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="lotId"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="md:col-span-2">
                       <FormLabel>Product (Crop / Variety) &amp; Lot No <span className="text-destructive">*</span></FormLabel>
                       <Select
                         value={field.value ? String(field.value) : ""}
-                        onValueChange={val => {
-                          field.onChange(Number(val));
-                          setSelectedLotId(Number(val));
-                        }}
+                        onValueChange={val => { field.onChange(Number(val)); setSelectedLotId(Number(val)); }}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-return-lot">
@@ -200,22 +349,18 @@ export default function OutwardReturns() {
                         <SelectContent>
                           {Object.entries(lotsGrouped).map(([productName, groupLots]) => (
                             <div key={productName}>
-                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 sticky top-0">
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground bg-muted/50">
                                 {productName}
                               </div>
                               {groupLots.map(lot => (
-                                <SelectItem key={lot.id} value={String(lot.id)}>
-                                  {lot.lotNumber}
-                                </SelectItem>
+                                <SelectItem key={lot.id} value={String(lot.id)}>{lot.lotNumber}</SelectItem>
                               ))}
                             </div>
                           ))}
                         </SelectContent>
                       </Select>
                       {selectedProduct && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {selectedProduct.crop} &mdash; {selectedProduct.variety}
-                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{selectedProduct.crop} &mdash; {selectedProduct.variety}</p>
                       )}
                       <FormMessage />
                     </FormItem>
@@ -229,7 +374,7 @@ export default function OutwardReturns() {
                     <FormItem>
                       <FormLabel>Party Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
-                        <Input data-testid="input-return-party" placeholder="Enter party / dealer name" {...field} />
+                        <Input data-testid="input-return-party" placeholder="Party / dealer name" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -249,9 +394,7 @@ export default function OutwardReturns() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {STATE_OPTIONS.map(s => (
-                            <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                          ))}
+                          {STATE_OPTIONS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -268,7 +411,7 @@ export default function OutwardReturns() {
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger data-testid="select-return-location">
-                            <SelectValue placeholder="Select warehouse / location..." />
+                            <SelectValue placeholder="Select warehouse..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -281,45 +424,6 @@ export default function OutwardReturns() {
                     </FormItem>
                   )}
                 />
-
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Quantity <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <Input data-testid="input-return-quantity" type="number" min="0" step="0.01" placeholder="0" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="unit"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Unit <span className="text-destructive">*</span></FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-return-unit">
-                              <SelectValue placeholder="Unit..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {UNIT_OPTIONS.map(u => (
-                              <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
 
                 <FormField
                   control={form.control}
@@ -334,9 +438,42 @@ export default function OutwardReturns() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {STOCK_FORM_OPTIONS.map(s => (
-                            <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                          ))}
+                          {STOCK_FORM_OPTIONS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="quantity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quantity <span className="text-destructive">*</span></FormLabel>
+                      <FormControl>
+                        <Input data-testid="input-return-quantity" type="number" min="0" step="0.01" placeholder="0" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="unit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Unit <span className="text-destructive">*</span></FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-return-unit">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {UNIT_OPTIONS.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -380,18 +517,19 @@ export default function OutwardReturns() {
                   <FormItem>
                     <FormLabel>Remarks</FormLabel>
                     <FormControl>
-                      <Textarea data-testid="textarea-return-remarks" placeholder="Any additional notes or reason for return..." rows={2} {...field} />
+                      <Textarea data-testid="textarea-return-remarks" placeholder="Additional notes..." rows={2} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="flex justify-end pt-1">
+              <div className="flex gap-3 pt-1">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button
                   data-testid="btn-submit-return"
                   type="submit"
-                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
                   disabled={createReturn.isPending}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
@@ -400,124 +538,10 @@ export default function OutwardReturns() {
               </div>
             </form>
           </Form>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <PackageOpen className="h-4 w-4 text-amber-500" />
-          Return Records
-        </h2>
-        <Badge variant="secondary" className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800">
-          {(returns as any[]).length} entries &bull; {totalReturned.toFixed(0)} KG total
-        </Badge>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">Loading records...</div>
-      ) : (returns as any[]).length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-32 gap-2 text-muted-foreground">
-          <RotateCcw className="h-8 w-8 opacity-30" />
-          <p className="text-sm">No return records yet. Use the form above to add one.</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/50 border-b border-border">
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">#</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Lot No</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Crop / Variety</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Party Name</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">State</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Location</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Qty</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Stock Form</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Inward Date</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Expiry Date</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-muted-foreground">Remarks</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Del</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...(returns as any[])].sort((a, b) =>
-                new Date(b.inwardDate || b.returnDate || b.createdAt).getTime() -
-                new Date(a.inwardDate || a.returnDate || a.createdAt).getTime()
-              ).map((r: any, idx: number) => {
-                const lot = getLot(r.lotId);
-                const product = lot ? getProduct(lot.productId) : null;
-                return (
-                  <tr
-                    key={r.id}
-                    data-testid={`row-return-${r.id}`}
-                    className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{idx + 1}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="font-mono font-medium text-xs text-foreground">
-                        {lot?.lotNumber || `#${r.lotId}`}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {product ? (
-                        <div>
-                          <div className="font-medium text-xs text-foreground">{product.crop}</div>
-                          <div className="text-xs text-muted-foreground">{product.variety}</div>
-                        </div>
-                      ) : <span className="text-muted-foreground text-xs">-</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-foreground text-sm">{r.partyName || <span className="text-muted-foreground text-xs">-</span>}</td>
-                    <td className="px-3 py-2.5">
-                      {r.stateName ? (
-                        <Badge variant="outline" className="text-xs">{r.stateName}</Badge>
-                      ) : <span className="text-muted-foreground text-xs">-</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-foreground capitalize">
-                      {r.location ? getLocationLabel(r.location) : <span className="text-muted-foreground">-</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-semibold text-xs whitespace-nowrap">
-                        +{Number(r.quantity).toFixed(0)} {r.unit || "KG"}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5 text-center text-xs text-foreground">
-                      {r.stockForm ? getStockFormLabel(r.stockForm) : <span className="text-muted-foreground">-</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-center text-xs text-muted-foreground whitespace-nowrap">{formatDate(r.inwardDate || r.returnDate)}</td>
-                    <td className="px-3 py-2.5 text-center text-xs text-muted-foreground whitespace-nowrap">{formatDate(r.expiryDate)}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[150px]">
-                      <span className="line-clamp-2">{r.reason || "-"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <Button
-                        data-testid={`btn-delete-return-${r.id}`}
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                        onClick={() => setDeleteId(r.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-muted/40 border-t-2 border-border font-semibold text-xs">
-                <td colSpan={6} className="px-3 py-2 text-muted-foreground uppercase tracking-wide">
-                  {(returns as any[]).length} record{(returns as any[]).length !== 1 ? "s" : ""}
-                </td>
-                <td className="px-3 py-2 text-center text-amber-700 dark:text-amber-300">
-                  {totalReturned.toFixed(0)} KG
-                </td>
-                <td colSpan={5} />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
-
+      {/* Delete Confirmation */}
       <AlertDialog open={deleteId !== null} onOpenChange={open => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -530,12 +554,7 @@ export default function OutwardReturns() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
-              onClick={() => {
-                if (deleteId !== null) {
-                  deleteReturn.mutate(deleteId);
-                  setDeleteId(null);
-                }
-              }}
+              onClick={() => { if (deleteId !== null) { deleteReturn.mutate(deleteId); setDeleteId(null); } }}
             >
               Delete
             </AlertDialogAction>
