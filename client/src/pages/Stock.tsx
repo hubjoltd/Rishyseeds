@@ -218,21 +218,22 @@ export default function Stock() {
     return (locations || []).find((l: any) => l.id === selectedFromLocationId);
   }, [locations, selectedFromLocationId]);
 
-  const availableAtSource = useMemo(() => {
-    if (!selectedLot || !selectedFromLocationId) return 0;
+  const { availableAtSource, isPerLocation } = useMemo(() => {
+    if (!selectedLot) return { availableAtSource: 0, isPerLocation: false };
+    if (!selectedFromLocationId) return { availableAtSource: getLotClosingBalance(selectedLot), isPerLocation: false };
     const balances = (stockBalances as StockBalance[] || []);
     const fromLocType = (selectedFromLocation as any)?.type;
     if (fromLocType === 'cold_storage') {
       const csIn = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_inward');
       const csOut = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_outward');
-      return Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0));
+      return { availableAtSource: Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0)), isPerLocation: true };
     }
     const loose = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'loose');
-    if (loose) return Math.max(0, Number(loose.quantity));
-    return getLotClosingBalance(selectedLot);
-  }, [selectedLot, selectedFromLocationId, selectedFromLocation, stockBalances]);
+    if (loose && Number(loose.quantity) > 0) return { availableAtSource: Number(loose.quantity), isPerLocation: true };
+    return { availableAtSource: getLotClosingBalance(selectedLot), isPerLocation: false };
+  }, [selectedLot, selectedFromLocationId, selectedFromLocation, stockBalances, outwardRecords, outwardReturnsData]);
 
-  const availableStock = selectedFromLocationId ? availableAtSource : (selectedLot ? getLotClosingBalance(selectedLot) : 0);
+  const availableStock = selectedLot ? availableAtSource : 0;
   const quantityExceedsAvailable = enteredQuantity > availableStock;
 
   const onSubmit = (data: z.infer<typeof movementFormSchema>) => {
@@ -344,7 +345,9 @@ export default function Stock() {
                   </div>
                   <div className="text-sm">
                     <span className="text-muted-foreground">
-                      {selectedFromLocationId ? `Available at ${(locations || []).find((l: any) => l.id === selectedFromLocationId)?.name || 'Source'}:` : 'Total Lot Balance:'}
+                      {isPerLocation
+                        ? `Available at ${(selectedFromLocation as any)?.name || 'Source'}:`
+                        : 'Total Lot Balance:'}
                     </span>
                     <p className="font-bold text-primary">{availableStock.toFixed(2)} KG</p>
                   </div>
