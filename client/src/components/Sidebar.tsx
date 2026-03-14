@@ -30,7 +30,8 @@ import {
   ClipboardList,
   Radio,
   Warehouse,
-  BarChart2
+  BarChart2,
+  RotateCcw
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -70,6 +71,7 @@ const allMenuItems: MenuItem[] = [
       { icon: Cog, label: "Processing", href: "/processing", roles: ["admin", "manager", "production_operator"] },
       { icon: Boxes, label: "Packaging", href: "/packaging", roles: ["admin", "manager", "production_operator"] },
       { icon: Truck, label: "Outward", href: "/outward", roles: ["admin", "manager", "dispatch_operator"] },
+      { icon: RotateCcw, label: "Return Stock", href: "/return-stock", roles: ["admin", "manager", "dispatch_operator"] },
     ]
   },
   { icon: Fan, label: "Dryer", href: "/dryer", roles: ["admin", "manager", "production_operator"] },

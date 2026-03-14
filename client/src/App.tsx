@@ -37,6 +37,7 @@ import Dryer from "@/pages/Dryer";
 import Expenses from "@/pages/Expenses";
 import PurchasedStock from "@/pages/PurchasedStock";
 import VarietyStock from "@/pages/VarietyStock";
+import OutwardReturns from "@/pages/OutwardReturns";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -152,6 +153,9 @@ function Router() {
       </Route>
       <Route path="/variety-stock">
         <ProtectedRoute component={VarietyStock} />
+      </Route>
+      <Route path="/return-stock">
+        <ProtectedRoute component={OutwardReturns} />
       </Route>
 
       <Route component={NotFound} />
