@@ -87,6 +87,12 @@ export default function Outward() {
   const [returnQty, setReturnQty] = useState("");
   const [returnReason, setReturnReason] = useState("");
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split("T")[0]);
+  const [returnPartyName, setReturnPartyName] = useState("");
+  const [returnStateName, setReturnStateName] = useState("");
+  const [returnLocation, setReturnLocation] = useState("");
+  const [returnUnit, setReturnUnit] = useState("KG");
+  const [returnStockForm, setReturnStockForm] = useState("");
+  const [returnExpiryDate, setReturnExpiryDate] = useState("");
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
@@ -170,20 +176,37 @@ export default function Outward() {
     return Math.max(0, Number(lot.initialQuantity || 0) - getLotDispatched(lotId) + getLotReturned(lotId));
   };
 
+  const resetReturnForm = () => {
+    setReturnQty("");
+    setReturnReason("");
+    setReturnDate(new Date().toISOString().split("T")[0]);
+    setReturnPartyName("");
+    setReturnStateName("");
+    setReturnLocation("");
+    setReturnUnit("KG");
+    setReturnStockForm("");
+    setReturnExpiryDate("");
+  };
+
   const handleReturn = () => {
     if (!returnRecord || !returnQty || Number(returnQty) <= 0) return;
     createReturn({
       outwardRecordId: returnRecord.id,
       lotId: returnRecord.lotId,
+      partyName: returnPartyName || null,
+      stateName: returnStateName || null,
+      location: returnLocation || null,
       quantity: String(returnQty),
+      unit: returnUnit || "KG",
+      stockForm: returnStockForm || null,
+      inwardDate: returnDate,
+      expiryDate: returnExpiryDate || null,
       returnDate: returnDate,
       reason: returnReason || null,
-    }, {
+    } as any, {
       onSuccess: () => {
         setReturnRecord(null);
-        setReturnQty("");
-        setReturnReason("");
-        setReturnDate(new Date().toISOString().split("T")[0]);
+        resetReturnForm();
       },
     });
   };
@@ -480,9 +503,7 @@ export default function Outward() {
                             size="icon"
                             onClick={() => {
                               setReturnRecord(record);
-                              setReturnQty("");
-                              setReturnReason("");
-                              setReturnDate(new Date().toISOString().split("T")[0]);
+                              resetReturnForm();
                             }}
                             title="Return Stock"
                             data-testid={`button-return-outward-${record.id}`}
@@ -511,48 +532,132 @@ export default function Outward() {
       </Card>
 
       {/* Return Stock Dialog */}
-      <Dialog open={!!returnRecord} onOpenChange={(v) => { if (!v) setReturnRecord(null); }}>
-        <DialogContent className="max-w-md">
+      <Dialog open={!!returnRecord} onOpenChange={(v) => { if (!v) { setReturnRecord(null); resetReturnForm(); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <RotateCcw className="h-5 w-5 text-blue-600" />
+              <RotateCcw className="h-5 w-5 text-amber-600" />
               Return Stock
             </DialogTitle>
             <DialogDescription>
-              Record returned stock for: <span className="font-semibold">{returnRecord ? getLotDetails(returnRecord.lotId) : ""}</span>
-              <br />
-              <span className="text-xs text-muted-foreground">Original dispatch: {returnRecord ? Number(returnRecord.quantity).toFixed(2) + " KG" : ""}</span>
+              Lot: <span className="font-semibold">{returnRecord ? getLotDetails(returnRecord.lotId) : ""}</span>
+              &nbsp;&bull;&nbsp;
+              <span className="text-xs">Original dispatch: {returnRecord ? Number(returnRecord.quantity).toFixed(0) + " KG" : ""}</span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Return Quantity (KG) <span className="text-destructive">*</span></label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                max={returnRecord ? Number(returnRecord.quantity) : undefined}
-                value={returnQty}
-                onChange={e => setReturnQty(e.target.value)}
-                placeholder="Enter quantity to return"
-                data-testid="input-return-quantity"
-              />
+          <div className="space-y-4 pt-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Party Name</label>
+                <Input
+                  value={returnPartyName}
+                  onChange={e => setReturnPartyName(e.target.value)}
+                  placeholder="Party / dealer name"
+                  data-testid="input-return-party"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">State Name</label>
+                <Select value={returnStateName} onValueChange={setReturnStateName}>
+                  <SelectTrigger data-testid="select-return-state">
+                    <SelectValue placeholder="Select state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: "AP", label: "Andhra Pradesh (AP)" },
+                      { value: "TS", label: "Telangana (TS)" },
+                      { value: "UP", label: "Uttar Pradesh (UP)" },
+                      { value: "MP", label: "Madhya Pradesh (MP)" },
+                      { value: "GJ", label: "Gujarat (GJ)" },
+                      { value: "KA", label: "Karnataka (KA)" },
+                      { value: "OD", label: "Odisha (OD)" },
+                      { value: "CG", label: "Chhattisgarh (CG)" },
+                      { value: "MH", label: "Maharashtra (MH)" },
+                      { value: "RJ", label: "Rajasthan (RJ)" },
+                      { value: "HR", label: "Haryana (HR)" },
+                      { value: "PB", label: "Punjab (PB)" },
+                      { value: "OTHER", label: "Other" },
+                    ].map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Location (Received At)</label>
+                <Select value={returnLocation} onValueChange={setReturnLocation}>
+                  <SelectTrigger data-testid="select-return-location">
+                    <SelectValue placeholder="Select warehouse..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(locations as Location[] || []).map((l: Location) => (
+                      <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Stock Form</label>
+                <Select value={returnStockForm} onValueChange={setReturnStockForm}>
+                  <SelectTrigger data-testid="select-return-stock-form">
+                    <SelectValue placeholder="Select stock form..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="raw_seed">Raw Seed</SelectItem>
+                    <SelectItem value="codes">Codes</SelectItem>
+                    <SelectItem value="packed">Packed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Quantity <span className="text-destructive">*</span></label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={returnQty}
+                    onChange={e => setReturnQty(e.target.value)}
+                    placeholder="0"
+                    className="flex-1"
+                    data-testid="input-return-quantity"
+                  />
+                  <Select value={returnUnit} onValueChange={setReturnUnit}>
+                    <SelectTrigger className="w-24" data-testid="select-return-unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="KG">KG</SelectItem>
+                      <SelectItem value="QTL">QTL</SelectItem>
+                      <SelectItem value="MT">MT</SelectItem>
+                      <SelectItem value="bags">Bags</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Inward Date <span className="text-destructive">*</span></label>
+                <Input
+                  type="date"
+                  value={returnDate}
+                  onChange={e => setReturnDate(e.target.value)}
+                  data-testid="input-return-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Expiry Date</label>
+                <Input
+                  type="date"
+                  value={returnExpiryDate}
+                  onChange={e => setReturnExpiryDate(e.target.value)}
+                  data-testid="input-return-expiry-date"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Return Date</label>
-              <Input
-                type="date"
-                value={returnDate}
-                onChange={e => setReturnDate(e.target.value)}
-                data-testid="input-return-date"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Reason / Remarks</label>
+              <label className="text-sm font-medium">Remarks</label>
               <Input
                 value={returnReason}
                 onChange={e => setReturnReason(e.target.value)}
-                placeholder="Reason for return (optional)"
+                placeholder="Any additional notes..."
                 data-testid="input-return-reason"
               />
             </div>
@@ -560,18 +665,19 @@ export default function Outward() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => setReturnRecord(null)}
+                onClick={() => { setReturnRecord(null); resetReturnForm(); }}
                 disabled={isReturning}
               >
                 Cancel
               </Button>
               <Button
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handleReturn}
                 disabled={isReturning || !returnQty || Number(returnQty) <= 0}
                 data-testid="button-confirm-return"
               >
-                {isReturning ? "Processing..." : "Confirm Return"}
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {isReturning ? "Processing..." : "Record Return"}
               </Button>
             </div>
           </div>

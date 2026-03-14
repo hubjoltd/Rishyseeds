@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Lot, Product } from "@shared/schema";
-import { useLots, useProducts, useDeleteOutwardReturn, useOutwardReturns, useCreateOutwardReturn } from "@/hooks/use-inventory";
+import { Lot, Product, Location } from "@shared/schema";
+import { useLots, useProducts, useDeleteOutwardReturn, useOutwardReturns, useCreateOutwardReturn, useLocations } from "@/hooks/use-inventory";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -40,10 +40,6 @@ const STATE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
-const LOCATION_OPTIONS = [
-  { value: "main_office", label: "Main Office" },
-  { value: "plant", label: "Plant" },
-];
 
 const STOCK_FORM_OPTIONS = [
   { value: "raw_seed", label: "Raw Seed" },
@@ -77,6 +73,7 @@ export default function OutwardReturns() {
   const { data: returns = [], isLoading } = useOutwardReturns();
   const { data: lots = [] } = useLots() as { data: Lot[] };
   const { data: products = [] } = useProducts() as { data: Product[] };
+  const { data: locations = [] } = useLocations() as { data: Location[] };
   const createReturn = useCreateOutwardReturn();
   const deleteReturn = useDeleteOutwardReturn();
 
@@ -152,7 +149,10 @@ export default function OutwardReturns() {
 
   const getStockFormLabel = (v: string) => STOCK_FORM_OPTIONS.find(o => o.value === v)?.label || v;
   const getStateLabel = (v: string) => STATE_OPTIONS.find(o => o.value === v)?.label || v;
-  const getLocationLabel = (v: string) => LOCATION_OPTIONS.find(o => o.value === v)?.label || v;
+  const getLocationLabel = (v: string) => {
+    const loc = (locations as Location[]).find(l => String(l.id) === v);
+    return loc?.name || v;
+  };
 
   const totalReturned = (returns as any[]).reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
 
@@ -268,12 +268,12 @@ export default function OutwardReturns() {
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger data-testid="select-return-location">
-                            <SelectValue placeholder="Select location..." />
+                            <SelectValue placeholder="Select warehouse / location..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {LOCATION_OPTIONS.map(l => (
-                            <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                          {(locations as Location[]).map(l => (
+                            <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
