@@ -200,7 +200,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
     };
     sendLocation();
-    const intervalId = setInterval(sendLocation, 60000);
+    const intervalId = setInterval(sendLocation, 30000);
     return () => clearInterval(intervalId);
   }, [isPunchedIn]);
 

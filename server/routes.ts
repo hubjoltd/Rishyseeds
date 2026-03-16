@@ -3461,88 +3461,97 @@ export async function registerRoutes(
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
       const points = await storage.getEmployeeLocationsForDate(empId, date);
 
-      // Compute stoppages: group consecutive points within STOPPAGE_RADIUS_M metres for >= STOPPAGE_MIN_SECS
-      const STOPPAGE_RADIUS_M = 80;
-      const STOPPAGE_MIN_SECS = 5 * 60; // 5 minutes
+      const STOPPAGE_RADIUS_M = 150;   // metres — generous for mobile GPS drift
+      const STOPPAGE_MIN_SECS = 2 * 60; // 2 minutes minimum to count as a stoppage
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
         const dLat = ((lat2 - lat1) * Math.PI) / 180;
         const dLon = ((lon2 - lon1) * Math.PI) / 180;
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
 
-      type Segment =
-        | { type: "travelled"; startTime: Date; endTime: Date; distanceKm: number }
-        | { type: "stoppage"; startTime: Date; endTime: Date; durationSecs: number; lat: number; lng: number };
-
-      const segments: Segment[] = [];
-
-      if (points.length < 2) {
-        return res.json({ points, segments, totalKm: 0, stoppageCount: 0, travelledKm: 0 });
+      function totalDistKm(pts: typeof points): number {
+        let d = 0;
+        for (let i = 1; i < pts.length; i++) {
+          d += haversineM(Number(pts[i - 1].latitude), Number(pts[i - 1].longitude), Number(pts[i].latitude), Number(pts[i].longitude)) / 1000;
+        }
+        return d;
       }
 
+      type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
+
+      // Phase 1: find all stoppage clusters
+      const clusters: StoppageCluster[] = [];
       let i = 0;
       while (i < points.length) {
-        // Check if this is a stoppage start
         const anchor = points[i];
         let j = i + 1;
-        let totalDist = 0;
-        while (j < points.length) {
-          const d = haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[j].latitude), Number(points[j].longitude));
-          if (d <= STOPPAGE_RADIUS_M) {
-            j++;
-          } else {
-            break;
-          }
+        while (j < points.length &&
+          haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
+          j++;
         }
-        const durationSecs = (new Date(points[j - 1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000;
+        const durationSecs = j > i + 1
+          ? (new Date(points[j - 1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000
+          : 0;
         if (j > i + 1 && durationSecs >= STOPPAGE_MIN_SECS) {
-          // Stoppage segment
-          segments.push({
-            type: "stoppage",
-            startTime: new Date(anchor.recordedAt),
-            endTime: new Date(points[j - 1].recordedAt),
-            durationSecs,
-            lat: Number(anchor.latitude),
-            lng: Number(anchor.longitude),
-          });
+          clusters.push({ startIdx: i, endIdx: j - 1, lat: Number(anchor.latitude), lng: Number(anchor.longitude), durationSecs });
           i = j;
         } else {
-          // Travel step: accumulate distance to next potential stoppage
-          if (i + 1 < points.length) {
-            const travelStart = new Date(points[i].recordedAt);
-            // Advance until next stoppage or end
-            let k = i + 1;
-            let distKm = 0;
-            let prevPoint = points[i];
-            while (k < points.length) {
-              distKm += haversineM(Number(prevPoint.latitude), Number(prevPoint.longitude), Number(points[k].latitude), Number(points[k].longitude)) / 1000;
-              prevPoint = points[k];
-              // Peek if next is a stoppage anchor
-              const anchorNext = points[k];
-              let m = k + 1;
-              while (m < points.length && haversineM(Number(anchorNext.latitude), Number(anchorNext.longitude), Number(points[m].latitude), Number(points[m].longitude)) <= STOPPAGE_RADIUS_M) m++;
-              const dur = (new Date(points[m - 1].recordedAt).getTime() - new Date(anchorNext.recordedAt).getTime()) / 1000;
-              if (m > k + 1 && dur >= STOPPAGE_MIN_SECS) break;
-              k++;
-            }
+          i++;
+        }
+      }
+
+      // Phase 2: build timeline from clusters + travel segments between them
+      type Segment =
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+        | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
+
+      const segments: Segment[] = [];
+      let prevEndIdx = -1;
+
+      for (const cluster of clusters) {
+        // Travel segment before this stoppage
+        if (cluster.startIdx > prevEndIdx + 1) {
+          const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx + 1);
+          if (travelPts.length >= 1) {
             segments.push({
               type: "travelled",
-              startTime: travelStart,
-              endTime: new Date(points[k < points.length ? k : points.length - 1].recordedAt),
-              distanceKm: distKm,
+              startTime: new Date(travelPts[0].recordedAt).toISOString(),
+              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+              distanceKm: totalDistKm(travelPts),
             });
-            i = k;
-          } else {
-            i++;
           }
+        }
+        segments.push({
+          type: "stoppage",
+          startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(),
+          endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(),
+          durationSecs: cluster.durationSecs,
+          lat: cluster.lat,
+          lng: cluster.lng,
+        });
+        prevEndIdx = cluster.endIdx;
+      }
+
+      // Travel segment after last stoppage
+      if (prevEndIdx < points.length - 1) {
+        const travelPts = points.slice(prevEndIdx + 1);
+        if (travelPts.length >= 1) {
+          segments.push({
+            type: "travelled",
+            startTime: new Date(travelPts[0].recordedAt).toISOString(),
+            endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+            distanceKm: totalDistKm(travelPts),
+          });
         }
       }
 
       const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
-      const stoppageCount = segments.filter(s => s.type === "stoppage").length;
+      const stoppageCount = clusters.length;
 
       res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
     } catch (e: any) {

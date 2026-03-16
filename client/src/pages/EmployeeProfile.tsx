@@ -414,6 +414,34 @@ export default function EmployeeProfile() {
 
   const expenses = trips.filter(t => t.expenseAmount && Number(t.expenseAmount) > 0);
 
+  // Build visit events from already-fetched trip data for the selected live date
+  type VisitEvent = { type: "visit"; startTime: string; endTime: string | null; customerName: string; locationName: string | null };
+  const liveDateVisitEvents: VisitEvent[] = trips
+    .filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === liveDate)
+    .flatMap(t =>
+      (t.visits || [])
+        .filter(v => v.punchInTime)
+        .map(v => ({
+          type: "visit" as const,
+          startTime: v.punchInTime as unknown as string,
+          endTime: v.punchOutTime as unknown as string | null,
+          customerName: (v as any).customerName || "Customer Visit",
+          locationName: (v as any).punchInLocationName || (v as any).punchOutLocationName || null,
+        }))
+    );
+
+  type GpsSegment =
+    | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+    | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
+  type TimelineEvent = GpsSegment | VisitEvent;
+
+  const allTimelineEvents: TimelineEvent[] = [
+    ...(locationData?.segments || []),
+    ...liveDateVisitEvents,
+  ].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  const hasTimeline = allTimelineEvents.length > 0;
+
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
   const playbackKm = playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
   const playbackCheckIns = playbackDateTrips.reduce((s, t) => s + (t.visits || []).filter(v => v.punchInTime).length, 0);
@@ -553,20 +581,22 @@ export default function EmployeeProfile() {
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Timeline</span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
-                {!locationData || locationData.segments.length === 0 ? (
+                {locationLoading && !hasTimeline ? (
+                  <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : !hasTimeline ? (
                   <div className="flex flex-col items-center justify-center py-10 text-muted-foreground text-xs gap-2">
                     <Timer className="h-8 w-8 opacity-30" />
-                    <p>No GPS data for this date</p>
-                    <p className="text-[10px] opacity-70">Location pings appear here as the employee moves</p>
+                    <p>No activity for this date</p>
+                    <p className="text-[10px] opacity-70">GPS pings and customer visits appear here</p>
                   </div>
                 ) : (
                   <div className="relative px-3 py-3">
-                    {/* Vertical line */}
                     <div className="absolute left-6 top-3 bottom-3 w-px bg-border" />
                     <div className="space-y-1">
-                      {locationData.segments.map((seg, idx) => {
+                      {allTimelineEvents.map((seg, idx) => {
                         const startT = new Date(seg.startTime);
                         const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+
                         if (seg.type === "stoppage") {
                           const mins = Math.floor(seg.durationSecs / 60);
                           const secs = Math.round(seg.durationSecs % 60);
@@ -583,24 +613,46 @@ export default function EmployeeProfile() {
                               </div>
                             </div>
                           );
-                        } else {
+                        }
+
+                        if (seg.type === "visit") {
+                          const outT = seg.endTime ? new Date(seg.endTime) : null;
+                          const durStr = outT ? formatDuration(startT, outT) : null;
                           return (
                             <div key={idx} className="flex items-start gap-3 py-1.5">
                               <div className="relative z-10 shrink-0 w-6 flex justify-center">
-                                <div className="w-3 h-3 rounded-full bg-primary border-2 border-white shadow mt-0.5" />
+                                <div className="w-3 h-3 rounded-full bg-green-600 border-2 border-white shadow mt-0.5" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-xs font-semibold text-primary">
-                                    Travelled ({formatDuration(new Date(seg.startTime), new Date(seg.endTime))})
-                                  </p>
-                                  <span className="text-[10px] text-muted-foreground font-mono">{seg.distanceKm.toFixed(2)}km</span>
-                                </div>
-                                <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
+                                <p className="text-xs font-semibold text-green-700">{seg.customerName}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {fmtTime(startT)}{outT ? ` – ${fmtTime(outT)}` : ""}{durStr ? ` (${durStr})` : ""}
+                                </p>
+                                {seg.locationName && (
+                                  <p className="text-[10px] text-muted-foreground leading-relaxed">{seg.locationName}</p>
+                                )}
                               </div>
                             </div>
                           );
                         }
+
+                        // travelled
+                        return (
+                          <div key={idx} className="flex items-start gap-3 py-1.5">
+                            <div className="relative z-10 shrink-0 w-6 flex justify-center">
+                              <div className="w-3 h-3 rounded-full bg-primary border-2 border-white shadow mt-0.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs font-semibold text-primary">
+                                  Travelled ({formatDuration(new Date(seg.startTime), new Date(seg.endTime))})
+                                </p>
+                                <span className="text-[10px] text-muted-foreground font-mono">{(seg as any).distanceKm.toFixed(2)}km</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
+                            </div>
+                          </div>
+                        );
                       })}
                       {/* Nearest Location footer */}
                       {lastLocation && (
@@ -609,7 +661,7 @@ export default function EmployeeProfile() {
                             <div className="w-3 h-3 rounded-full bg-green-600 border-2 border-white shadow mt-0.5" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-green-700">Nearest Location</p>
+                            <p className="text-xs font-semibold text-green-700">Last Known Location</p>
                             <p className="text-[10px] text-muted-foreground leading-relaxed">{lastLocation}</p>
                           </div>
                         </div>
