@@ -380,6 +380,17 @@ export default function EmployeeProfile() {
     enabled: !!empId,
   });
 
+  const { data: allExpenses = [], isLoading: expensesLoading } = useQuery<any[]>({
+    queryKey: ["/api/expenses", "employee", empId],
+    queryFn: async () => {
+      const res = await fetch(`/api/expenses`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      const all = await res.json();
+      return all.filter((e: any) => e.employeeDbId === empId);
+    },
+    enabled: !!empId && activeTab === "expense",
+  });
+
   if (empLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1023,17 +1034,18 @@ export default function EmployeeProfile() {
           <div className="space-y-3">
             <Card className="border shadow-sm">
               <CardContent className="p-0">
-                {tripsLoading ? (
+                {expensesLoading ? (
                   <div className="p-8 text-center"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Code</TableHead>
                         <TableHead>Title</TableHead>
-                        <TableHead>Id</TableHead>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Work Location</TableHead>
                         <TableHead>Type</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Work Location</TableHead>
+                        <TableHead>Date</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Claimed</TableHead>
                         <TableHead>Approved</TableHead>
@@ -1041,29 +1053,37 @@ export default function EmployeeProfile() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {expenses.length === 0 ? (
+                      {allExpenses.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-muted-foreground py-10">
+                          <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
                             <BanknoteIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                            No expense found
+                            No expenses found for this employee
                           </TableCell>
                         </TableRow>
                       ) : (
-                        expenses.map((trip) => (
-                          <TableRow key={trip.id} data-testid={`row-expense-${trip.id}`}>
-                            <TableCell className="text-primary font-medium text-sm">TRP-{String(trip.id).padStart(4, "0")}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{trip.id}</TableCell>
-                            <TableCell className="text-sm">{employee.fullName}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{employee.workLocation || "-"}</TableCell>
-                            <TableCell className="text-xs">Travel</TableCell>
+                        allExpenses.map((exp) => (
+                          <TableRow key={exp.id} data-testid={`row-expense-${exp.id}`}>
+                            <TableCell className="text-primary font-medium text-sm font-mono">{exp.expenseCode}</TableCell>
+                            <TableCell className="text-sm max-w-[200px] truncate">{exp.title || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{exp.type || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{exp.expenseCategory || exp.category || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{exp.workLocation || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {exp.expenseDate ? format(new Date(exp.expenseDate), "dd MMM yyyy") : "-"}
+                            </TableCell>
                             <TableCell>
-                              <Badge variant={trip.status === "approved" ? "default" : "secondary"} className="text-xs capitalize">
-                                {trip.status}
+                              <Badge
+                                variant={exp.status === "approved" ? "default" : exp.status === "rejected" ? "destructive" : "secondary"}
+                                className="text-xs capitalize"
+                              >
+                                {exp.status}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-sm font-medium">₹{Number(trip.expenseAmount).toLocaleString()}</TableCell>
-                            <TableCell className="text-sm">{trip.status === "approved" ? `₹${Number(trip.expenseAmount).toLocaleString()}` : "-"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{trip.rejectionReason || "-"}</TableCell>
+                            <TableCell className="text-sm font-medium">₹{Number(exp.amount || 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-sm">
+                              {exp.status === "approved" ? `₹${Number(exp.approvedAmount || exp.amount || 0).toLocaleString()}` : "-"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{exp.adminComment || "-"}</TableCell>
                           </TableRow>
                         ))
                       )}
@@ -1071,7 +1091,7 @@ export default function EmployeeProfile() {
                   </Table>
                 )}
                 <div className="px-4 py-2 border-t text-xs text-muted-foreground">
-                  Total {expenses.length} items
+                  Total {allExpenses.length} expense{allExpenses.length !== 1 ? "s" : ""}
                 </div>
               </CardContent>
             </Card>
