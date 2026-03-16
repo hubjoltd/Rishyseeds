@@ -736,6 +736,17 @@ export const insertEmployeeConfigSchema = createInsertSchema(employeeConfigs).om
 export type EmployeeConfig = typeof employeeConfigs.$inferSelect;
 export type InsertEmployeeConfig = z.infer<typeof insertEmployeeConfigSchema>;
 
+// === PUSH SUBSCRIPTIONS ===
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  employeeDbId: integer("employee_db_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;

@@ -31,7 +31,8 @@ import {
   Radio,
   Warehouse,
   BarChart2,
-  RotateCcw
+  RotateCcw,
+  CalendarDays
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -83,6 +84,7 @@ const allMenuItems: MenuItem[] = [
     children: [
       { icon: UserCircle, label: "Employees", href: "/employees", roles: ["admin", "hr"] },
       { icon: CalendarCheck, label: "Attendance", href: "/attendance", roles: ["admin", "hr"] },
+      { icon: CalendarDays, label: "Leave Management", href: "/admin-leave", roles: ["admin", "hr"] },
     ]
   },
   {

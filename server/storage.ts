@@ -9,7 +9,7 @@ import {
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   employeeLocations,
-  leaves, leaveBalances, holidays, chatMessages, employeeConfigs,
+  leaves, leaveBalances, holidays, chatMessages, employeeConfigs, pushSubscriptions,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -258,6 +258,10 @@ export interface IStorage {
   // Employee Config
   getEmployeeConfig(employeeDbId: number): Promise<any | undefined>;
   upsertEmployeeConfig(data: any): Promise<any>;
+  // Push Subscriptions
+  savePushSubscription(data: { employeeDbId: number; endpoint: string; p256dh: string; auth: string }): Promise<any>;
+  getPushSubscriptionsByEmployee(employeeDbId: number): Promise<any[]>;
+  deletePushSubscription(endpoint: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1241,6 +1245,25 @@ export class DatabaseStorage implements IStorage {
     }
     const [r] = await db.insert(employeeConfigs).values(data).returning();
     return r;
+  }
+
+  // Push Subscriptions
+  async savePushSubscription(data: { employeeDbId: number; endpoint: string; p256dh: string; auth: string }): Promise<any> {
+    const [existing] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, data.endpoint));
+    if (existing) {
+      const [r] = await db.update(pushSubscriptions).set(data).where(eq(pushSubscriptions.endpoint, data.endpoint)).returning();
+      return r;
+    }
+    const [r] = await db.insert(pushSubscriptions).values(data).returning();
+    return r;
+  }
+
+  async getPushSubscriptionsByEmployee(employeeDbId: number): Promise<any[]> {
+    return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.employeeDbId, employeeDbId));
+  }
+
+  async deletePushSubscription(endpoint: string): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
   }
 }
 

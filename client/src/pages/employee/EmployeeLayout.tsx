@@ -3,6 +3,8 @@ import { useLocation, Route, Switch } from "wouter";
 import { EmployeeSidebar } from "@/components/EmployeeSidebar";
 import { Loader2 } from "lucide-react";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
+import { useEffect } from "react";
+import { registerPushNotifications } from "@/lib/pushNotifications";
 import EmployeeDashboard from "./EmployeeDashboard";
 import EmployeeAttendance from "./EmployeeAttendance";
 import EmployeePayslips from "./EmployeePayslips";
@@ -64,6 +66,12 @@ export default function EmployeeLayout() {
     },
     enabled: !!employee,
   });
+
+  useEffect(() => {
+    if (employee) {
+      registerPushNotifications().catch(() => {});
+    }
+  }, [employee?.id]);
 
   const handleLogout = async () => {
     try {

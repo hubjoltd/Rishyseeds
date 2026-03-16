@@ -12,6 +12,30 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
+import webpush from "web-push";
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "gnULZuZ-jGv4b3KBumeqgiYYWqP5qlo9meA-ltqcfeE";
+
+webpush.setVapidDetails("mailto:admin@rishiseeds.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+async function sendPushToEmployee(employeeDbId: number, title: string, body: string, url?: string) {
+  try {
+    const subs = await storage.getPushSubscriptionsByEmployee(employeeDbId);
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify({ title, body, url: url || "/employee-portal", tag: `rishi-${Date.now()}` })
+        );
+      } catch (err: any) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          await storage.deletePushSubscription(sub.endpoint);
+        }
+      }
+    }
+  } catch {}
+}
 
 const uploadsDir = path.resolve("uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -2526,6 +2550,7 @@ export async function registerRoutes(
         changedByName: user.fullName || user.username,
         notes: "Trip approved",
       });
+      sendPushToEmployee(trip.employeeId, "Trip Approved", `Your trip has been approved.`, "/employee-portal/trips");
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to approve trip" });
@@ -2558,6 +2583,7 @@ export async function registerRoutes(
         changedByName: user.fullName || user.username,
         notes: reason || "Rejected by admin",
       });
+      sendPushToEmployee(trip.employeeId, "Trip Rejected", `Your trip submission was not approved.`, "/employee-portal/trips");
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to reject trip" });
@@ -3193,6 +3219,7 @@ export async function registerRoutes(
         changedByName: adminName,
         notes: comment || "Expense approved",
       });
+      sendPushToEmployee(expense.employeeDbId, "Expense Approved", `Your expense ${expense.expenseCode} has been approved.`, "/employee-portal/expenses");
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to approve expense" });
@@ -3219,6 +3246,7 @@ export async function registerRoutes(
         changedByName: adminName,
         notes: reason || "Expense rejected",
       });
+      sendPushToEmployee(expense.employeeDbId, "Expense Rejected", `Your expense ${expense.expenseCode} was not approved.`, "/employee-portal/expenses");
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to reject expense" });
@@ -3671,12 +3699,15 @@ export async function registerRoutes(
       const dur = Math.max(1, Math.round((new Date(leave.endDate).getTime() - new Date(leave.startDate).getTime()) / 86400000) + 1);
       const year = new Date(leave.startDate).getFullYear();
       await storage.upsertLeaveBalance({ employeeDbId: leave.employeeDbId, leaveCategory: leave.leaveCategory, year, total: 0, taken: dur });
+      sendPushToEmployee(leave.employeeDbId, "Leave Approved", `Your ${leave.leaveCategory} request has been approved.`, "/employee-portal/leave");
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
   app.patch("/api/leaves/:id/reject", async (req: any, res) => {
     try {
+      const leave = await storage.getLeave(Number(req.params.id));
       const updated = await storage.updateLeave(Number(req.params.id), { status: "rejected", rejectionReason: req.body.reason || "" });
+      if (leave) sendPushToEmployee(leave.employeeDbId, "Leave Rejected", `Your ${leave.leaveCategory} request was not approved.`, "/employee-portal/leave");
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3730,6 +3761,30 @@ export async function registerRoutes(
       const emp = await storage.getEmployee(req.employeeId);
       const others = emps.filter(e => e.id !== emp?.id).map(e => ({ id: e.id, name: e.fullName, type: "employee", code: e.employeeId }));
       res.json(others);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === PUSH NOTIFICATIONS ===
+  app.get("/api/push/vapid-public-key", (req, res) => {
+    res.json({ key: VAPID_PUBLIC_KEY });
+  });
+
+  app.post("/api/employee/push/subscribe", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const { endpoint, keys } = req.body;
+      if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ message: "Invalid subscription" });
+      const sub = await storage.savePushSubscription({ employeeDbId: empId, endpoint, p256dh: keys.p256dh, auth: keys.auth });
+      res.json(sub);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/employee/push/subscribe", async (req: any, res) => {
+    try {
+      const { endpoint } = req.body;
+      if (endpoint) await storage.deletePushSubscription(endpoint);
+      res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

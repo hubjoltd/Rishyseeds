@@ -86,6 +86,21 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### March 16, 2026 (Push Notifications & Admin Leave Management)
+- **Push Notifications (full stack)**: Web push notifications fully wired end-to-end.
+  - `web-push` initialized in `server/routes.ts` with VAPID keys; `sendPushToEmployee()` helper used on all approval/rejection routes.
+  - Push triggers added to: leave approve/reject, expense approve/reject, trip approve/reject.
+  - `GET /api/push/vapid-public-key`, `POST /api/employee/push/subscribe`, `DELETE /api/employee/push/subscribe` routes added.
+  - `client/src/lib/pushNotifications.ts` utility handles service worker registration, permission request, VAPID subscribe, and server save.
+  - `EmployeeLayout.tsx` registers push notifications via `useEffect` after employee authenticates.
+  - `client/public/sw.js` service worker handles push events and notification click navigation.
+- **Admin Leave Management page** (`client/src/pages/AdminLeave.tsx`): Two-tab admin page.
+  - **Leave Requests tab**: Filter by status (pending/approved/rejected/all), approve with one click, reject with inline reason input, push notification fires to employee on action.
+  - **Leave Configuration tab**: Select employee from searchable list, configure annual quotas (SL/CL/PL/EL) and work schedule (weekly off, working hours), save via `POST /api/employee-config`.
+  - Added to admin sidebar under HRMS section with `CalendarDays` icon.
+  - Route `/admin-leave` added to `App.tsx`.
+- **Files Modified**: `server/routes.ts`, `client/src/pages/AdminLeave.tsx` (new), `client/src/lib/pushNotifications.ts` (new), `client/src/pages/employee/EmployeeLayout.tsx`, `client/src/components/Sidebar.tsx`, `client/src/App.tsx`
+
 ### March 3, 2026 (Location in Punch Sharing & Attendance)
 - **Location in WhatsApp Share**: Punch in/out WhatsApp share messages and Open Graph share pages now include the GPS location captured during punch.
 - **Employee Attendance Location Column**: Employee's own attendance history page now shows a Location column with the check-in location for each record.
