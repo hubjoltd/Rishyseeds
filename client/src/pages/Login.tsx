@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
-import logo from "@assets/20260121014034_1768984704057.webp";
+import logo from "/favicon.png";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),

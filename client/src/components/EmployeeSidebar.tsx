@@ -25,7 +25,7 @@ import {
   Umbrella,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import logo from "@assets/20260121014034_1768984704057.webp";
+import logo from "/favicon.png";
 
 interface MenuItem {
   icon: React.ElementType;

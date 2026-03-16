@@ -35,7 +35,7 @@ import {
   CalendarDays
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import logo from "@assets/20260121014034_1768984704057.webp";
+import logo from "/favicon.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NotificationBell } from "@/components/NotificationBell";
