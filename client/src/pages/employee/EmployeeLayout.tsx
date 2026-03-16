@@ -30,7 +30,7 @@ export function hasPermission(permissions: EmployeePermissions, resource: string
 }
 
 export default function EmployeeLayout() {
-  const [, setLocation] = useLocation();
+  const [currentPath, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
   const { data: employee, isLoading } = useQuery({
@@ -87,11 +87,12 @@ export default function EmployeeLayout() {
   }
 
   const permissions = permissionsData?.permissions || {};
+  const isDashboard = currentPath === "/employee-portal" || currentPath === "/employee-portal/";
 
   return (
     <div className="flex h-screen bg-gray-50/50">
       <EmployeeSidebar employee={employee} onLogout={handleLogout} permissions={permissions} />
-      <main className="flex-1 overflow-auto p-4 lg:p-6 pt-16 lg:pt-6">
+      <main className={`flex-1 overflow-auto ${isDashboard ? "pt-16 lg:pt-0" : "p-4 lg:p-6 pt-16 lg:pt-6"}`}>
         <Switch>
           <Route path="/employee-portal" component={() => <EmployeeDashboard employee={employee} />} />
           <Route path="/employee-portal/attendance" component={() => <EmployeeAttendance employee={employee} />} />
