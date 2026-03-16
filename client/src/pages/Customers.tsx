@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -175,6 +176,8 @@ function EditCustomerDialog({ customer, onClose }: { customer: Customer; onClose
 export default function Customers() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [showAdd, setShowAdd] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
 
@@ -190,6 +193,7 @@ export default function Customers() {
     const matchStatus = statusFilter === "all" || c.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const paginatedCustomers = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const tabs = [
     { key: "all", label: "All Customer" },
@@ -273,7 +277,7 @@ export default function Customers() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((c) => (
+                  paginatedCustomers.map((c) => (
                     <TableRow key={c.id} data-testid={`row-customer-${c.id}`}>
                       <TableCell onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded" /></TableCell>
                       <TableCell>
@@ -328,12 +332,7 @@ export default function Customers() {
               </TableBody>
             </Table>
           )}
-          {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-              <span>1 – {filtered.length} of {customerList.length} items</span>
-              <span>50 / Page</span>
-            </div>
-          )}
+          <PaginationBar page={page} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

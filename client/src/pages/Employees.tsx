@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/use-hrms";
+import { PaginationBar } from "@/components/PaginationBar";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertEmployeeSchema, type Employee, type Role } from "@shared/schema";
@@ -53,6 +54,8 @@ export default function Employees() {
   const [activeTab, setActiveTab] = useState<FormTab>("basic");
   const [editTab, setEditTab] = useState<FormTab>("basic");
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [viewPasswordEmp, setViewPasswordEmp] = useState<Employee | null>(null);
   const [viewPasswordValue, setViewPasswordValue] = useState<string | null>(null);
@@ -204,6 +207,9 @@ export default function Employees() {
     emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.role?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  useEffect(() => setPage(1), [searchTerm]);
+  const paginatedEmployees = filteredEmployees?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const activeCount = employees?.filter(e => e.status === "active").length || 0;
   const totalSalary = employees?.reduce((sum, e) => sum + Number(e.basicSalary || 0), 0) || 0;
@@ -774,7 +780,7 @@ export default function Employees() {
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No employees found</TableCell>
                 </TableRow>
               ) : (
-                filteredEmployees?.map((emp) => (
+                paginatedEmployees?.map((emp) => (
                   <TableRow key={emp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/employees/${emp.id}`)} data-testid={`row-employee-${emp.id}`}>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -835,6 +841,7 @@ export default function Employees() {
               )}
             </TableBody>
           </Table>
+          <PaginationBar page={page} total={filteredEmployees?.length || 0} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

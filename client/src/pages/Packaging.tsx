@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLots, useProducts, usePackagingSizes, useStockBalances, useLocations, useCreatePackagingOutput, usePackagingOutputs, useDeletePackagingOutput, useUpdatePackagingOutput } from "@/hooks/use-inventory";
+import { PaginationBar } from "@/components/PaginationBar";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -68,6 +69,8 @@ export default function Packaging() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingPackaging, setEditingPackaging] = useState<PackagingOutput | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
@@ -474,7 +477,7 @@ export default function Packaging() {
               ) : packagingOutputs?.length === 0 ? (
                 <TableRow><TableCell colSpan={(canEditPackaging || canDeletePackaging) ? 9 : 8} className="text-center text-muted-foreground py-8">No packaging records found.</TableCell></TableRow>
               ) : (
-                packagingOutputs?.map((p) => (
+                packagingOutputs?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>{p.productionDate ? format(new Date(p.productionDate), 'MMM dd, yyyy') : '-'}</TableCell>
                     <TableCell className="font-medium font-mono text-sm">
@@ -525,6 +528,7 @@ export default function Packaging() {
               )}
             </TableBody>
           </Table>
+          <PaginationBar page={page} total={packagingOutputs?.length || 0} pageSize={PAGE_SIZE} onPageChange={setPage} />
 
           <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
             <AlertDialogContent>

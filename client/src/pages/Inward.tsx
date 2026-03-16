@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLots, useCreateLot, useUpdateLot, useDeleteLot, useGenerateLotNumber, useStockBalances, useProducts, useLocations, useSetStockBalance, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
+import { PaginationBar } from "@/components/PaginationBar";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -192,6 +193,8 @@ export default function Inward() {
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [deleteLotId, setDeleteLotId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [generatedLotNumber, setGeneratedLotNumber] = useState("");
 
   const canDeleteLot = canDelete("lots");
@@ -359,6 +362,7 @@ export default function Inward() {
       lot.sourceName?.toLowerCase().includes(q)
     );
   });
+  const paginatedLots = filteredLots.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -579,7 +583,7 @@ export default function Inward() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLots.map((lot: Lot) => {
+                  paginatedLots.map((lot: Lot) => {
                     const product = ((products as Product[]) || []).find(p => p.id === lot.productId);
                     const csIn = getColBalance(lot.id, coldStorageIds, "cs_inward");
                     const csOut = getColBalance(lot.id, coldStorageIds, "cs_outward");
@@ -700,6 +704,7 @@ export default function Inward() {
               </TableBody>
             </Table>
           )}
+          <PaginationBar page={page} total={filteredLots.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

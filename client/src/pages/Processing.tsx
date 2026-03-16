@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useProcessingRecords, useCreateProcessingRecord, useDeleteProcessingRecord, useCompleteProcessing, useLots, useProducts, useLocations } from "@/hooks/use-inventory";
+import { PaginationBar } from "@/components/PaginationBar";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -88,6 +89,8 @@ export default function Processing() {
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [completeRecordId, setCompleteRecordId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
   const canDeleteProcessing = canDelete('processing');
@@ -170,6 +173,7 @@ export default function Processing() {
     return lot?.lotNumber.toLowerCase().includes(search.toLowerCase()) ||
            record.processingType.toLowerCase().includes(search.toLowerCase());
   });
+  const paginatedRecords = filteredRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-8 animate-in fade-in">
@@ -348,7 +352,7 @@ export default function Processing() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredRecords.map((record: ProcessingRecord) => (
+                  paginatedRecords.map((record: ProcessingRecord) => (
                     <TableRow key={record.id} data-testid={`row-processing-${record.id}`}>
                       <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
                       <TableCell className="font-mono text-xs">{getLotDetails(record.inputLotId)}</TableCell>
@@ -397,6 +401,7 @@ export default function Processing() {
               </TableBody>
             </Table>
           )}
+          <PaginationBar page={page} total={filteredRecords.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

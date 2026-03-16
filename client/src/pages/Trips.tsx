@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationBar } from "@/components/PaginationBar";
 import type { Trip, TripVisit, TripComment, TripAudit } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -621,6 +622,8 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
 export default function Trips() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
 
   const { data: trips, isLoading } = useQuery<TripWithEmployee[]>({
@@ -638,6 +641,7 @@ export default function Trips() {
     const matchesStatus = statusFilter === "all" || trip.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const paginatedTrips = filteredTrips.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const statusTabs = [
     { value: "all", label: "All Trips" },
@@ -730,7 +734,7 @@ export default function Trips() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTrips.map((trip) => (
+                  paginatedTrips.map((trip) => (
                     <TableRow
                       key={trip.id}
                       className="cursor-pointer hover:bg-muted/50"
@@ -800,11 +804,7 @@ export default function Trips() {
             </Table>
           )}
 
-          {filteredTrips.length > 0 && (
-            <div className="px-4 py-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-              <span>Showing 1 – {filteredTrips.length} of {filteredTrips.length} items</span>
-            </div>
-          )}
+          <PaginationBar page={page} total={filteredTrips.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>

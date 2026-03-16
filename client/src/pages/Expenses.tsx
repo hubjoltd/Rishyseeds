@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationBar } from "@/components/PaginationBar";
 import type { Expense, ExpenseComment, ExpenseAudit } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -835,6 +836,8 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
 export default function Expenses() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -854,6 +857,7 @@ export default function Expenses() {
     const matchStatus = statusFilter === "all" || exp.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const paginatedExpenses = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const tabs = [
     { key: "all", label: "All Expenses" },
@@ -936,7 +940,7 @@ export default function Expenses() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map(exp => (
+                  paginatedExpenses.map(exp => (
                     <TableRow key={exp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedId(exp.id)} data-testid={`row-expense-${exp.id}`}>
                       <TableCell>
                         <span className="text-primary text-sm font-medium hover:underline" data-testid={`text-expense-title-${exp.id}`}>
@@ -969,11 +973,7 @@ export default function Expenses() {
               </TableBody>
             </Table>
           )}
-          {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-              {filtered.length} of {expenseList.length} items
-            </div>
-          )}
+          <PaginationBar page={page} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>

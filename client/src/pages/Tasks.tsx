@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -498,6 +499,8 @@ function CreateTaskDialog({ open, onClose, employees }: { open: boolean; onClose
 export default function Tasks() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -522,6 +525,7 @@ export default function Tasks() {
     const matchStatus = statusFilter === "all" || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const paginatedTasks = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const tabs = [
     { key: "all", label: "All Tasks" },
@@ -611,7 +615,7 @@ export default function Tasks() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((task) => (
+                  paginatedTasks.map((task) => (
                     <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedId(task.id)} data-testid={`row-task-${task.id}`}>
                       <TableCell onClick={(e) => e.stopPropagation()}><input type="checkbox" className="rounded" /></TableCell>
                       <TableCell>
@@ -653,12 +657,7 @@ export default function Tasks() {
               </TableBody>
             </Table>
           )}
-          {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-              <span>1 – {filtered.length} of {taskList.length} items</span>
-              <span>50 / Page</span>
-            </div>
-          )}
+          <PaginationBar page={page} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

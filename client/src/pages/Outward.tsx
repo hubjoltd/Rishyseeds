@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOutwardRecords, useCreateOutwardRecord, useDeleteOutwardRecord, useOutwardReturns, useCreateOutwardReturn, useLots, useProducts, useLocations, useStockBalances } from "@/hooks/use-inventory";
+import { PaginationBar } from "@/components/PaginationBar";
 import { useEmployees } from "@/hooks/use-hrms";
 import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
@@ -95,6 +96,8 @@ export default function Outward() {
   const [returnExpiryDate, setReturnExpiryDate] = useState("");
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const canDeleteOutward = canDelete('outward');
 
@@ -222,6 +225,7 @@ export default function Outward() {
            record.destinationType?.toLowerCase().includes(search.toLowerCase()) ||
            record.invoiceNumber?.toLowerCase().includes(search.toLowerCase());
   });
+  const paginatedRecords = filteredRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-8 animate-in fade-in">
@@ -461,7 +465,7 @@ export default function Outward() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredRecords.map((record: OutwardRecord) => (
+                  paginatedRecords.map((record: OutwardRecord) => (
                     <TableRow key={record.id} data-testid={`row-outward-${record.id}`}>
                       <TableCell>{record.dispatchDate ? format(new Date(record.dispatchDate), "PP") : "-"}</TableCell>
                       <TableCell className="font-mono text-sm">{getLotDetails(record.lotId)}</TableCell>
@@ -528,6 +532,7 @@ export default function Outward() {
               </TableBody>
             </Table>
           )}
+          <PaginationBar page={page} total={filteredRecords.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </CardContent>
       </Card>
 

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +37,8 @@ export default function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -124,6 +127,9 @@ export default function Products() {
     const matchesType = typeFilter === "all" || p.type === typeFilter;
     return matchesSearch && matchesType;
   });
+
+  useEffect(() => setPage(1), [search, typeFilter]);
+  const paginatedProducts = filteredProducts?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const uniqueCrops = Array.from(new Set(products?.map(p => p.crop) || []));
 
@@ -299,7 +305,7 @@ export default function Products() {
               ) : filteredProducts?.length === 0 ? (
                 <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No products found</TableCell></TableRow>
               ) : (
-                filteredProducts?.map((product) => (
+                paginatedProducts?.map((product) => (
                   <TableRow key={product.id} className="table-row-hover" data-testid={`row-product-${product.id}`}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -338,10 +344,11 @@ export default function Products() {
               )}
             </TableBody>
           </Table>
+          <PaginationBar page={page} total={filteredProducts?.length || 0} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </Card>
       ) : (
         <div className="card-grid">
-          {filteredProducts?.map((product) => (
+          {paginatedProducts?.map((product) => (
             <Card key={product.id} className="card-modern p-4" data-testid={`card-product-${product.id}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="p-2 rounded-xl bg-green-100 dark:bg-green-900/30">
