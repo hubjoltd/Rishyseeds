@@ -76,6 +76,8 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
   const [createAddress, setCreateAddress] = useState("");
   const [createDesc, setCreateDesc] = useState("");
   const [createPriority, setCreatePriority] = useState("medium");
+  const [createStartDate, setCreateStartDate] = useState("");
+  const [createEndDate, setCreateEndDate] = useState("");
   const [typeSearch, setTypeSearch] = useState("");
   const [showTypeList, setShowTypeList] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -178,7 +180,8 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
           customerAddress: createAddress,
           notes: createDesc,
           priority: createPriority,
-          startDate: new Date().toISOString(),
+          startDate: createStartDate ? new Date(createStartDate).toISOString() : new Date().toISOString(),
+          endDate: createEndDate ? new Date(createEndDate).toISOString() : null,
         }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
@@ -187,7 +190,7 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employee/tasks"] });
       setView("list");
-      setCreateTitle(""); setCreateType(""); setCreateCustomer(""); setCreateAddress(""); setCreateDesc(""); setCreatePriority("medium");
+      setCreateTitle(""); setCreateType(""); setCreateCustomer(""); setCreateAddress(""); setCreateDesc(""); setCreatePriority("medium"); setCreateStartDate(""); setCreateEndDate("");
       toast({ title: "Task Created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -366,6 +369,33 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
             />
           </div>
 
+          {/* Timeline (Start / End date) */}
+          <div className="space-y-2">
+            <label className="text-xs text-gray-500 font-medium">Timeline</label>
+            <div className="flex gap-2">
+              <div className="flex-1 space-y-1">
+                <p className="text-[10px] text-gray-400">Start Date</p>
+                <Input
+                  type="datetime-local"
+                  value={createStartDate}
+                  onChange={e => setCreateStartDate(e.target.value)}
+                  className="text-xs h-9"
+                  data-testid="input-create-task-start"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <p className="text-[10px] text-gray-400">Due Date</p>
+                <Input
+                  type="datetime-local"
+                  value={createEndDate}
+                  onChange={e => setCreateEndDate(e.target.value)}
+                  className="text-xs h-9"
+                  data-testid="input-create-task-end"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Priority */}
           <div className="space-y-1">
             <label className="text-xs text-gray-500 font-medium">Priority</label>
@@ -505,24 +535,33 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
           <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
             <p className="text-xs text-gray-400 font-medium">Timeline</p>
           </div>
-          <div className="px-3 py-2 space-y-2">
+          <div className="px-3 py-2 space-y-2.5">
             {task.startDate && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
+              <div className="flex items-start gap-2 text-xs text-gray-600">
+                <div className="w-2 h-2 rounded-full bg-green-500 mt-0.5 shrink-0" />
                 <span>{fmtDate(task.startDate)} <span className="text-gray-400">(Start)</span></span>
               </div>
             )}
             {task.endDate && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <div className="w-2 h-2 rounded-full bg-gray-300" />
+              <div className="flex items-start gap-2 text-xs text-gray-600">
+                <div className="w-2 h-2 rounded-full bg-gray-400 mt-0.5 shrink-0" />
                 <span>{fmtDate(task.endDate)} <span className="text-gray-400">(End)</span></span>
               </div>
             )}
-            {task.completedAt && (
-              <div className="flex items-center gap-2 text-xs text-green-700 font-medium">
-                <CheckCircle className="h-3.5 w-3.5" />
-                <span>Completed at {fmtDT(task.completedAt)}</span>
+            {task.startedAt && (
+              <div className="flex items-start gap-2 text-xs text-amber-600">
+                <div className="w-2 h-2 rounded-full bg-amber-500 mt-0.5 shrink-0" />
+                <span>{fmtDate(task.startedAt)} <span className="text-amber-400">(Task Started)</span></span>
               </div>
+            )}
+            {task.completedAt && (
+              <div className="flex items-start gap-2 text-xs text-green-700 font-medium">
+                <CheckCircle className="h-3.5 w-3.5 mt-0 shrink-0" />
+                <span>{fmtDate(task.completedAt)} <span className="text-green-500 font-normal">(Completed)</span></span>
+              </div>
+            )}
+            {!task.startDate && !task.endDate && !task.startedAt && !task.completedAt && (
+              <p className="text-[11px] text-gray-400 py-1">No timeline dates set</p>
             )}
           </div>
         </div>
