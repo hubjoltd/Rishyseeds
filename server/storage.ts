@@ -9,6 +9,7 @@ import {
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   employeeLocations,
+  leaves, leaveBalances, holidays, chatMessages, employeeConfigs,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -236,6 +237,27 @@ export interface IStorage {
   createExpenseComment(comment: InsertExpenseComment): Promise<ExpenseComment>;
   getExpenseAuditHistory(expenseId: number): Promise<ExpenseAudit[]>;
   createExpenseAudit(audit: InsertExpenseAudit): Promise<ExpenseAudit>;
+  // Leaves
+  getLeaves(): Promise<any[]>;
+  getLeavesByEmployee(employeeDbId: number): Promise<any[]>;
+  getLeave(id: number): Promise<any | undefined>;
+  createLeave(leave: any): Promise<any>;
+  updateLeave(id: number, updates: any): Promise<any | undefined>;
+  // Leave Balances
+  getLeaveBalances(employeeDbId: number, year: number): Promise<any[]>;
+  upsertLeaveBalance(data: any): Promise<any>;
+  // Holidays
+  getHolidays(): Promise<any[]>;
+  createHoliday(holiday: any): Promise<any>;
+  deleteHoliday(id: number): Promise<void>;
+  // Chat
+  getChatMessages(senderId: number, receiverId: number, senderType: string, receiverType: string): Promise<any[]>;
+  createChatMessage(msg: any): Promise<any>;
+  markChatRead(receiverId: number, receiverType: string, senderId: number): Promise<void>;
+  getChatContacts(employeeId: number): Promise<any[]>;
+  // Employee Config
+  getEmployeeConfig(employeeDbId: number): Promise<any | undefined>;
+  upsertEmployeeConfig(data: any): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1123,6 +1145,102 @@ export class DatabaseStorage implements IStorage {
   async createExpenseAudit(audit: InsertExpenseAudit): Promise<ExpenseAudit> {
     const [created] = await db.insert(expenseAuditHistory).values(audit).returning();
     return created;
+  }
+
+  // === LEAVES ===
+  async getLeaves(): Promise<any[]> {
+    return db.select().from(leaves).orderBy(desc(leaves.createdAt));
+  }
+  async getLeavesByEmployee(employeeDbId: number): Promise<any[]> {
+    return db.select().from(leaves).where(eq(leaves.employeeDbId, employeeDbId)).orderBy(desc(leaves.createdAt));
+  }
+  async getLeave(id: number): Promise<any | undefined> {
+    const [r] = await db.select().from(leaves).where(eq(leaves.id, id));
+    return r;
+  }
+  async createLeave(leave: any): Promise<any> {
+    const [r] = await db.insert(leaves).values(leave).returning();
+    return r;
+  }
+  async updateLeave(id: number, updates: any): Promise<any | undefined> {
+    const [r] = await db.update(leaves).set(updates).where(eq(leaves.id, id)).returning();
+    return r;
+  }
+
+  // === LEAVE BALANCES ===
+  async getLeaveBalances(employeeDbId: number, year: number): Promise<any[]> {
+    return db.select().from(leaveBalances).where(and(eq(leaveBalances.employeeDbId, employeeDbId), eq(leaveBalances.year, year)));
+  }
+  async upsertLeaveBalance(data: any): Promise<any> {
+    const [existing] = await db.select().from(leaveBalances).where(and(eq(leaveBalances.employeeDbId, data.employeeDbId), eq(leaveBalances.leaveCategory, data.leaveCategory), eq(leaveBalances.year, data.year)));
+    if (existing) {
+      const [r] = await db.update(leaveBalances).set(data).where(eq(leaveBalances.id, existing.id)).returning();
+      return r;
+    }
+    const [r] = await db.insert(leaveBalances).values(data).returning();
+    return r;
+  }
+
+  // === HOLIDAYS ===
+  async getHolidays(): Promise<any[]> {
+    return db.select().from(holidays).orderBy(holidays.date);
+  }
+  async createHoliday(holiday: any): Promise<any> {
+    const [r] = await db.insert(holidays).values(holiday).returning();
+    return r;
+  }
+  async deleteHoliday(id: number): Promise<void> {
+    await db.delete(holidays).where(eq(holidays.id, id));
+  }
+
+  // === CHAT ===
+  async getChatMessages(senderId: number, receiverId: number, senderType: string, receiverType: string): Promise<any[]> {
+    return db.select().from(chatMessages).where(
+      or(
+        and(eq(chatMessages.senderId, senderId), eq(chatMessages.receiverId, receiverId)),
+        and(eq(chatMessages.senderId, receiverId), eq(chatMessages.receiverId, senderId))
+      )
+    ).orderBy(chatMessages.createdAt);
+  }
+  async createChatMessage(msg: any): Promise<any> {
+    const [r] = await db.insert(chatMessages).values(msg).returning();
+    return r;
+  }
+  async markChatRead(receiverId: number, receiverType: string, senderId: number): Promise<void> {
+    await db.update(chatMessages).set({ isRead: true }).where(and(eq(chatMessages.receiverId, receiverId), eq(chatMessages.senderId, senderId)));
+  }
+  async getChatContacts(employeeId: number): Promise<any[]> {
+    const msgs = await db.select().from(chatMessages).where(
+      or(eq(chatMessages.senderId, employeeId), eq(chatMessages.receiverId, employeeId))
+    ).orderBy(desc(chatMessages.createdAt));
+    const contactMap = new Map<string, any>();
+    for (const m of msgs) {
+      const isMe = m.senderId === employeeId && m.senderType === "employee";
+      const contactId = isMe ? m.receiverId : m.senderId;
+      const contactType = isMe ? m.receiverType : m.senderType;
+      const contactName = isMe ? m.receiverName : m.senderName;
+      const key = `${contactType}-${contactId}`;
+      if (!contactMap.has(key)) {
+        contactMap.set(key, { id: contactId, type: contactType, name: contactName, lastMessage: m.message, lastAt: m.createdAt, unread: 0 });
+      }
+      if (!isMe && !m.isRead) contactMap.get(key)!.unread++;
+    }
+    return Array.from(contactMap.values());
+  }
+
+  // === EMPLOYEE CONFIG ===
+  async getEmployeeConfig(employeeDbId: number): Promise<any | undefined> {
+    const [r] = await db.select().from(employeeConfigs).where(eq(employeeConfigs.employeeDbId, employeeDbId));
+    return r;
+  }
+  async upsertEmployeeConfig(data: any): Promise<any> {
+    const existing = await this.getEmployeeConfig(data.employeeDbId);
+    if (existing) {
+      const [r] = await db.update(employeeConfigs).set({ ...data, updatedAt: new Date() }).where(eq(employeeConfigs.id, existing.id)).returning();
+      return r;
+    }
+    const [r] = await db.insert(employeeConfigs).values(data).returning();
+    return r;
   }
 }
 

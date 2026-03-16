@@ -656,6 +656,86 @@ export const insertDryerEntrySchema = createInsertSchema(dryerEntries).omit({ id
 export type DryerEntry = typeof dryerEntries.$inferSelect;
 export type InsertDryerEntry = z.infer<typeof insertDryerEntrySchema>;
 
+// === LEAVES ===
+export const leaves = pgTable("leaves", {
+  id: serial("id").primaryKey(),
+  employeeDbId: integer("employee_db_id").notNull().references(() => employees.id),
+  leaveType: text("leave_type").notNull(), // half_day, full_day
+  leaveCategory: text("leave_category").notNull(), // Sick Leave, Casual Leave, Privilege Leave, Earned Leave
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  reason: text("reason"),
+  status: text("status").notNull().default("pending"), // pending, approved, rejected, cancelled
+  approvedBy: text("approved_by"),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertLeaveSchema = createInsertSchema(leaves).omit({ id: true, createdAt: true });
+export type Leave = typeof leaves.$inferSelect;
+export type InsertLeave = z.infer<typeof insertLeaveSchema>;
+
+// === LEAVE BALANCES ===
+export const leaveBalances = pgTable("leave_balances", {
+  id: serial("id").primaryKey(),
+  employeeDbId: integer("employee_db_id").notNull().references(() => employees.id),
+  leaveCategory: text("leave_category").notNull(),
+  total: integer("total").notNull().default(0),
+  taken: integer("taken").notNull().default(0),
+  year: integer("year").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertLeaveBalanceSchema = createInsertSchema(leaveBalances).omit({ id: true, createdAt: true });
+export type LeaveBalance = typeof leaveBalances.$inferSelect;
+export type InsertLeaveBalance = z.infer<typeof insertLeaveBalanceSchema>;
+
+// === HOLIDAYS ===
+export const holidays = pgTable("holidays", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  date: date("date").notNull(),
+  type: text("type").notNull().default("national"), // national, regional, optional
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertHolidaySchema = createInsertSchema(holidays).omit({ id: true, createdAt: true });
+export type Holiday = typeof holidays.$inferSelect;
+export type InsertHoliday = z.infer<typeof insertHolidaySchema>;
+
+// === CHAT MESSAGES ===
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  senderId: integer("sender_id").notNull(),
+  senderType: text("sender_type").notNull(), // employee, admin
+  senderName: text("sender_name").notNull(),
+  receiverId: integer("receiver_id").notNull(),
+  receiverType: text("receiver_type").notNull(), // employee, admin
+  receiverName: text("receiver_name").notNull(),
+  message: text("message").notNull(),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+
+// === EMPLOYEE CONFIG ===
+export const employeeConfigs = pgTable("employee_configs", {
+  id: serial("id").primaryKey(),
+  employeeDbId: integer("employee_db_id").notNull().references(() => employees.id),
+  sickLeaveQuota: integer("sick_leave_quota").notNull().default(7),
+  casualLeaveQuota: integer("casual_leave_quota").notNull().default(7),
+  privilegeLeaveQuota: integer("privilege_leave_quota").notNull().default(8),
+  earnedLeaveQuota: integer("earned_leave_quota").notNull().default(0),
+  weeklyOff: text("weekly_off").notNull().default("Sunday"),
+  workingHours: decimal("working_hours").notNull().default("8"),
+  notes: text("notes"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertEmployeeConfigSchema = createInsertSchema(employeeConfigs).omit({ id: true });
+export type EmployeeConfig = typeof employeeConfigs.$inferSelect;
+export type InsertEmployeeConfig = z.infer<typeof insertEmployeeConfigSchema>;
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;

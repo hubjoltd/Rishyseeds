@@ -19,7 +19,10 @@ import {
   ChevronDown,
   Navigation,
   BanknoteIcon,
-  ClipboardList
+  ClipboardList,
+  CalendarDays,
+  MessageSquare,
+  Umbrella,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@assets/20260121014034_1768984704057.webp";
@@ -45,6 +48,9 @@ const mainMenuItems: MenuItem[] = [
   { icon: Navigation, label: "My Trips", href: "/employee-portal/trips" },
   { icon: ClipboardList, label: "My Tasks", href: "/employee-portal/tasks" },
   { icon: BanknoteIcon, label: "My Expenses", href: "/employee-portal/expenses" },
+  { icon: Umbrella, label: "Leave", href: "/employee-portal/leave" },
+  { icon: CalendarDays, label: "Calendar", href: "/employee-portal/calendar" },
+  { icon: MessageSquare, label: "Chat", href: "/employee-portal/chat" },
   { icon: User, label: "My Profile", href: "/employee-portal/profile" },
 ];
 

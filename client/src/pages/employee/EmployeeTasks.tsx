@@ -49,6 +49,75 @@ function fmtDT(dt: string | null | undefined) {
 
 type View = "list" | "detail" | "complete" | "create";
 
+function TaskCommentSection({ taskId, employeeName }: { taskId: number; employeeName: string }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [text, setText] = useState("");
+
+  const { data: comments = [] } = useQuery<any[]>({
+    queryKey: ["/api/employee/tasks", taskId, "comments"],
+    queryFn: async () => {
+      const r = await fetch(`/api/employee/tasks/${taskId}/comments`, { headers: getHeaders() });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      if (!text.trim()) return;
+      const r = await fetch(`/api/employee/tasks/${taskId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getHeaders() },
+        body: JSON.stringify({ message: text.trim(), createdByName: employeeName }),
+      });
+      if (!r.ok) throw new Error("Failed to send");
+      return r.json();
+    },
+    onSuccess: () => {
+      setText("");
+      qc.invalidateQueries({ queryKey: ["/api/employee/tasks", taskId, "comments"] });
+    },
+    onError: () => toast({ title: "Failed to send comment", variant: "destructive" }),
+  });
+
+  return (
+    <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mb-4">
+      <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+        <span className="text-xs font-semibold text-gray-600">Notes / Comments</span>
+      </div>
+      {comments.length > 0 && (
+        <div className="divide-y divide-gray-100 max-h-36 overflow-y-auto">
+          {comments.map((c: any) => (
+            <div key={c.id} className="px-3 py-2">
+              <p className="text-[11px] font-semibold text-green-700">{c.createdByName}</p>
+              <p className="text-xs text-gray-700">{c.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="px-3 py-2 flex items-end gap-2 border-t border-gray-100">
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Add a note..."
+          rows={2}
+          className="flex-1 bg-gray-50 border border-gray-200 rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-green-400"
+          data-testid="input-task-comment"
+        />
+        <button
+          onClick={() => text.trim() && sendMutation.mutate()}
+          disabled={!text.trim() || sendMutation.isPending}
+          className="h-8 w-8 rounded-full bg-green-600 hover:bg-green-700 disabled:opacity-60 flex items-center justify-center shrink-0 transition-colors"
+          data-testid="button-send-task-comment"
+        >
+          {sendMutation.isPending ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" /> : <Plus className="h-3.5 w-3.5 text-white" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface EmployeeTasksProps {
   employee: { id: number; fullName: string; employeeId: string };
 }
@@ -82,6 +151,14 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
   const [showTypeList, setShowTypeList] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerList, setShowCustomerList] = useState(false);
+
+  // ORDER COLLECTION specific fields
+  const [ocDealerName, setOcDealerName] = useState("");
+  const [ocContactPerson, setOcContactPerson] = useState("");
+  const [ocContactNo, setOcContactNo] = useState("");
+  const [ocTownName, setOcTownName] = useState("");
+  const [ocProductsOrdered, setOcProductsOrdered] = useState("");
+  const [ocOrderValue, setOcOrderValue] = useState("");
 
   const { data: taskList = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/employee/tasks"],
@@ -182,6 +259,9 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
           priority: createPriority,
           startDate: createStartDate ? new Date(createStartDate).toISOString() : new Date().toISOString(),
           endDate: createEndDate ? new Date(createEndDate).toISOString() : null,
+          ...(createType === "ORDER COLLECTION" ? {
+            ocDealerName, ocContactPerson, ocContactNo, ocTownName, ocProductsOrdered, ocOrderValue,
+          } : {}),
         }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
@@ -368,6 +448,37 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
               data-testid="input-create-task-desc"
             />
           </div>
+
+          {/* ORDER COLLECTION specific fields */}
+          {createType === "ORDER COLLECTION" && (
+            <div className="border border-green-200 rounded-md bg-green-50 overflow-hidden">
+              <div className="px-3 py-2 bg-green-700 text-white">
+                <p className="text-xs font-semibold">Order Collection Details</p>
+              </div>
+              <div className="p-3 space-y-3">
+                {[
+                  { label: "Dealer Name", value: ocDealerName, setter: setOcDealerName, id: "oc-dealer", placeholder: "Enter dealer name" },
+                  { label: "Contact Person", value: ocContactPerson, setter: setOcContactPerson, id: "oc-contact-person", placeholder: "Enter contact person name" },
+                  { label: "Contact No.", value: ocContactNo, setter: setOcContactNo, id: "oc-contact-no", placeholder: "Enter contact number", type: "tel" },
+                  { label: "Town Name", value: ocTownName, setter: setOcTownName, id: "oc-town", placeholder: "Enter town name" },
+                  { label: "Products Ordered", value: ocProductsOrdered, setter: setOcProductsOrdered, id: "oc-products", placeholder: "Enter products" },
+                  { label: "Order Value", value: ocOrderValue, setter: setOcOrderValue, id: "oc-value", placeholder: "Enter order value", type: "number" },
+                ].map(field => (
+                  <div key={field.id} className="space-y-1">
+                    <label className="text-[11px] text-gray-500 font-medium">{field.label}</label>
+                    <Input
+                      type={(field as any).type || "text"}
+                      placeholder={field.placeholder}
+                      value={field.value}
+                      onChange={e => field.setter(e.target.value)}
+                      className="text-sm h-8 bg-white"
+                      data-testid={`input-create-task-${field.id}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Timeline (Start / End date) */}
           <div className="space-y-2">
@@ -597,6 +708,11 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
             <p className="text-xs text-gray-400 font-medium mb-1">Visit Details</p>
             <p className="text-xs text-gray-600 whitespace-pre-line">{task.notes}</p>
           </div>
+        )}
+
+        {/* Comment section for pending/in_progress tasks */}
+        {(task.status === "pending" || task.status === "in_progress") && (
+          <TaskCommentSection taskId={task.id} employeeName={employee.fullName} />
         )}
 
         <div className="mt-auto pt-3">

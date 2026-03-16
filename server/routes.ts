@@ -3075,6 +3075,27 @@ export async function registerRoutes(
     }
   });
 
+  // === EMPLOYEE TASK COMMENTS ===
+  app.get("/api/employee/tasks/:id/comments", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const comments = await storage.getTaskComments(Number(req.params.id));
+      res.json(comments);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/employee/tasks/:id/comments", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const { message, createdByName } = req.body;
+      if (!message) return res.status(400).json({ message: "Message required" });
+      const comment = await storage.createTaskComment({ taskId: Number(req.params.id), message, createdByName });
+      res.json(comment);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // === EXPENSE ROUTES ===
   app.get("/api/expenses", async (req: any, res) => {
     try {
@@ -3582,6 +3603,165 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to get locations" });
     }
+  });
+
+  // === LEAVES (Employee) ===
+  app.get("/api/employee/leaves", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const list = await storage.getLeavesByEmployee(emp.id);
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.post("/api/employee/leaves", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const leave = await storage.createLeave({ ...req.body, employeeDbId: emp.id, status: "pending" });
+      res.status(201).json(leave);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.patch("/api/employee/leaves/:id/cancel", async (req: any, res) => {
+    try {
+      const updated = await storage.updateLeave(Number(req.params.id), { status: "cancelled" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/employee/leave-balances", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const year = new Date().getFullYear();
+      const cfg = await storage.getEmployeeConfig(emp.id);
+      const balances = await storage.getLeaveBalances(emp.id, year);
+      const CATS = ["Sick Leave", "Casual Leave", "Privilege Leave", "Earned Leave"];
+      const quotaMap: Record<string, number> = {
+        "Sick Leave": cfg?.sickLeaveQuota || 7,
+        "Casual Leave": cfg?.casualLeaveQuota || 7,
+        "Privilege Leave": cfg?.privilegeLeaveQuota || 8,
+        "Earned Leave": cfg?.earnedLeaveQuota || 0,
+      };
+      const result = CATS.map(cat => {
+        const bal = balances.find(b => b.leaveCategory === cat);
+        const total = quotaMap[cat];
+        const taken = bal?.taken || 0;
+        return { leaveCategory: cat, total, taken, available: total - taken };
+      });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === LEAVES (Admin) ===
+  app.get("/api/leaves", async (req: any, res) => {
+    try {
+      const list = await storage.getLeaves();
+      const result = await Promise.all(list.map(async l => {
+        const emp = await storage.getEmployee(l.employeeDbId);
+        return { ...l, employeeName: emp?.fullName || "Unknown", employeeCode: emp?.employeeId || "" };
+      }));
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.patch("/api/leaves/:id/approve", async (req: any, res) => {
+    try {
+      const leave = await storage.getLeave(Number(req.params.id));
+      if (!leave) return res.status(404).json({ message: "Not found" });
+      const updated = await storage.updateLeave(Number(req.params.id), { status: "approved", approvedBy: "Admin", approvedAt: new Date() });
+      const dur = Math.max(1, Math.round((new Date(leave.endDate).getTime() - new Date(leave.startDate).getTime()) / 86400000) + 1);
+      const year = new Date(leave.startDate).getFullYear();
+      await storage.upsertLeaveBalance({ employeeDbId: leave.employeeDbId, leaveCategory: leave.leaveCategory, year, total: 0, taken: dur });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.patch("/api/leaves/:id/reject", async (req: any, res) => {
+    try {
+      const updated = await storage.updateLeave(Number(req.params.id), { status: "rejected", rejectionReason: req.body.reason || "" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === HOLIDAYS ===
+  app.get("/api/holidays", async (req: any, res) => {
+    try { res.json(await storage.getHolidays()); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.post("/api/holidays", async (req: any, res) => {
+    try { res.status(201).json(await storage.createHoliday(req.body)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.delete("/api/holidays/:id", async (req: any, res) => {
+    try { await storage.deleteHoliday(Number(req.params.id)); res.json({ ok: true }); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === CHAT ===
+  app.get("/api/employee/chat/contacts", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const contacts = await storage.getChatContacts(emp.id);
+      res.json(contacts);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/employee/chat/messages/:targetId", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const targetId = Number(req.params.targetId);
+      const targetType = req.query.targetType as string || "employee";
+      const msgs = await storage.getChatMessages(emp.id, targetId, "employee", targetType);
+      await storage.markChatRead(emp.id, "employee", targetId);
+      res.json(msgs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.post("/api/employee/chat/send", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const { receiverId, receiverType, receiverName, message } = req.body;
+      const msg = await storage.createChatMessage({
+        senderId: emp.id, senderType: "employee", senderName: emp.fullName,
+        receiverId, receiverType: receiverType || "employee", receiverName: receiverName || "Unknown", message,
+      });
+      res.status(201).json(msg);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/employee/chat/people", async (req: any, res) => {
+    try {
+      const emps = await storage.getEmployees();
+      const emp = await storage.getEmployee(req.employeeId);
+      const others = emps.filter(e => e.id !== emp?.id).map(e => ({ id: e.id, name: e.fullName, type: "employee", code: e.employeeId }));
+      res.json(others);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === EMPLOYEE CONFIG (Admin) ===
+  app.get("/api/employee-config/:employeeDbId", async (req: any, res) => {
+    try {
+      const cfg = await storage.getEmployeeConfig(Number(req.params.employeeDbId));
+      res.json(cfg || { employeeDbId: Number(req.params.employeeDbId), sickLeaveQuota: 7, casualLeaveQuota: 7, privilegeLeaveQuota: 8, earnedLeaveQuota: 0, weeklyOff: "Sunday", workingHours: "8" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.post("/api/employee-config", async (req: any, res) => {
+    try { res.json(await storage.upsertEmployeeConfig(req.body)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // === EXPENSE COMMENT (Employee) ===
+  app.get("/api/employee/expenses/:id/comments", async (req: any, res) => {
+    try {
+      const comments = await storage.getExpenseComments(Number(req.params.id));
+      res.json(comments);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.post("/api/employee/expenses/:id/comments", async (req: any, res) => {
+    try {
+      const emp = await storage.getEmployee(req.employeeId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const comment = await storage.createExpenseComment({
+        expenseId: Number(req.params.id),
+        message: req.body.message,
+        createdByName: emp.fullName,
+      });
+      res.status(201).json(comment);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   // === SEED DATA ===

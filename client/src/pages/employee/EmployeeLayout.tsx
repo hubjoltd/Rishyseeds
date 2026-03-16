@@ -16,6 +16,9 @@ import EmployeeProfile from "./EmployeeProfile";
 import EmployeeTrips from "./EmployeeTrips";
 import EmployeeTasks from "./EmployeeTasks";
 import EmployeeExpenses from "./EmployeeExpenses";
+import EmployeeLeave from "./EmployeeLeave";
+import EmployeeCalendar from "./EmployeeCalendar";
+import EmployeeChat from "./EmployeeChat";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -106,6 +109,9 @@ export default function EmployeeLayout() {
           <Route path="/employee-portal/trips" component={() => <EmployeeTrips employee={employee} />} />
           <Route path="/employee-portal/tasks" component={() => <EmployeeTasks employee={employee} />} />
           <Route path="/employee-portal/expenses" component={() => <EmployeeExpenses employee={employee} />} />
+          <Route path="/employee-portal/leave" component={() => <EmployeeLeave employee={employee} />} />
+          <Route path="/employee-portal/calendar" component={() => <EmployeeCalendar employee={employee} />} />
+          <Route path="/employee-portal/chat" component={() => <EmployeeChat employee={employee} />} />
           <Route path="/employee-portal/profile" component={() => <EmployeeProfile employee={employee} />} />
           <Route component={() => <EmployeeDashboard employee={employee} />} />
         </Switch>

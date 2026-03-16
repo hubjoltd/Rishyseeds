@@ -91,6 +91,76 @@ function OdoPhotoBox({
   );
 }
 
+function ExpenseCommentSection({ expenseId, employeeName }: { expenseId: number; employeeName: string }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [text, setText] = useState("");
+
+  const { data: comments = [] } = useQuery<any[]>({
+    queryKey: ["/api/employee/expenses", expenseId, "comments"],
+    queryFn: async () => {
+      const r = await fetch(`/api/employee/expenses/${expenseId}/comments`, { headers: getHeaders() });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      if (!text.trim()) return;
+      const r = await fetch(`/api/employee/expenses/${expenseId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getHeaders() },
+        body: JSON.stringify({ message: text.trim(), createdByName: employeeName }),
+      });
+      if (!r.ok) throw new Error("Failed to send");
+      return r.json();
+    },
+    onSuccess: () => {
+      setText("");
+      qc.invalidateQueries({ queryKey: ["/api/employee/expenses", expenseId, "comments"] });
+    },
+    onError: () => toast({ title: "Failed to send comment", variant: "destructive" }),
+  });
+
+  return (
+    <div className="border border-amber-200 rounded-lg bg-amber-50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-amber-200 flex items-center gap-2">
+        <Clock className="h-3.5 w-3.5 text-amber-600" />
+        <span className="text-xs font-semibold text-amber-700">Pending Approval - Leave a Note</span>
+      </div>
+      {comments.length > 0 && (
+        <div className="divide-y divide-amber-100 max-h-36 overflow-y-auto">
+          {comments.map((c: any) => (
+            <div key={c.id} className="px-3 py-2">
+              <p className="text-[11px] font-semibold text-amber-700">{c.createdByName}</p>
+              <p className="text-xs text-gray-700">{c.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="px-3 py-2 flex items-end gap-2 border-t border-amber-100">
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Add a note..."
+          rows={2}
+          className="flex-1 bg-white border border-amber-200 rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+          data-testid="input-expense-comment"
+        />
+        <button
+          onClick={() => text.trim() && sendMutation.mutate()}
+          disabled={!text.trim() || sendMutation.isPending}
+          className="h-8 w-8 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-60 flex items-center justify-center shrink-0 transition-colors"
+          data-testid="button-send-expense-comment"
+        >
+          {sendMutation.isPending ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" /> : <FileText className="h-3.5 w-3.5 text-white" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -102,6 +172,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<any | null>(null);
+  const [commentText, setCommentText] = useState("");
 
   // Basic fields
   const [title, setTitle] = useState("");
@@ -377,11 +448,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           )}
 
           {/* Status banner */}
-          {exp.status === "pending" && (
-            <div className="flex items-center justify-center gap-2 text-amber-600 text-xs font-semibold bg-amber-50 rounded-md border border-amber-200 py-3">
-              <Clock className="h-4 w-4" />Awaiting approval
-            </div>
-          )}
           {exp.status === "approved" && (
             <div className="flex items-center justify-center gap-2 text-green-700 text-xs font-semibold bg-green-50 rounded-md border border-green-200 py-3">
               <CheckCircle className="h-4 w-4" />Expense Approved
@@ -391,6 +457,11 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             <div className="flex items-center justify-center gap-2 text-red-600 text-xs font-semibold bg-red-50 rounded-md border border-red-200 py-3">
               <XCircle className="h-4 w-4" />Expense Rejected
             </div>
+          )}
+
+          {/* Comment section for pending expenses */}
+          {exp.status === "pending" && (
+            <ExpenseCommentSection expenseId={exp.id} employeeName={employee.fullName} />
           )}
         </div>
       </div>
