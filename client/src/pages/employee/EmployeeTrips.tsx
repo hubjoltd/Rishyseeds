@@ -174,11 +174,11 @@ function VisitTimer({ punchInTime }: { punchInTime: string }) {
   }, [punchInTime]);
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
-      <Clock className="w-4 h-4 text-blue-500 animate-pulse" />
+    <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
+      <Clock className="w-4 h-4 text-green-500 animate-pulse" />
       <div>
         <p className="text-xs text-muted-foreground">Time at location</p>
-        <p className="text-sm font-bold text-blue-600 dark:text-blue-400 tabular-nums">{elapsed}</p>
+        <p className="text-sm font-bold text-green-600 dark:text-green-400 tabular-nums">{elapsed}</p>
       </div>
     </div>
   );
@@ -196,7 +196,7 @@ function formatDuration(inTime: string, outTime: string): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case "started":
-      return <Badge className="bg-blue-500">In Progress</Badge>;
+      return <Badge className="bg-green-500">In Progress</Badge>;
     case "completed":
       return <Badge className="bg-amber-500">Submitted</Badge>;
     case "approved":
@@ -626,7 +626,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                       <span className="text-xs text-muted-foreground">Start</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <div className="w-3 h-3 rounded-full bg-green-500" />
                       <span className="text-xs text-muted-foreground">Visits</span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -1064,10 +1064,10 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       </div>
 
       {activeTrip && (
-        <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+        <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Navigation className="w-5 h-5 text-blue-500 animate-pulse" />
+              <Navigation className="w-5 h-5 text-green-500 animate-pulse" />
               Active Trip
             </CardTitle>
           </CardHeader>

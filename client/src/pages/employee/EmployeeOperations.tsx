@@ -40,14 +40,14 @@ export default function EmployeeOperations({ employee }: EmployeeOperationsProps
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
+        <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Cog className="w-4 h-4" /> Processing
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-blue-600">{processingCount}</p>
+            <p className="text-3xl font-bold text-green-600">{processingCount}</p>
             <p className="text-xs text-muted-foreground">Tasks completed</p>
           </CardContent>
         </Card>
@@ -87,7 +87,7 @@ export default function EmployeeOperations({ employee }: EmployeeOperationsProps
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Cog className="w-5 h-5 text-blue-600" />
+                  <Cog className="w-5 h-5 text-green-600" />
                   Processing Tasks
                 </CardTitle>
               </CardHeader>

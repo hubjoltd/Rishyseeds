@@ -21,7 +21,7 @@ function getHeaders() {
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700 border-amber-200",
-  in_progress: "bg-blue-100 text-blue-700 border-blue-200",
+  in_progress: "bg-green-100 text-green-700 border-green-200",
   completed: "bg-green-100 text-green-700 border-green-200",
   cancelled: "bg-red-100 text-red-700 border-red-200",
 };
@@ -162,11 +162,11 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
         )}
 
         {task.checkInTime && (
-          <div className="flex items-start gap-2 p-3 bg-blue-50/60 border border-blue-100 rounded-md">
-            <MapPin className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2 p-3 bg-green-50/60 border border-green-100 rounded-md">
+            <MapPin className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-blue-700">Checked In at {fmtDT(task.checkInTime)}</p>
-              {task.checkInLocationName && <p className="text-xs text-blue-600">{task.checkInLocationName}</p>}
+              <p className="text-sm font-medium text-green-700">Checked In at {fmtDT(task.checkInTime)}</p>
+              {task.checkInLocationName && <p className="text-xs text-green-700">{task.checkInLocationName}</p>}
             </div>
           </div>
         )}
@@ -215,7 +215,7 @@ export default function EmployeeTasks({ employee }: EmployeeTasksProps) {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Pending", value: counts.pending, color: "text-amber-600" },
-          { label: "In Progress", value: counts.in_progress, color: "text-blue-600" },
+          { label: "In Progress", value: counts.in_progress, color: "text-green-700" },
           { label: "Completed", value: counts.completed, color: "text-green-600" },
         ].map(({ label, value, color }) => (
           <Card key={label} className="border">

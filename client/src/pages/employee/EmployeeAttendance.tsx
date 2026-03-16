@@ -92,14 +92,14 @@ export default function EmployeeAttendance({ employee }: EmployeeAttendanceProps
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
+        <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Calendar className="w-4 h-4" /> Last Month
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-blue-600">{lastMonthAttendance.length}</p>
+            <p className="text-3xl font-bold text-green-600">{lastMonthAttendance.length}</p>
             <p className="text-xs text-muted-foreground">Days Present</p>
           </CardContent>
         </Card>

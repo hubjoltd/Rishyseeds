@@ -280,8 +280,8 @@ export default function EmployeeProfile({ employee }: EmployeeProfileProps) {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
-                    <div className="p-4 bg-blue-50 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2 text-blue-700">
+                    <div className="p-4 bg-green-50 rounded-xl space-y-3">
+                      <div className="flex items-center gap-2 text-green-700">
                         <Building2 className="w-5 h-5" />
                         <span className="font-semibold">Bank Information</span>
                       </div>

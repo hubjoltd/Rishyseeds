@@ -84,7 +84,7 @@ function CircleProgress({ pct }: { pct: number }) {
   return (
     <svg width="70" height="70" viewBox="0 0 70 70">
       <circle cx="35" cy="35" r={r} fill="none" stroke="#e5e7eb" strokeWidth="6" />
-      <circle cx="35" cy="35" r={r} fill="none" stroke={pct > 0 ? "#2563eb" : "#d1d5db"} strokeWidth="6"
+      <circle cx="35" cy="35" r={r} fill="none" stroke={pct > 0 ? "#15803d" : "#d1d5db"} strokeWidth="6"
         strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 35 35)" />
       <text x="35" y="40" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#374151">{Math.round(pct)}%</text>
     </svg>
@@ -360,7 +360,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
 
       {/* Blue Header Banner */}
-      <div className="bg-blue-600 px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
+      <div className="bg-green-700 px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <p className="text-white text-xl font-bold">Hi, {employee.fullName.split(" ")[0]}</p>
@@ -407,7 +407,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <Button
               onClick={() => openCameraForPunch("in")}
               disabled={punchMutation.isPending || todayLoading}
-              className="bg-green-500 hover:bg-green-600 text-white rounded-full px-16 py-3 text-base font-bold shadow-lg min-w-[160px]"
+              className="bg-white text-green-700 hover:bg-green-50 rounded-full px-16 py-3 text-base font-bold shadow-lg min-w-[160px]"
               data-testid="button-punch-in"
             >
               {punchMutation.isPending && pendingPunchType.current === "in" ? <Loader2 className="w-5 h-5 animate-spin" /> : "Punch In"}
@@ -454,7 +454,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <div className="border border-gray-200 rounded-xl p-3 inline-flex items-center gap-4">
             <div>
               <p className="text-xs text-gray-500">Task Completed</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{tasks.completed} <span className="text-gray-400 text-base font-normal">of {tasks.total}</span></p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{tasks.completed} <span className="text-gray-400 text-base font-normal">of {tasks.total}</span></p>
             </div>
             <CircleProgress pct={taskCompletionPct} />
           </div>
@@ -466,11 +466,11 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <div className="grid grid-cols-3 gap-2">
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500 leading-tight">Pending<br />(Today)</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{tasks.pendingToday}</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{tasks.pendingToday}</p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500 leading-tight">In Progress<br />(All)</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{tasks.inProgress}</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{tasks.inProgress}</p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500 leading-tight">Overdue<br />(All)</p>
@@ -485,15 +485,15 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           <div className="grid grid-cols-3 gap-2">
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500">Balance</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">0.0</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">0.0</p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500">Taken</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">0.0</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">0.0</p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-500">Pending</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">0.0</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">0.0</p>
             </div>
           </div>
         </div>
@@ -540,7 +540,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           {checkInStep === "select" ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-center text-base font-bold bg-blue-600 -mx-6 -mt-6 px-6 pt-6 pb-4 rounded-t-lg text-white">Check In</DialogTitle>
+                <DialogTitle className="text-center text-base font-bold bg-green-700 -mx-6 -mt-6 px-6 pt-6 pb-4 rounded-t-lg text-white">Check In</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 <div>
@@ -567,7 +567,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                   <div className="flex-1 border-t border-gray-200" />
                 </div>
                 <Button variant="outline" onClick={() => setCheckInStep("new")}
-                  className="w-full rounded-full border-blue-500 text-blue-600 font-semibold" data-testid="button-new-customer">
+                  className="w-full rounded-full border-green-700 text-green-700 font-semibold" data-testid="button-new-customer">
                   New Customer &amp; Check In ?
                 </Button>
               </div>
@@ -575,7 +575,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           ) : (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-2 bg-blue-600 -mx-6 -mt-6 px-4 pt-5 pb-4 rounded-t-lg">
+                <div className="flex items-center gap-2 bg-green-700 -mx-6 -mt-6 px-4 pt-5 pb-4 rounded-t-lg">
                   <button onClick={() => setCheckInStep("select")} className="text-white text-lg font-bold">&#8592;</button>
                   <DialogTitle className="text-base font-bold text-white">Add Customer</DialogTitle>
                 </div>
@@ -616,7 +616,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       {/* ── Customer Check-Out Dialog ── */}
       <Dialog open={checkOutDialogOpen} onOpenChange={(v) => { if (!v) { setCheckOutDialogOpen(false); setCheckOutForm({ visitType: "", issue: "", amount: "", rating: "", signature: "" }); setWarrantyPhoto(null); setWarrantyPhotoPreview(null); } }}>
         <DialogContent className="max-w-sm mx-auto max-h-[90vh] overflow-y-auto p-0">
-          <div className="bg-blue-600 px-5 pt-5 pb-4 rounded-t-lg flex items-center gap-2">
+          <div className="bg-green-700 px-5 pt-5 pb-4 rounded-t-lg flex items-center gap-2">
             <button onClick={() => setCheckOutDialogOpen(false)} className="text-white text-lg font-bold">&#8592;</button>
             <DialogTitle className="text-base font-bold text-white">Check Out</DialogTitle>
           </div>
@@ -630,7 +630,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               <select
                 value={checkOutForm.visitType}
                 onChange={(e) => setCheckOutForm(f => ({ ...f, visitType: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600"
                 data-testid="select-visit-type"
               >
                 <option value="">Select visit type</option>
@@ -675,7 +675,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               ) : (
                 <button
                   onClick={() => warrantyPhotoRef.current?.click()}
-                  className="w-full border-2 border-dashed border-gray-300 rounded-lg py-6 flex flex-col items-center gap-1 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors"
+                  className="w-full border-2 border-dashed border-gray-300 rounded-lg py-6 flex flex-col items-center gap-1 text-gray-400 hover:border-green-600 hover:text-green-700 transition-colors"
                   data-testid="button-warranty-photo"
                 >
                   <Image className="w-6 h-6" />
@@ -695,7 +695,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               <select
                 value={checkOutForm.rating}
                 onChange={(e) => setCheckOutForm(f => ({ ...f, rating: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600"
                 data-testid="select-rating"
               >
                 <option value="">Please select Feedback</option>
