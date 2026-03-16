@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, LogOut, Clock, User, FileText, Calendar, Download, Cog, Package, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import logo from "/favicon.png";
+import logo from "@assets/adaptive-icon_1773664442681.png";
 import { getEmployeeToken, clearEmployeeToken } from "./EmployeeLogin";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
