@@ -3387,6 +3387,125 @@ export async function registerRoutes(
     }
   });
 
+  // === EMPLOYEE LOCATION TRACKING ===
+
+  // Employee posts their GPS location (called periodically from the employee app)
+  app.post("/api/employee/location", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const { latitude, longitude, accuracy, speed } = req.body;
+      if (!latitude || !longitude) return res.status(400).json({ message: "latitude and longitude required" });
+      const loc = await storage.addEmployeeLocation({
+        employeeId: empId,
+        latitude: String(latitude),
+        longitude: String(longitude),
+        accuracy: accuracy != null ? String(accuracy) : null,
+        speed: speed != null ? String(speed) : null,
+        recordedAt: new Date(),
+      });
+      res.json(loc);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to record location" });
+    }
+  });
+
+  // Admin fetches location history for an employee on a given date, with stoppages computed
+  app.get("/api/employees/:id/locations", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const points = await storage.getEmployeeLocationsForDate(empId, date);
+
+      // Compute stoppages: group consecutive points within STOPPAGE_RADIUS_M metres for >= STOPPAGE_MIN_SECS
+      const STOPPAGE_RADIUS_M = 80;
+      const STOPPAGE_MIN_SECS = 5 * 60; // 5 minutes
+
+      function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371000;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      type Segment =
+        | { type: "travelled"; startTime: Date; endTime: Date; distanceKm: number }
+        | { type: "stoppage"; startTime: Date; endTime: Date; durationSecs: number; lat: number; lng: number };
+
+      const segments: Segment[] = [];
+
+      if (points.length < 2) {
+        return res.json({ points, segments, totalKm: 0, stoppageCount: 0, travelledKm: 0 });
+      }
+
+      let i = 0;
+      while (i < points.length) {
+        // Check if this is a stoppage start
+        const anchor = points[i];
+        let j = i + 1;
+        let totalDist = 0;
+        while (j < points.length) {
+          const d = haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[j].latitude), Number(points[j].longitude));
+          if (d <= STOPPAGE_RADIUS_M) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        const durationSecs = (new Date(points[j - 1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000;
+        if (j > i + 1 && durationSecs >= STOPPAGE_MIN_SECS) {
+          // Stoppage segment
+          segments.push({
+            type: "stoppage",
+            startTime: new Date(anchor.recordedAt),
+            endTime: new Date(points[j - 1].recordedAt),
+            durationSecs,
+            lat: Number(anchor.latitude),
+            lng: Number(anchor.longitude),
+          });
+          i = j;
+        } else {
+          // Travel step: accumulate distance to next potential stoppage
+          if (i + 1 < points.length) {
+            const travelStart = new Date(points[i].recordedAt);
+            // Advance until next stoppage or end
+            let k = i + 1;
+            let distKm = 0;
+            let prevPoint = points[i];
+            while (k < points.length) {
+              distKm += haversineM(Number(prevPoint.latitude), Number(prevPoint.longitude), Number(points[k].latitude), Number(points[k].longitude)) / 1000;
+              prevPoint = points[k];
+              // Peek if next is a stoppage anchor
+              const anchorNext = points[k];
+              let m = k + 1;
+              while (m < points.length && haversineM(Number(anchorNext.latitude), Number(anchorNext.longitude), Number(points[m].latitude), Number(points[m].longitude)) <= STOPPAGE_RADIUS_M) m++;
+              const dur = (new Date(points[m - 1].recordedAt).getTime() - new Date(anchorNext.recordedAt).getTime()) / 1000;
+              if (m > k + 1 && dur >= STOPPAGE_MIN_SECS) break;
+              k++;
+            }
+            segments.push({
+              type: "travelled",
+              startTime: travelStart,
+              endTime: new Date(points[k < points.length ? k : points.length - 1].recordedAt),
+              distanceKm: distKm,
+            });
+            i = k;
+          } else {
+            i++;
+          }
+        }
+      }
+
+      const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
+      const stoppageCount = segments.filter(s => s.type === "stoppage").length;
+
+      res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to get locations" });
+    }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 

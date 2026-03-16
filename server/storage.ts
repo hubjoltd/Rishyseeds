@@ -8,6 +8,7 @@ import {
   customers, customerCheckins,
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
+  employeeLocations,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -35,8 +36,9 @@ import {
   type Expense, type InsertExpense,
   type ExpenseComment, type InsertExpenseComment,
   type ExpenseAudit, type InsertExpenseAudit,
+  type EmployeeLocation, type InsertEmployeeLocation,
 } from "@shared/schema";
-import { eq, desc, sql, and, or } from "drizzle-orm";
+import { eq, desc, sql, and, or, gte, lte } from "drizzle-orm";
 
 export interface IStorage {
   // User
@@ -192,6 +194,10 @@ export interface IStorage {
   // Trip Audit History
   getTripAuditHistory(tripId: number): Promise<TripAudit[]>;
   createTripAudit(audit: InsertTripAudit): Promise<TripAudit>;
+
+  // Employee Locations (GPS tracking)
+  addEmployeeLocation(data: InsertEmployeeLocation): Promise<EmployeeLocation>;
+  getEmployeeLocationsForDate(employeeId: number, date: string): Promise<EmployeeLocation[]>;
 
   // Dryer
   getDryerEntries(): Promise<DryerEntry[]>;
@@ -941,6 +947,27 @@ export class DatabaseStorage implements IStorage {
   async createTripAudit(audit: InsertTripAudit): Promise<TripAudit> {
     const [created] = await db.insert(tripAuditHistory).values(audit).returning();
     return created;
+  }
+
+  async addEmployeeLocation(data: InsertEmployeeLocation): Promise<EmployeeLocation> {
+    const [loc] = await db.insert(employeeLocations).values(data).returning();
+    return loc;
+  }
+
+  async getEmployeeLocationsForDate(employeeId: number, date: string): Promise<EmployeeLocation[]> {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+    return db.select().from(employeeLocations)
+      .where(
+        and(
+          eq(employeeLocations.employeeId, employeeId),
+          gte(employeeLocations.recordedAt, start),
+          lte(employeeLocations.recordedAt, end)
+        )
+      )
+      .orderBy(employeeLocations.recordedAt);
   }
 
   async getDryerEntries(): Promise<DryerEntry[]> {

@@ -181,6 +181,29 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
+  // GPS pinging: send location every 60 seconds while punched in
+  useEffect(() => {
+    if (!isPunchedIn) return;
+    const sendLocation = () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        fetch("/api/employee/location", {
+          method: "POST",
+          headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            speed: pos.coords.speed,
+          }),
+        }).catch(() => {});
+      }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
+    };
+    sendLocation();
+    const intervalId = setInterval(sendLocation, 60000);
+    return () => clearInterval(intervalId);
+  }, [isPunchedIn]);
+
   useEffect(() => {
     if (!isPunchedIn || !todayAttendance?.checkIn) { setElapsedSeconds(0); return; }
     const getInTime = () => {

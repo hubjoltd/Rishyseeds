@@ -87,7 +87,30 @@ function avatarColor(name: string) {
   return colors[Math.abs(h) % colors.length];
 }
 
-function LiveMap({ trips }: { trips: TripWithVisits[] }) {
+function formatDuration(start: Date, end: Date): string {
+  const totalSecs = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function StoppageAddress({ lat, lng }: { lat: number; lng: number }) {
+  const [address, setAddress] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setAddress(d.display_name || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [lat, lng]);
+  if (!address) return <p className="text-[10px] text-muted-foreground">{lat.toFixed(5)}, {lng.toFixed(5)}</p>;
+  return <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>;
+}
+
+function LiveMap({ trips, locationPoints = [] }: { trips: TripWithVisits[]; locationPoints?: any[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -97,21 +120,28 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
     if (!mapRef.current) return;
     if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
 
+    // GPS location points from continuous tracking
+    const gpsPoints: [number, number][] = locationPoints
+      .filter(lp => lp.latitude && lp.longitude)
+      .map(lp => [Number(lp.latitude), Number(lp.longitude)]);
+
+    // Fallback: trip start/end/visit points
     const today = new Date().toDateString();
     const todayTrips = trips.filter(t => t.startTime && new Date(t.startTime).toDateString() === today);
     const allTrips = todayTrips.length > 0 ? todayTrips : trips.slice(0, 1);
-
-    const points: [number, number][] = [];
+    const tripPoints: [number, number][] = [];
     allTrips.forEach(trip => {
       if (trip.startLatitude && trip.startLongitude)
-        points.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
+        tripPoints.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
       (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) points.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
-        if (v.punchOutLatitude && v.punchOutLongitude) points.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
+        if (v.punchInLatitude && v.punchInLongitude) tripPoints.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
+        if (v.punchOutLatitude && v.punchOutLongitude) tripPoints.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
       });
       if (trip.endLatitude && trip.endLongitude)
-        points.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
+        tripPoints.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
     });
+
+    const points = gpsPoints.length > 0 ? gpsPoints : tripPoints;
 
     const defaultCenter: [number, number] = [22.8, 80.0];
     const initialCenter = points.length > 0 ? points[points.length - 1] : defaultCenter;
@@ -120,14 +150,17 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
 
     if (points.length > 0) {
-      const pl = L.polyline(points, { color: "#f97316", weight: 4, opacity: 0.9 }).addTo(map);
+      const pl = L.polyline(points, { color: "#16a34a", weight: 4, opacity: 0.9 }).addTo(map);
+      // Draw small dots for GPS pings, larger for first/last
       points.forEach((p, i) => {
+        const isFirst = i === 0;
         const isLast = i === points.length - 1;
+        const isSpecial = isFirst || isLast;
         const icon = L.divIcon({
           className: "",
-          html: `<div style="background:${isLast ? "#2563eb" : "#f97316"};width:${isLast ? 16 : 10}px;height:${isLast ? 16 : 10}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
-          iconSize: [isLast ? 16 : 10, isLast ? 16 : 10],
-          iconAnchor: [(isLast ? 16 : 10) / 2, (isLast ? 16 : 10) / 2],
+          html: `<div style="background:${isLast ? "#15803d" : isFirst ? "#16a34a" : "#4ade80"};width:${isSpecial ? 14 : 7}px;height:${isSpecial ? 14 : 7}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
+          iconSize: [isSpecial ? 14 : 7, isSpecial ? 14 : 7],
+          iconAnchor: [(isSpecial ? 14 : 7) / 2, (isSpecial ? 14 : 7) / 2],
         });
         L.marker(p, { icon }).addTo(map);
       });
@@ -169,7 +202,7 @@ function LiveMap({ trips }: { trips: TripWithVisits[] }) {
 
     setTimeout(() => map.invalidateSize(), 100);
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [trips]);
+  }, [trips, locationPoints]);
 
   return (
     <div className="relative h-full w-full">
@@ -275,6 +308,7 @@ export default function EmployeeProfile() {
   const empId = Number(id);
   const [activeTab, setActiveTab] = useState<ProfileTab>("live");
   const [playbackDate, setPlaybackDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
@@ -294,6 +328,25 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId,
+  });
+
+  const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
+    points: any[];
+    segments: Array<
+      | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+      | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number }
+    >;
+    totalKm: number;
+    stoppageCount: number;
+  }>({
+    queryKey: ["/api/employees", empId, "locations", liveDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${empId}/locations?date=${liveDate}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId && activeTab === "live",
+    refetchInterval: 30000,
   });
 
   const { data: attendanceRecords = [], isLoading: attLoading } = useQuery<any[]>({
@@ -460,74 +513,121 @@ export default function EmployeeProfile() {
       <div className="p-4 md:p-6">
         {activeTab === "live" && (
           <div className="flex gap-4 flex-wrap md:flex-nowrap">
-            <div className="w-full md:w-64 shrink-0 space-y-3">
-              <div className="bg-card border rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Today</span>
-                  <span className="text-xs text-muted-foreground">{formatDate(new Date())}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-center">
+            {/* LEFT: Stoppage timeline */}
+            <div className="w-full md:w-72 shrink-0 space-y-3">
+              {/* Date picker + refresh */}
+              <div className="bg-card border rounded-lg p-3 flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={liveDate}
+                  onChange={(e) => setLiveDate(e.target.value)}
+                  className="h-8 text-sm flex-1"
+                  data-testid="input-live-date"
+                />
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => refetchLocations()} data-testid="button-refresh-locations">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+
+              {/* Summary stats */}
+              <div className="bg-card border rounded-lg p-3">
+                <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="bg-muted/50 rounded-lg p-2">
-                    <p className="text-lg font-bold text-primary">{todayTrips.length}</p>
-                    <p className="text-xs text-muted-foreground">Trips</p>
+                    <p className="text-sm font-bold text-primary">{(locationData?.totalKm ?? 0).toFixed(1)}</p>
+                    <p className="text-[10px] text-muted-foreground">KM</p>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-2">
-                    <p className="text-lg font-bold text-primary">{todayKm.toFixed(1)}</p>
-                    <p className="text-xs text-muted-foreground">KM</p>
+                    <p className="text-sm font-bold text-amber-600">{locationData?.stoppageCount ?? 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Stops</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-2">
+                    <p className="text-sm font-bold text-primary">{locationData?.points?.length ?? 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Pings</p>
                   </div>
                 </div>
               </div>
 
-              {punchInToday && (
-                <div className="bg-card border rounded-lg p-4 space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Punch In</p>
-                  <p className="text-sm font-bold text-primary">{formatTime(punchInToday)}</p>
-                  {todayTrips[0]?.startLocationName && (
-                    <p className="text-xs text-muted-foreground flex items-start gap-1">
-                      <MapPin className="h-3 w-3 mt-0.5 shrink-0" />{todayTrips[0].startLocationName}
-                    </p>
-                  )}
+              {/* Stoppage timeline */}
+              <div className="bg-card border rounded-lg overflow-hidden" style={{ maxHeight: "520px", overflowY: "auto" }}>
+                <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Timeline</span>
+                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
-              )}
-
-              {(todayCheckIns > 0 || todayCheckOuts > 0) && (
-                <div className="bg-card border rounded-lg p-4 space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Today's Activity</p>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Check Ins</span>
-                      <span className="font-semibold">{todayCheckIns}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Check Outs</span>
-                      <span className="font-semibold">{todayCheckOuts}</span>
+                {!locationData || locationData.segments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground text-xs gap-2">
+                    <Timer className="h-8 w-8 opacity-30" />
+                    <p>No GPS data for this date</p>
+                    <p className="text-[10px] opacity-70">Location pings appear here as the employee moves</p>
+                  </div>
+                ) : (
+                  <div className="relative px-3 py-3">
+                    {/* Vertical line */}
+                    <div className="absolute left-6 top-3 bottom-3 w-px bg-border" />
+                    <div className="space-y-1">
+                      {locationData.segments.map((seg, idx) => {
+                        const startT = new Date(seg.startTime);
+                        const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+                        if (seg.type === "stoppage") {
+                          const mins = Math.floor(seg.durationSecs / 60);
+                          const secs = Math.round(seg.durationSecs % 60);
+                          const durStr = mins > 0 ? `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` : `00:${String(secs).padStart(2, "0")}`;
+                          return (
+                            <div key={idx} className="flex items-start gap-3 py-1.5">
+                              <div className="relative z-10 shrink-0 w-6 flex justify-center">
+                                <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
+                                <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
+                                <StoppageAddress lat={seg.lat} lng={seg.lng} />
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div key={idx} className="flex items-start gap-3 py-1.5">
+                              <div className="relative z-10 shrink-0 w-6 flex justify-center">
+                                <div className="w-3 h-3 rounded-full bg-primary border-2 border-white shadow mt-0.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-semibold text-primary">
+                                    Travelled ({formatDuration(new Date(seg.startTime), new Date(seg.endTime))})
+                                  </p>
+                                  <span className="text-[10px] text-muted-foreground font-mono">{seg.distanceKm.toFixed(2)}km</span>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
+                              </div>
+                            </div>
+                          );
+                        }
+                      })}
+                      {/* Nearest Location footer */}
+                      {lastLocation && (
+                        <div className="flex items-start gap-3 py-1.5 mt-1 border-t">
+                          <div className="relative z-10 shrink-0 w-6 flex justify-center">
+                            <div className="w-3 h-3 rounded-full bg-green-600 border-2 border-white shadow mt-0.5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-green-700">Nearest Location</p>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">{lastLocation}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
-
-              {lastLocation && (
-                <div className="bg-card border rounded-lg p-4 space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> Nearest Location
-                  </p>
-                  <p className="text-xs text-foreground leading-relaxed">{lastLocation}</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
+            {/* RIGHT: Map */}
             <div className="flex-1 bg-card border rounded-lg overflow-hidden" style={{ minHeight: "500px" }}>
               {tripsLoading ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-              ) : trips.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                  <MapPin className="h-12 w-12 mb-3 opacity-30" />
-                  <p>No location data available</p>
-                </div>
               ) : (
-                <LiveMap trips={trips} />
+                <LiveMap trips={trips} locationPoints={locationData?.points ?? []} />
               )}
             </div>
           </div>

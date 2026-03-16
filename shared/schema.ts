@@ -537,6 +537,21 @@ export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ i
 export type TaskComment = typeof taskComments.$inferSelect;
 export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
 
+// === EMPLOYEE LOCATIONS (continuous GPS tracking) ===
+export const employeeLocations = pgTable("employee_locations", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  accuracy: decimal("accuracy"),
+  speed: decimal("speed"),
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+});
+
+export const insertEmployeeLocationSchema = createInsertSchema(employeeLocations).omit({ id: true });
+export type EmployeeLocation = typeof employeeLocations.$inferSelect;
+export type InsertEmployeeLocation = z.infer<typeof insertEmployeeLocationSchema>;
+
 // === EXPENSES ===
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
