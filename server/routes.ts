@@ -2977,6 +2977,36 @@ export async function registerRoutes(
   });
 
   // Employee portal task routes
+  app.post("/api/employee/tasks", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const all = await storage.getTasks();
+      const nextNum = all.length + 1;
+      const taskCode = `TASK-${String(nextNum).padStart(4, "0")}`;
+      const { title, type, customerName, customerAddress, notes, startDate, endDate, priority } = req.body;
+      const task = await storage.createTask({
+        taskCode,
+        title: title || "Untitled Task",
+        employeeDbId: empId,
+        type: type || "Visit",
+        customerName: customerName || null,
+        customerAddress: customerAddress || null,
+        notes: notes || null,
+        startDate: startDate ? new Date(startDate) : new Date(),
+        endDate: endDate ? new Date(endDate) : null,
+        priority: priority || "medium",
+        status: "pending",
+        createdByName: emp.fullName,
+      });
+      res.status(201).json(task);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to create task" });
+    }
+  });
+
   app.get("/api/employee/tasks", async (req: any, res) => {
     try {
       const empId = req.employeeId;
@@ -3024,7 +3054,21 @@ export async function registerRoutes(
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
       const task = await storage.getTask(Number(req.params.id));
       if (!task || task.employeeDbId !== empId) return res.status(404).json({ message: "Task not found" });
-      const updated = await storage.updateTask(task.id, { status: "completed", completedAt: new Date() });
+      const { dealerName, contactPerson, contactNo, townName, odAmount, regularDue, notes } = req.body;
+      const completionNotes = [
+        dealerName && `Customer/Dealer: ${dealerName}`,
+        contactPerson && `Contact Person: ${contactPerson}`,
+        contactNo && `Contact No: ${contactNo}`,
+        townName && `Town: ${townName}`,
+        odAmount && `OD Amount: ${odAmount}`,
+        regularDue && `Regular Due: ${regularDue}`,
+        notes && `Notes: ${notes}`,
+      ].filter(Boolean).join("\n") || (notes || null);
+      const updated = await storage.updateTask(task.id, {
+        status: "completed",
+        completedAt: new Date(),
+        notes: completionNotes,
+      });
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed" });
