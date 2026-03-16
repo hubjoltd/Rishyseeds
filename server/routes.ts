@@ -3136,6 +3136,20 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/expenses/:id", async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const expense = await storage.getExpense(id);
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      const { employeeDbId, expenseCode, status, ...allowed } = req.body;
+      const updated = await storage.updateExpense(id, allowed);
+      const emp = await storage.getEmployee(expense.employeeDbId);
+      res.json({ ...updated, employeeName: emp?.fullName || "Unknown", employeeCode: emp?.employeeId || "" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to update expense" });
+    }
+  });
+
   app.patch("/api/expenses/:id/approve", async (req: any, res) => {
     try {
       const expense = await storage.getExpense(Number(req.params.id));
