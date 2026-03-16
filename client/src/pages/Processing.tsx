@@ -51,6 +51,7 @@ const processingFormSchema = z.object({
   inputLotId: z.coerce.number().min(1, "Please select input lot"),
   inputQuantity: z.coerce.number().positive("Quantity must be positive"),
   processingType: z.string().min(1, "Please select processing type"),
+  locationId: z.coerce.number().min(1, "Please select warehouse").optional(),
   processedBy: z.string().optional(),
   remarks: z.string().optional(),
 });
@@ -64,18 +65,25 @@ export default function Processing() {
   const { data: records, isLoading } = useProcessingRecords();
   const { data: lots } = useLots();
   const { data: products } = useProducts();
+  const { data: locations } = useLocations();
   const { data: employees } = useEmployees();
   const { mutate: createRecord, isPending } = useCreateProcessingRecord();
   const { mutate: deleteRecord, isPending: isDeleting } = useDeleteProcessingRecord();
   const { mutate: completeProcessing, isPending: isCompleting } = useCompleteProcessing();
   const { canDelete, canEdit } = useAuth();
-  
+
   const getCreatedByName = (createdById: number | null | undefined) => {
     if (!createdById) return "-";
     const emp = (employees || []).find((e: any) => e.id === createdById);
     return emp?.fullName || emp?.employeeId || "-";
   };
-  
+
+  const getLocationName = (locationId: number | null | undefined) => {
+    if (!locationId) return "-";
+    const loc = (locations || []).find((l: any) => l.id === locationId);
+    return loc?.name || "-";
+  };
+
   const [open, setOpen] = useState(false);
   const [deleteRecordId, setDeleteRecordId] = useState<number | null>(null);
   const [completeRecordId, setCompleteRecordId] = useState<number | null>(null);
@@ -86,7 +94,7 @@ export default function Processing() {
   const canEditProcessing = canEdit('processing');
 
   const activeLots = (lots as Lot[] || []).filter((l: Lot) => l.status === 'active');
-  const filteredLots = selectedProductId 
+  const filteredLots = selectedProductId
     ? activeLots.filter(l => l.productId === selectedProductId)
     : activeLots;
 
@@ -105,7 +113,7 @@ export default function Processing() {
     }
   });
 
-  const selectedRecordForComplete = completeRecordId 
+  const selectedRecordForComplete = completeRecordId
     ? (records as ProcessingRecord[] || []).find((r: ProcessingRecord) => r.id === completeRecordId)
     : null;
 
@@ -114,6 +122,7 @@ export default function Processing() {
       inputLotId: data.inputLotId,
       inputQuantity: String(data.inputQuantity),
       processingType: data.processingType,
+      locationId: data.locationId || null,
       processedBy: data.processedBy || null,
       remarks: data.remarks || null,
       status: "pending",
@@ -121,6 +130,7 @@ export default function Processing() {
       onSuccess: () => {
         setOpen(false);
         form.reset();
+        setSelectedProductId(null);
       },
     });
   };
@@ -157,7 +167,7 @@ export default function Processing() {
 
   const filteredRecords = (records as ProcessingRecord[] || []).filter((record: ProcessingRecord) => {
     const lot = (lots as Lot[] || []).find((l: Lot) => l.id === record.inputLotId);
-    return lot?.lotNumber.toLowerCase().includes(search.toLowerCase()) || 
+    return lot?.lotNumber.toLowerCase().includes(search.toLowerCase()) ||
            record.processingType.toLowerCase().includes(search.toLowerCase());
   });
 
@@ -169,7 +179,7 @@ export default function Processing() {
           <p className="text-muted-foreground">Process raw seeds (cleaning, grading, treatment)</p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { form.reset(); setSelectedProductId(null); } }}>
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" data-testid="button-new-processing">
               <Plus className="mr-2 h-4 w-4" />
@@ -202,7 +212,7 @@ export default function Processing() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Input Lot <span className="text-destructive">*</span></label>
-                <Select 
+                <Select
                   onValueChange={(val) => form.setValue("inputLotId", parseInt(val))}
                   disabled={!selectedProductId}
                 >
@@ -220,9 +230,9 @@ export default function Processing() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Input Quantity (KG)</label>
-                <Input 
-                  type="number" 
+                <label className="text-sm font-medium">Input Quantity (KG) <span className="text-destructive">*</span></label>
+                <Input
+                  type="number"
                   {...form.register("inputQuantity")}
                   placeholder="Enter quantity to process"
                   data-testid="input-quantity"
@@ -230,7 +240,7 @@ export default function Processing() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Processing Type</label>
+                <label className="text-sm font-medium">Processing Type <span className="text-destructive">*</span></label>
                 <Select onValueChange={(val) => form.setValue("processingType", val)}>
                   <SelectTrigger data-testid="select-processing-type">
                     <SelectValue placeholder="Select Type" />
@@ -241,6 +251,21 @@ export default function Processing() {
                     <SelectItem value="drying">Drying</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Warehouse / Location</label>
+                <Combobox
+                  options={(locations as Location[] || []).map((l: Location) => ({
+                    value: l.id.toString(),
+                    label: l.name,
+                  }))}
+                  value={form.watch("locationId")?.toString()}
+                  onValueChange={(val) => form.setValue("locationId", val ? parseInt(val) : undefined)}
+                  placeholder="Select Warehouse"
+                  searchPlaceholder="Search warehouses..."
+                  data-testid="select-location"
+                />
               </div>
 
               <div className="space-y-2">
@@ -258,16 +283,16 @@ export default function Processing() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Remarks</label>
-                <Input 
+                <Input
                   {...form.register("remarks")}
                   placeholder="Optional notes"
                   data-testid="input-remarks"
                 />
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full" 
+              <Button
+                type="submit"
+                className="w-full"
                 disabled={isPending}
                 data-testid="button-submit-processing"
               >
@@ -307,6 +332,7 @@ export default function Processing() {
                   <TableHead>Input Lot</TableHead>
                   <TableHead>Input Qty</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead>Warehouse</TableHead>
                   <TableHead>Output Qty</TableHead>
                   <TableHead>Waste</TableHead>
                   <TableHead>Status</TableHead>
@@ -317,7 +343,7 @@ export default function Processing() {
               <TableBody>
                 {filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No processing records found.
                     </TableCell>
                   </TableRow>
@@ -325,10 +351,13 @@ export default function Processing() {
                   filteredRecords.map((record: ProcessingRecord) => (
                     <TableRow key={record.id} data-testid={`row-processing-${record.id}`}>
                       <TableCell>{record.processingDate ? format(new Date(record.processingDate), "PP") : "-"}</TableCell>
-                      <TableCell className="font-mono">{getLotDetails(record.inputLotId)}</TableCell>
+                      <TableCell className="font-mono text-xs">{getLotDetails(record.inputLotId)}</TableCell>
                       <TableCell>{record.inputQuantity} kg</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{record.processingType}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {getLocationName((record as any).locationId)}
                       </TableCell>
                       <TableCell>{record.outputQuantity || '-'} kg</TableCell>
                       <TableCell>{record.wasteQuantity || '0'} kg</TableCell>
@@ -338,27 +367,29 @@ export default function Processing() {
                         </Badge>
                       </TableCell>
                       <TableCell>{getCreatedByName(record.createdBy)}</TableCell>
-                      <TableCell className="text-right flex gap-1 justify-end">
-                        {record.status === 'pending' && canEditProcessing && (
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setCompleteRecordId(record.id)}
-                            data-testid={`button-complete-processing-${record.id}`}
-                          >
-                            <CheckCircle className="h-4 w-4 text-primary" />
-                          </Button>
-                        )}
-                        {canDeleteProcessing && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeleteRecordId(record.id)}
-                            data-testid={`button-delete-processing-${record.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        )}
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          {record.status === 'pending' && canEditProcessing && (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => setCompleteRecordId(record.id)}
+                              data-testid={`button-complete-processing-${record.id}`}
+                            >
+                              <CheckCircle className="h-4 w-4 text-primary" />
+                            </Button>
+                          )}
+                          {canDeleteProcessing && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteRecordId(record.id)}
+                              data-testid={`button-delete-processing-${record.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -407,8 +438,8 @@ export default function Processing() {
           <form onSubmit={completeForm.handleSubmit(handleComplete)} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Output Quantity (KG)</label>
-              <Input 
-                type="number" 
+              <Input
+                type="number"
                 {...completeForm.register("outputQuantity")}
                 placeholder="Processed output quantity"
                 data-testid="input-output-quantity"
@@ -418,8 +449,8 @@ export default function Processing() {
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Waste Quantity (KG)</label>
-              <Input 
-                type="number" 
+              <Input
+                type="number"
                 {...completeForm.register("wasteQuantity")}
                 placeholder="Waste/loss quantity"
                 data-testid="input-waste-quantity"
@@ -427,9 +458,9 @@ export default function Processing() {
               <p className="text-xs text-muted-foreground">Processing loss (dust, debris, damaged seeds)</p>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               disabled={isCompleting}
               data-testid="button-submit-complete"
             >

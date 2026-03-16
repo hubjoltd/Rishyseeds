@@ -303,6 +303,7 @@ export const processingRecords = pgTable("processing_records", {
   wasteQuantity: decimal("waste_quantity").default("0"),
   processingType: text("processing_type").notNull(), // cleaning, grading, treatment
   processingDate: date("processing_date").defaultNow(),
+  locationId: integer("location_id"), // Warehouse where processing happens
   processedBy: text("processed_by"),
   remarks: text("remarks"),
   status: text("status").notNull().default("pending"), // pending, completed
