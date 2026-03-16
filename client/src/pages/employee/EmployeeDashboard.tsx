@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Combobox } from "@/components/ui/combobox";
-import { Loader2, User, RefreshCw, Camera, MapPin, Share2 } from "lucide-react";
+import { Loader2, User, Camera, MapPin, Share2, Image } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
@@ -26,24 +26,14 @@ async function requestLocationPermission(): Promise<boolean> {
       }
     } catch {}
     return new Promise<boolean>((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        () => resolve(true),
-        () => resolve(false),
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
-      );
+      navigator.geolocation.getCurrentPosition(() => resolve(true), () => resolve(false), { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
     });
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 function getPosition(highAccuracy: boolean, timeout: number): Promise<GeolocationPosition> {
   return new Promise<GeolocationPosition>((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: highAccuracy,
-      timeout,
-      maximumAge: 60000,
-    });
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: highAccuracy, timeout, maximumAge: 60000 });
   });
 }
 
@@ -51,41 +41,27 @@ async function captureLocation(): Promise<{ latitude: string; longitude: string;
   try {
     if (!navigator.geolocation) return null;
     let position: GeolocationPosition;
-    try {
-      position = await getPosition(true, 15000);
-    } catch {
-      position = await getPosition(false, 15000);
-    }
+    try { position = await getPosition(true, 15000); }
+    catch { position = await getPosition(false, 15000); }
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     let locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     try {
-      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
-        headers: { "Accept-Language": "en" },
-      });
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { "Accept-Language": "en" } });
       if (resp.ok) {
         const data = await resp.json();
         const addr = data.address || {};
-        const parts = [
-          addr.road || addr.hamlet || addr.neighbourhood || "",
-          addr.suburb || addr.village || addr.town || "",
-          addr.city || addr.county || addr.state_district || "",
-          addr.state || "",
-        ].filter(Boolean);
+        const parts = [addr.road || addr.hamlet || addr.neighbourhood || "", addr.suburb || addr.village || addr.town || "", addr.city || addr.county || addr.state_district || "", addr.state || ""].filter(Boolean);
         if (parts.length > 0) locationName = parts.join(", ");
       }
     } catch {}
     return { latitude: lat.toString(), longitude: lng.toString(), locationName };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function formatTimeString(timeStr: string | null | undefined): string {
   if (!timeStr) return "-";
-  if (timeStr.includes("T") || timeStr.includes("-")) {
-    return format(new Date(timeStr), "h:mm a");
-  }
+  if (timeStr.includes("T") || timeStr.includes("-")) return format(new Date(timeStr), "h:mm a");
   const [hours, minutes] = timeStr.split(":").map(Number);
   const period = hours >= 12 ? "PM" : "AM";
   const displayHours = hours % 12 || 12;
@@ -108,35 +84,23 @@ function CircleProgress({ pct }: { pct: number }) {
   return (
     <svg width="70" height="70" viewBox="0 0 70 70">
       <circle cx="35" cy="35" r={r} fill="none" stroke="#e5e7eb" strokeWidth="6" />
-      <circle
-        cx="35" cy="35" r={r} fill="none"
-        stroke={pct > 0 ? "#2563eb" : "#d1d5db"}
-        strokeWidth="6"
-        strokeDasharray={circ}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        transform="rotate(-90 35 35)"
-      />
-      <text x="35" y="40" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#374151">
-        {Math.round(pct)}%
-      </text>
+      <circle cx="35" cy="35" r={r} fill="none" stroke={pct > 0 ? "#2563eb" : "#d1d5db"} strokeWidth="6"
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 35 35)" />
+      <text x="35" y="40" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#374151">{Math.round(pct)}%</text>
     </svg>
   );
 }
 
 interface EmployeeDashboardProps {
-  employee: {
-    fullName: string;
-    employeeId: string;
-    role?: string;
-    department?: string;
-  };
+  employee: { fullName: string; employeeId: string; role?: string; department?: string };
 }
 
 export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+
+  // Punch state
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [employeePhoto, setEmployeePhoto] = useState<string | null>(null);
   const [photoServerUrl, setPhotoServerUrl] = useState<string | null>(null);
@@ -155,19 +119,22 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [checkInStep, setCheckInStep] = useState<"select" | "new">("select");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [newCustomerForm, setNewCustomerForm] = useState({ companyName: "", mobile: "", email: "", noOfEmployees: "" });
+
+  // Check-out state
+  const [checkOutDialogOpen, setCheckOutDialogOpen] = useState(false);
+  const [checkOutForm, setCheckOutForm] = useState({ visitType: "", issue: "", amount: "", rating: "", signature: "" });
+  const [checkOutLocation, setCheckOutLocation] = useState<{ lat: string; lng: string; name: string } | null>(null);
+  const [checkOutLocationLoading, setCheckOutLocationLoading] = useState(false);
+  const [warrantyPhoto, setWarrantyPhoto] = useState<File | null>(null);
+  const [warrantyPhotoPreview, setWarrantyPhotoPreview] = useState<string | null>(null);
+  const warrantyPhotoRef = useRef<HTMLInputElement>(null);
+
   const [expensePeriod, setExpensePeriod] = useState<"today" | "month" | "all">("today");
 
-  useEffect(() => {
-    requestLocationPermission().then(setLocationGranted);
-  }, []);
+  useEffect(() => { requestLocationPermission().then(setLocationGranted); }, []);
 
   const handleAuthError = (res: Response) => {
-    if (res.status === 401) {
-      clearEmployeeToken();
-      queryClient.clear();
-      setLocation("/employee-login");
-      return true;
-    }
+    if (res.status === 401) { clearEmployeeToken(); queryClient.clear(); setLocation("/employee-login"); return true; }
     return false;
   };
 
@@ -201,6 +168,16 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     },
   });
 
+  const { data: activeCheckin, refetch: refetchActiveCheckin } = useQuery({
+    queryKey: ["/api/employee/customer-checkin/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/customer-checkin/active", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
@@ -210,9 +187,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       const ci = todayAttendance.checkIn;
       if (ci.includes("T") || ci.includes("-")) return new Date(ci);
       const [h, m] = ci.split(":").map(Number);
-      const d = new Date();
-      d.setHours(h, m, 0, 0);
-      return d;
+      const d = new Date(); d.setHours(h, m, 0, 0); return d;
     };
     const inTime = getInTime();
     const tick = () => setElapsedSeconds(differenceInSeconds(new Date(), inTime));
@@ -224,10 +199,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const openCameraForPunch = (type: "in" | "out") => {
     pendingPunchType.current = type;
     pendingLocationRef.current = captureLocation();
-    if (cameraInputRef.current) {
-      cameraInputRef.current.value = "";
-      cameraInputRef.current.click();
-    }
+    if (cameraInputRef.current) { cameraInputRef.current.value = ""; cameraInputRef.current.click(); }
   };
 
   const uploadPhotoToServer = async (file: File): Promise<string | null> => {
@@ -256,15 +228,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance/today"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance"] });
       const time = format(new Date(), "h:mm a");
-      setPunchTime(time);
-      setShareType(type);
+      setPunchTime(time); setShareType(type);
       if (data.location) setPunchLocation(data.location);
       toast({ title: type === "in" ? "Punched In" : "Punched Out", description: `Punched ${type} at ${time}`, variant: type === "in" ? "success" : "destructive" });
       setShareDialogOpen(true);
     },
-    onError: (error: Error) => {
-      if (error.message !== "Session expired") toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => { if (error.message !== "Session expired") toast({ title: "Error", description: error.message, variant: "destructive" }); },
   });
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -309,11 +278,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Customer Check-In Recorded", variant: "success" });
+      toast({ title: "Customer Checked In", variant: "success" });
       setCheckInDialogOpen(false);
       setCheckInStep("select");
       setSelectedCustomerId("");
       setNewCustomerForm({ companyName: "", mobile: "", email: "", noOfEmployees: "" });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/customer-checkin/active"] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -329,6 +299,57 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     customerCheckinMutation.mutate({ isNew: true, companyName: newCustomerForm.companyName, mobile: newCustomerForm.mobile, email: newCustomerForm.email });
   };
 
+  const openCheckOut = async () => {
+    setCheckOutDialogOpen(true);
+    setCheckOutLocationLoading(true);
+    const loc = await captureLocation();
+    if (loc) setCheckOutLocation({ lat: loc.latitude, lng: loc.longitude, name: loc.locationName });
+    setCheckOutLocationLoading(false);
+  };
+
+  const handleWarrantyPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setWarrantyPhoto(file);
+    const reader = new FileReader();
+    reader.onload = () => setWarrantyPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const checkOutMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const formData = new FormData();
+      formData.append("visitType", checkOutForm.visitType);
+      formData.append("issue", checkOutForm.issue);
+      formData.append("amount", checkOutForm.amount);
+      formData.append("rating", checkOutForm.rating);
+      formData.append("signature", checkOutForm.signature);
+      if (checkOutLocation) {
+        formData.append("locationName", checkOutLocation.name);
+        formData.append("locationLatitude", checkOutLocation.lat);
+        formData.append("locationLongitude", checkOutLocation.lng);
+      }
+      if (warrantyPhoto) formData.append("warrantyCardPhoto", warrantyPhoto);
+      const res = await fetch(`/api/employee/customer-checkin/${id}/checkout`, {
+        method: "PATCH",
+        headers: getEmployeeAuthHeaders(),
+        body: formData,
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Checkout failed"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Checked Out Successfully", variant: "success" });
+      setCheckOutDialogOpen(false);
+      setCheckOutForm({ visitType: "", issue: "", amount: "", rating: "", signature: "" });
+      setCheckOutLocation(null);
+      setWarrantyPhoto(null);
+      setWarrantyPhotoPreview(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/customer-checkin/active"] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const tasks = dashStats?.tasks || { pendingToday: 0, inProgress: 0, overdue: 0, total: 0, completed: 0 };
   const expenses = dashStats?.expenses || { pending: 0, approved: 0, rejected: 0 };
   const taskCompletionPct = tasks.total > 0 ? (tasks.completed / tasks.total) * 100 : 0;
@@ -336,17 +357,16 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   return (
     <div className="min-h-screen bg-gray-100">
       <input type="file" accept="image/*" capture="user" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
+      <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
 
       {/* Blue Header Banner */}
       <div className="bg-blue-600 px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <p className="text-white text-xl font-bold">Hi, {employee.fullName.split(" ")[0]}</p>
-            {isPunchedIn ? (
-              <p className="text-yellow-300 text-sm font-medium mt-0.5">You are punched in !</p>
-            ) : (
-              <p className="text-yellow-300 text-sm font-medium mt-0.5">You are punched out !</p>
-            )}
+            <p className="text-yellow-300 text-sm font-medium mt-0.5">
+              {isPunchedIn ? "You are punched in !" : "You are punched out !"}
+            </p>
             {locationGranted === false && (
               <p className="text-red-200 text-xs mt-1 flex items-center gap-1">
                 <MapPin className="w-3 h-3" /> Location not enabled
@@ -359,25 +379,23 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </div>
 
         {isPunchedIn ? (
-          <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-center">
-                <p className="text-white/70 text-xs">In Time</p>
-                <p className="text-white font-bold text-sm">{formatTimeString(todayAttendance?.checkIn)}</p>
-              </div>
-              <div className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-center">
-                <p className="text-white/70 text-xs">Total Duration</p>
-                <p className="text-white font-bold text-sm">{formatDuration(elapsedSeconds)}</p>
-              </div>
-              <Button
-                onClick={() => openCameraForPunch("out")}
-                disabled={punchMutation.isPending}
-                className="bg-red-500 hover:bg-red-600 text-white rounded-xl px-4 font-bold flex-shrink-0 h-auto"
-                data-testid="button-punch-out"
-              >
-                {punchMutation.isPending && pendingPunchType.current === "out" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Punch Out"}
-              </Button>
+          <div className="flex gap-3 items-center">
+            <div className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-center">
+              <p className="text-white/70 text-xs">In Time</p>
+              <p className="text-white font-bold text-sm">{formatTimeString(todayAttendance?.checkIn)}</p>
             </div>
+            <div className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-center">
+              <p className="text-white/70 text-xs">Total Duration</p>
+              <p className="text-white font-bold text-sm">{formatDuration(elapsedSeconds)}</p>
+            </div>
+            <Button
+              onClick={() => openCameraForPunch("out")}
+              disabled={punchMutation.isPending}
+              className="bg-red-500 hover:bg-red-600 text-white rounded-xl px-4 font-bold flex-shrink-0 h-auto py-3"
+              data-testid="button-punch-out"
+            >
+              {punchMutation.isPending && pendingPunchType.current === "out" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Punch Out"}
+            </Button>
           </div>
         ) : isPunchedOut ? (
           <div className="text-center">
@@ -400,18 +418,34 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
       <div className="px-4 py-4 space-y-4">
 
-        {/* Customer Check In — only when punched in */}
+        {/* Customer Check In / Active Visit Row */}
         {isPunchedIn && (
-          <div className="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between">
-            <p className="font-semibold text-gray-700 text-sm">Customer Check In</p>
-            <Button
-              onClick={() => { setCheckInDialogOpen(true); setCheckInStep("select"); }}
-              className="bg-green-500 hover:bg-green-600 text-white rounded-full px-5 py-1.5 text-sm font-semibold h-auto"
-              data-testid="button-customer-checkin"
-            >
-              Check In
-            </Button>
-          </div>
+          activeCheckin ? (
+            <div className="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-400">Customer</p>
+                <p className="font-semibold text-gray-800 text-sm">{activeCheckin.customerName}</p>
+              </div>
+              <Button
+                onClick={openCheckOut}
+                className="bg-red-500 hover:bg-red-600 text-white rounded-full px-5 py-1.5 text-sm font-semibold h-auto"
+                data-testid="button-customer-checkout"
+              >
+                Check Out
+              </Button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center justify-between">
+              <p className="font-semibold text-gray-700 text-sm">Customer Check In</p>
+              <Button
+                onClick={() => { setCheckInDialogOpen(true); setCheckInStep("select"); }}
+                className="bg-green-500 hover:bg-green-600 text-white rounded-full px-5 py-1.5 text-sm font-semibold h-auto"
+                data-testid="button-customer-checkin"
+              >
+                Check In
+              </Button>
+            </div>
+          )
         )}
 
         {/* Overall Performance MTD */}
@@ -500,13 +534,13 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
       </div>
 
-      {/* Customer Check-In Dialog */}
+      {/* ── Customer Check-In Dialog ── */}
       <Dialog open={checkInDialogOpen} onOpenChange={(v) => { setCheckInDialogOpen(v); if (!v) { setCheckInStep("select"); setSelectedCustomerId(""); } }}>
         <DialogContent className="max-w-sm mx-auto">
           {checkInStep === "select" ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-center text-base font-bold">Check In</DialogTitle>
+                <DialogTitle className="text-center text-base font-bold bg-blue-600 -mx-6 -mt-6 px-6 pt-6 pb-4 rounded-t-lg text-white">Check In</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 <div>
@@ -521,12 +555,8 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                   />
                 </div>
                 {selectedCustomerId && (
-                  <Button
-                    onClick={handleExistingCheckIn}
-                    disabled={customerCheckinMutation.isPending}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full font-semibold"
-                    data-testid="button-confirm-existing-checkin"
-                  >
+                  <Button onClick={handleExistingCheckIn} disabled={customerCheckinMutation.isPending}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full font-semibold" data-testid="button-confirm-existing-checkin">
                     {customerCheckinMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                     Check In
                   </Button>
@@ -536,12 +566,8 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                   <span className="text-xs text-gray-400">OR</span>
                   <div className="flex-1 border-t border-gray-200" />
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setCheckInStep("new")}
-                  className="w-full rounded-full border-blue-500 text-blue-600 font-semibold"
-                  data-testid="button-new-customer"
-                >
+                <Button variant="outline" onClick={() => setCheckInStep("new")}
+                  className="w-full rounded-full border-blue-500 text-blue-600 font-semibold" data-testid="button-new-customer">
                   New Customer &amp; Check In ?
                 </Button>
               </div>
@@ -549,9 +575,9 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           ) : (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setCheckInStep("select")} className="text-blue-600 text-sm font-medium">&#8592;</button>
-                  <DialogTitle className="text-base font-bold">Add Customer</DialogTitle>
+                <div className="flex items-center gap-2 bg-blue-600 -mx-6 -mt-6 px-4 pt-5 pb-4 rounded-t-lg">
+                  <button onClick={() => setCheckInStep("select")} className="text-white text-lg font-bold">&#8592;</button>
+                  <DialogTitle className="text-base font-bold text-white">Add Customer</DialogTitle>
                 </div>
               </DialogHeader>
               <div className="space-y-3 pt-2">
@@ -562,53 +588,22 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 font-medium">Company Name *</label>
-                  <Input
-                    value={newCustomerForm.companyName}
-                    onChange={(e) => setNewCustomerForm(f => ({ ...f, companyName: e.target.value }))}
-                    placeholder="Enter company name"
-                    className="mt-1"
-                    data-testid="input-company-name"
-                  />
+                  <Input value={newCustomerForm.companyName} onChange={(e) => setNewCustomerForm(f => ({ ...f, companyName: e.target.value }))} placeholder="Enter company name" className="mt-1" data-testid="input-company-name" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 font-medium">Mobile</label>
-                  <Input
-                    value={newCustomerForm.mobile}
-                    onChange={(e) => setNewCustomerForm(f => ({ ...f, mobile: e.target.value }))}
-                    placeholder="Mobile number"
-                    type="tel"
-                    className="mt-1"
-                    data-testid="input-mobile"
-                  />
+                  <Input value={newCustomerForm.mobile} onChange={(e) => setNewCustomerForm(f => ({ ...f, mobile: e.target.value }))} placeholder="Mobile number" type="tel" className="mt-1" data-testid="input-mobile" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 font-medium">Email</label>
-                  <Input
-                    value={newCustomerForm.email}
-                    onChange={(e) => setNewCustomerForm(f => ({ ...f, email: e.target.value }))}
-                    placeholder="Please enter email"
-                    type="email"
-                    className="mt-1"
-                    data-testid="input-email"
-                  />
+                  <Input value={newCustomerForm.email} onChange={(e) => setNewCustomerForm(f => ({ ...f, email: e.target.value }))} placeholder="Please enter email" type="email" className="mt-1" data-testid="input-email" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 font-medium">No of Employees</label>
-                  <Input
-                    value={newCustomerForm.noOfEmployees}
-                    onChange={(e) => setNewCustomerForm(f => ({ ...f, noOfEmployees: e.target.value }))}
-                    placeholder="Please enter number..."
-                    type="number"
-                    className="mt-1"
-                    data-testid="input-no-employees"
-                  />
+                  <Input value={newCustomerForm.noOfEmployees} onChange={(e) => setNewCustomerForm(f => ({ ...f, noOfEmployees: e.target.value }))} placeholder="Please enter number..." type="number" className="mt-1" data-testid="input-no-employees" />
                 </div>
-                <Button
-                  onClick={handleNewCustomerCheckIn}
-                  disabled={customerCheckinMutation.isPending}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full font-bold py-3"
-                  data-testid="button-add-checkin"
-                >
+                <Button onClick={handleNewCustomerCheckIn} disabled={customerCheckinMutation.isPending}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full font-bold py-3" data-testid="button-add-checkin">
                   {customerCheckinMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   ADD &amp; CHECK IN
                 </Button>
@@ -618,7 +613,119 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </DialogContent>
       </Dialog>
 
-      {/* WhatsApp Share Dialog */}
+      {/* ── Customer Check-Out Dialog ── */}
+      <Dialog open={checkOutDialogOpen} onOpenChange={(v) => { if (!v) { setCheckOutDialogOpen(false); setCheckOutForm({ visitType: "", issue: "", amount: "", rating: "", signature: "" }); setWarrantyPhoto(null); setWarrantyPhotoPreview(null); } }}>
+        <DialogContent className="max-w-sm mx-auto max-h-[90vh] overflow-y-auto p-0">
+          <div className="bg-blue-600 px-5 pt-5 pb-4 rounded-t-lg flex items-center gap-2">
+            <button onClick={() => setCheckOutDialogOpen(false)} className="text-white text-lg font-bold">&#8592;</button>
+            <DialogTitle className="text-base font-bold text-white">Check Out</DialogTitle>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {activeCheckin && (
+              <p className="text-sm text-gray-600">Customer : <span className="font-semibold text-gray-800">{activeCheckin.customerName}</span></p>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Visit Type</label>
+              <select
+                value={checkOutForm.visitType}
+                onChange={(e) => setCheckOutForm(f => ({ ...f, visitType: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="select-visit-type"
+              >
+                <option value="">Select visit type</option>
+                <option value="Sales">Sales</option>
+                <option value="Service">Service</option>
+                <option value="Demo">Demo</option>
+                <option value="Support">Support</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Location *</label>
+              {checkOutLocationLoading ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-2.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Fetching your location...
+                </div>
+              ) : checkOutLocation ? (
+                <div className="flex items-start gap-2 border border-gray-200 rounded-lg px-3 py-2.5 bg-green-50">
+                  <MapPin className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-xs text-green-700">{checkOutLocation.name}</span>
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400 border border-gray-200 rounded-lg px-3 py-2.5 italic">It will fetch your current location before submit</div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Issue *</label>
+              <Input value={checkOutForm.issue} onChange={(e) => setCheckOutForm(f => ({ ...f, issue: e.target.value }))}
+                placeholder="Please enter issue" className="text-sm" data-testid="input-issue" />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Warranty Card Photo *</label>
+              {warrantyPhotoPreview ? (
+                <div className="relative">
+                  <img src={warrantyPhotoPreview} alt="Warranty photo" className="w-full h-32 object-cover rounded-lg border border-gray-200" />
+                  <button onClick={() => { setWarrantyPhoto(null); setWarrantyPhotoPreview(null); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">x</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => warrantyPhotoRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-300 rounded-lg py-6 flex flex-col items-center gap-1 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors"
+                  data-testid="button-warranty-photo"
+                >
+                  <Image className="w-6 h-6" />
+                  <span className="text-xs">Add Photo !</span>
+                </button>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Amount *</label>
+              <Input value={checkOutForm.amount} onChange={(e) => setCheckOutForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="Please enter Amount" type="number" className="text-sm" data-testid="input-amount" />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Rating *</label>
+              <select
+                value={checkOutForm.rating}
+                onChange={(e) => setCheckOutForm(f => ({ ...f, rating: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="select-rating"
+              >
+                <option value="">Please select Feedback</option>
+                <option value="Excellent">Excellent</option>
+                <option value="Good">Good</option>
+                <option value="Average">Average</option>
+                <option value="Poor">Poor</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Signature *</label>
+              <Input value={checkOutForm.signature} onChange={(e) => setCheckOutForm(f => ({ ...f, signature: e.target.value }))}
+                placeholder="Type your name as signature" className="text-sm" data-testid="input-signature" />
+            </div>
+
+            <Button
+              onClick={() => activeCheckin && checkOutMutation.mutate(activeCheckin.id)}
+              disabled={checkOutMutation.isPending}
+              className="w-full bg-red-500 hover:bg-red-600 text-white rounded-full font-bold py-3 mt-2"
+              data-testid="button-confirm-checkout"
+            >
+              {checkOutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              CHECK OUT
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── WhatsApp Share Dialog ── */}
       <Dialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setPhotoServerUrl(null); setPunchLocation(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -641,18 +748,12 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
               </div>
             )}
           </div>
-          <Button
-            onClick={handleShareToWhatsApp}
-            disabled={isUploading || !photoServerUrl}
-            className="w-full bg-green-600 hover:bg-green-700"
-            data-testid="button-share-whatsapp"
-          >
+          <Button onClick={handleShareToWhatsApp} disabled={isUploading || !photoServerUrl}
+            className="w-full bg-green-600 hover:bg-green-700" data-testid="button-share-whatsapp">
             <Share2 className="w-4 h-4 mr-2" />
             {isUploading ? "Uploading Photo..." : "Share to WhatsApp"}
           </Button>
-          <Button variant="outline" onClick={() => setShareDialogOpen(false)} className="w-full" data-testid="button-close-share">
-            Close
-          </Button>
+          <Button variant="outline" onClick={() => setShareDialogOpen(false)} className="w-full" data-testid="button-close-share">Close</Button>
         </DialogContent>
       </Dialog>
     </div>

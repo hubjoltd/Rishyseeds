@@ -476,6 +476,17 @@ export const customerCheckins = pgTable("customer_checkins", {
   customerName: text("customer_name").notNull(),
   customerMobile: text("customer_mobile"),
   checkedInAt: timestamp("checked_in_at").defaultNow(),
+  checkedOutAt: timestamp("checked_out_at"),
+  visitType: text("visit_type"),
+  locationName: text("location_name"),
+  locationLatitude: text("location_latitude"),
+  locationLongitude: text("location_longitude"),
+  issue: text("issue"),
+  warrantyCardPhoto: text("warranty_card_photo"),
+  amount: decimal("amount"),
+  rating: text("rating"),
+  signature: text("signature"),
+  status: text("status").notNull().default("active"),
   notes: text("notes"),
 });
 

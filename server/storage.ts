@@ -208,6 +208,8 @@ export interface IStorage {
   updateCustomer(id: number, updates: Partial<InsertCustomer>): Promise<Customer | undefined>;
   upsertCustomerFromVisit(name: string, address: string | null, ownerEmployeeId: number, ownerName: string, reportingManagerName?: string): Promise<Customer>;
   createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin>;
+  getActiveCustomerCheckin(employeeDbId: number): Promise<CustomerCheckin | undefined>;
+  checkoutCustomerCheckin(id: number, data: Partial<InsertCustomerCheckin>): Promise<CustomerCheckin | undefined>;
 
   // Tasks
   getTasks(): Promise<Task[]>;
@@ -1003,6 +1005,22 @@ export class DatabaseStorage implements IStorage {
   async createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin> {
     const [created] = await db.insert(customerCheckins).values(data).returning();
     return created;
+  }
+
+  async getActiveCustomerCheckin(employeeDbId: number): Promise<CustomerCheckin | undefined> {
+    const [row] = await db.select().from(customerCheckins)
+      .where(and(eq(customerCheckins.employeeDbId, employeeDbId), eq(customerCheckins.status, "active")))
+      .orderBy(desc(customerCheckins.checkedInAt))
+      .limit(1);
+    return row;
+  }
+
+  async checkoutCustomerCheckin(id: number, data: Partial<InsertCustomerCheckin>): Promise<CustomerCheckin | undefined> {
+    const [updated] = await db.update(customerCheckins)
+      .set({ ...data, status: "completed", checkedOutAt: new Date() })
+      .where(eq(customerCheckins.id, id))
+      .returning();
+    return updated;
   }
 
   // Tasks

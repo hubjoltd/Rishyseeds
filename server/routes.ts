@@ -3305,6 +3305,46 @@ export async function registerRoutes(
     }
   });
 
+  // Employee portal active customer check-in
+  app.get("/api/employee/customer-checkin/active", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const active = await storage.getActiveCustomerCheckin(empId);
+      res.json(active || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed" });
+    }
+  });
+
+  // Employee portal customer check-out
+  app.patch("/api/employee/customer-checkin/:id/checkout", upload.single("warrantyCardPhoto"), async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const body = req.body;
+      let warrantyCardPhoto: string | null = null;
+      if (req.file) {
+        warrantyCardPhoto = `/uploads/${req.file.filename}`;
+      }
+      const updated = await storage.checkoutCustomerCheckin(id, {
+        visitType: body.visitType || null,
+        locationName: body.locationName || null,
+        locationLatitude: body.locationLatitude || null,
+        locationLongitude: body.locationLongitude || null,
+        issue: body.issue || null,
+        warrantyCardPhoto: warrantyCardPhoto,
+        amount: body.amount ? String(body.amount) : null,
+        rating: body.rating || null,
+        signature: body.signature || null,
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to checkout" });
+    }
+  });
+
   // Employee portal customer check-in
   app.post("/api/employee/customer-checkin", async (req: any, res) => {
     try {
