@@ -3246,6 +3246,107 @@ export async function registerRoutes(
     }
   });
 
+  // Employee portal dashboard stats
+  app.get("/api/employee/dashboard-stats", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const [myTasks, myExpenses] = await Promise.all([
+        storage.getTasksByEmployee(empId),
+        storage.getExpensesByEmployee(empId),
+      ]);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const pendingToday = myTasks.filter(t => {
+        const isPending = t.status === "pending";
+        const dueDate = t.endDate ? new Date(t.endDate) : null;
+        const isDueToday = dueDate ? (dueDate >= today && dueDate <= todayEnd) : false;
+        const isCreatedToday = t.createdAt ? (new Date(t.createdAt) >= today && new Date(t.createdAt) <= todayEnd) : false;
+        return isPending && (isDueToday || isCreatedToday);
+      }).length;
+      const inProgress = myTasks.filter(t => t.status === "in_progress").length;
+      const overdue = myTasks.filter(t => {
+        if (t.status === "completed") return false;
+        const dueDate = t.endDate ? new Date(t.endDate) : null;
+        return dueDate ? dueDate < today : false;
+      }).length;
+      const totalTasks = myTasks.length;
+      const completedTasks = myTasks.filter(t => t.status === "completed").length;
+
+      const expenseStats = { pending: 0, approved: 0, rejected: 0 };
+      for (const e of myExpenses) {
+        const amt = parseFloat(e.amount as string) || 0;
+        if (e.status === "pending") expenseStats.pending += amt;
+        else if (e.status === "approved") expenseStats.approved += amt;
+        else if (e.status === "rejected") expenseStats.rejected += amt;
+      }
+
+      res.json({
+        tasks: { pendingToday, inProgress, overdue, total: totalTasks, completed: completedTasks },
+        expenses: expenseStats,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch stats" });
+    }
+  });
+
+  // Employee portal customers list
+  app.get("/api/employee/customers", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const list = await storage.getCustomers();
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch customers" });
+    }
+  });
+
+  // Employee portal customer check-in
+  app.post("/api/employee/customer-checkin", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const { customerId, customerName, customerMobile, isNew, companyName, mobile, email } = req.body;
+
+      let finalCustomerId = customerId ? Number(customerId) : null;
+      let finalCustomerName = customerName || companyName || "";
+      let finalMobile = customerMobile || mobile || null;
+
+      if (isNew && companyName) {
+        const created = await storage.createCustomer({
+          name: companyName,
+          mobile: mobile || null,
+          email: email || null,
+          ownerEmployeeId: empId,
+          ownerName: emp.fullName,
+          status: "active",
+          source: "checkin",
+        });
+        finalCustomerId = created.id;
+        finalCustomerName = created.name;
+        finalMobile = created.mobile;
+      }
+
+      if (!finalCustomerName) return res.status(400).json({ message: "Customer name is required" });
+
+      const checkin = await storage.createCustomerCheckin({
+        employeeDbId: empId,
+        customerId: finalCustomerId,
+        customerName: finalCustomerName,
+        customerMobile: finalMobile,
+      });
+      res.status(201).json(checkin);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to record check-in" });
+    }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 

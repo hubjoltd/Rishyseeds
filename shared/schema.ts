@@ -468,6 +468,21 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({ id: tru
 export type Customer = typeof customers.$inferSelect;
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 
+// === CUSTOMER CHECKINS ===
+export const customerCheckins = pgTable("customer_checkins", {
+  id: serial("id").primaryKey(),
+  employeeDbId: integer("employee_db_id").notNull(),
+  customerId: integer("customer_id"),
+  customerName: text("customer_name").notNull(),
+  customerMobile: text("customer_mobile"),
+  checkedInAt: timestamp("checked_in_at").defaultNow(),
+  notes: text("notes"),
+});
+
+export const insertCustomerCheckinSchema = createInsertSchema(customerCheckins).omit({ id: true, checkedInAt: true });
+export type CustomerCheckin = typeof customerCheckins.$inferSelect;
+export type InsertCustomerCheckin = z.infer<typeof insertCustomerCheckinSchema>;
+
 // === TASKS ===
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),

@@ -5,7 +5,7 @@ import {
   packagingOutputs, employees, attendance, payrolls, products,
   lots, stockBalances, processingRecords, outwardRecords, outwardReturns, packagingSizes, roles, notifications,
   trips, tripVisits, tripComments, tripAuditHistory, dryerEntries,
-  customers,
+  customers, customerCheckins,
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   type User, type InsertUser,
@@ -29,6 +29,7 @@ import {
   type TripAudit, type InsertTripAudit,
   type DryerEntry, type InsertDryerEntry,
   type Customer, type InsertCustomer,
+  type CustomerCheckin, type InsertCustomerCheckin,
   type Task, type InsertTask,
   type TaskComment, type InsertTaskComment,
   type Expense, type InsertExpense,
@@ -206,6 +207,7 @@ export interface IStorage {
   createCustomer(customer: InsertCustomer): Promise<Customer>;
   updateCustomer(id: number, updates: Partial<InsertCustomer>): Promise<Customer | undefined>;
   upsertCustomerFromVisit(name: string, address: string | null, ownerEmployeeId: number, ownerName: string, reportingManagerName?: string): Promise<Customer>;
+  createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin>;
 
   // Tasks
   getTasks(): Promise<Task[]>;
@@ -996,6 +998,11 @@ export class DatabaseStorage implements IStorage {
       return (await this.updateCustomer(existing.id, updates)) || existing;
     }
     return this.createCustomer({ name, address: address || null, ownerEmployeeId, ownerName, reportingManagerName: reportingManagerName || null, status: "active", source: "visit" });
+  }
+
+  async createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin> {
+    const [created] = await db.insert(customerCheckins).values(data).returning();
+    return created;
   }
 
   // Tasks
