@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Plus, Loader2, ChevronRight, Camera, CheckCircle,
-  XCircle, Clock, Gauge, FileText, Banknote, Search, X,
+  XCircle, Clock, Gauge, FileText, Banknote, Search, X, AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -31,15 +31,13 @@ const EXPENSE_TYPES = [
   "OTHER",
 ];
 
+const EXPENSE_CATEGORIES = ["Food", "Fuel", "Travel", "Office", "Medical", "Accommodation", "Communication", "Other"];
+
 const TRAVEL_MODES = ["TAXICAB", "AUTO RICKSHAW", "BUS", "TRAIN", "FLIGHT", "OWN VEHICLE", "BIKE", "OTHER"];
 
 function fmtDate(dt: string | null | undefined) {
   if (!dt) return "-";
   try { return format(new Date(dt), "dd MMM yyyy"); } catch { return "-"; }
-}
-function fmtDT(dt: string | null | undefined) {
-  if (!dt) return "-";
-  try { return format(new Date(dt), "dd MMM yyyy, hh:mm a"); } catch { return "-"; }
 }
 
 type TabKey = "pending" | "approved" | "rejected" | "all";
@@ -58,43 +56,104 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function OdoPhotoBox({
+  label, mandatory, preview, onCapture, onClear, inputRef,
+}: {
+  label: string; mandatory?: boolean; preview: string | null;
+  onCapture: () => void; onClear: () => void; inputRef: React.RefObject<HTMLInputElement>;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-gray-500 font-medium">
+        {label} {mandatory && <span className="text-red-500">*</span>}
+      </p>
+      {preview ? (
+        <div className="relative w-28 h-20">
+          <img src={preview} alt={label} className="w-28 h-20 object-cover rounded-md border border-gray-200" />
+          <button
+            onClick={onClear}
+            className="absolute -top-1.5 -right-1.5 bg-white rounded-full shadow border border-gray-200 p-0.5"
+          >
+            <X className="h-3 w-3 text-gray-500" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onCapture}
+          className="w-28 h-20 border-2 border-dashed border-gray-300 rounded-md flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-green-400 hover:text-green-500 transition-colors"
+          data-testid={`button-capture-${label.toLowerCase().replace(/\s/g, "-")}`}
+        >
+          <Camera className="h-5 w-5" />
+          <span className="text-[10px]">Capture</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const startOdoPhotoRef = useRef<HTMLInputElement>(null);
+  const endOdoPhotoRef = useRef<HTMLInputElement>(null);
+  const billsPhotoRef = useRef<HTMLInputElement>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<any | null>(null);
 
-  // Create form state
+  // Basic fields
   const [title, setTitle] = useState("");
   const [expenseType, setExpenseType] = useState("");
   const [showTypeList, setShowTypeList] = useState(false);
   const [typeSearch, setTypeSearch] = useState("");
-  const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [description, setDescription] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("");
+  const [manualAmount, setManualAmount] = useState("");
+
   // LOCAL TRAVEL CLAIM fields
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [modeOfTravel, setModeOfTravel] = useState("");
   const [showModeList, setShowModeList] = useState(false);
-  const [fareAmount, setFareAmount] = useState("");
   const [travellerName, setTravellerName] = useState(employee.fullName);
-  const [distanceCovered, setDistanceCovered] = useState("");
-  // Odometer fields (for odometer-based claims)
+
+  // Odometer fields
   const [startOdo, setStartOdo] = useState("");
   const [endOdo, setEndOdo] = useState("");
   const [amtPerKm, setAmtPerKm] = useState("1");
-  // Photo
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(null);
+  const [startOdoFile, setStartOdoFile] = useState<File | null>(null);
+  const [endOdoPreview, setEndOdoPreview] = useState<string | null>(null);
+  const [endOdoFile, setEndOdoFile] = useState<File | null>(null);
+  const [billsPreview, setBillsPreview] = useState<string | null>(null);
+  const [billsFile, setBillsFile] = useState<File | null>(null);
 
   const isLocalTravel = expenseType === "LOCAL TRAVEL CLAIM";
-  const computedDistance = Number(endOdo) - Number(startOdo);
-  const computedTravel = computedDistance > 0 ? computedDistance * Number(amtPerKm || 1) : 0;
-  const finalAmt = isLocalTravel ? (fareAmount || String(computedTravel) || "0") : (amount || "0");
+
+  const startOdoNum = Number(startOdo) || 0;
+  const endOdoNum = Number(endOdo) || 0;
+  const totalDistance = endOdoNum > startOdoNum ? endOdoNum - startOdoNum : 0;
+  const ratePerKm = Number(amtPerKm) || 1;
+  const totalTravelAmt = totalDistance * ratePerKm;
+  const additionalAmt = Number(manualAmount) || 0;
+  const finalAmount = totalTravelAmt > 0 ? totalTravelAmt + additionalAmt : additionalAmt;
+
+  function handlePhotoChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+    setFile: (f: File) => void,
+    setPreview: (p: string) => void,
+  ) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = () => setPreview(reader.result as string);
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  }
 
   const { data: expenses = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/employee/expenses"],
@@ -107,33 +166,51 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const payload: any = {
-        title: title.trim() || `${expenseType} - ${employee.fullName}`,
-        type: expenseType,
-        category: isLocalTravel ? "Travel" : "Expense",
-        expenseDate,
-        description,
-        workLocation: employee.workLocation || "",
-        amount: finalAmt,
-        finalAmount: finalAmt,
-      };
+      if (!expenseType) throw new Error("Please select an expense type");
+      if (!startOdoFile) throw new Error("Starting odometer photo is required");
+      if (finalAmount <= 0 && !manualAmount) throw new Error("Please enter odometer readings or an amount");
+
+      const fd = new FormData();
+      fd.append("title", title.trim() || `${expenseType} - ${employee.fullName}`);
+      fd.append("type", expenseType);
+      fd.append("category", isLocalTravel ? "Travel" : "Expense");
+      fd.append("expenseDate", expenseDate);
+      if (description) fd.append("description", description);
+      if (employee.workLocation) fd.append("workLocation", employee.workLocation);
+      if (expenseCategory) fd.append("expenseCategory", expenseCategory);
+
+      // Odometer fields
+      if (startOdo) fd.append("startingOdometer", startOdo);
+      if (endOdo) fd.append("endOdometer", endOdo);
+      if (totalDistance > 0) fd.append("totalDistance", String(totalDistance));
+      fd.append("amountPerKm", amtPerKm || "1");
+      if (totalTravelAmt > 0) fd.append("totalTravelAmount", String(totalTravelAmt));
+      if (manualAmount) fd.append("amount", manualAmount);
+      else fd.append("amount", String(finalAmount || 0));
+      fd.append("finalAmount", String(finalAmount || 0));
+
+      // LOCAL TRAVEL CLAIM fields
       if (isLocalTravel) {
-        payload.startDate = startDate || undefined;
-        payload.endDate = endDate || undefined;
-        payload.modeOfTravel = modeOfTravel || undefined;
-        payload.travellerName = travellerName || undefined;
-        payload.totalDistance = distanceCovered || (computedDistance > 0 ? String(computedDistance) : undefined);
-        if (startOdo) payload.startingOdometer = startOdo;
-        if (endOdo) payload.endOdometer = endOdo;
-        if (amtPerKm) payload.amountPerKm = amtPerKm;
-        if (computedTravel > 0) payload.totalTravelAmount = String(computedTravel);
+        if (startDate) fd.append("startDate", startDate);
+        if (endDate) fd.append("endDate", endDate);
+        if (modeOfTravel) fd.append("modeOfTravel", modeOfTravel);
+        if (travellerName) fd.append("travellerName", travellerName);
       }
+
+      // Photos
+      if (startOdoFile) fd.append("startingOdometerPhoto", startOdoFile);
+      if (endOdoFile) fd.append("endOdometerPhoto", endOdoFile);
+      if (billsFile) fd.append("billsTicketPhoto", billsFile);
+
       const res = await fetch("/api/employee/expenses", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getHeaders() },
-        body: JSON.stringify(payload),
+        headers: getHeaders(),
+        body: fd,
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message || "Failed to submit");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -141,25 +218,19 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       resetForm();
       setView("list");
       setActiveTab("pending");
-      toast({ title: "Expense submitted" });
+      toast({ title: "Expense submitted successfully" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   function resetForm() {
-    setTitle(""); setExpenseType(""); setAmount(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
-    setDescription(""); setStartDate(""); setEndDate(""); setModeOfTravel("");
-    setFareAmount(""); setTravellerName(employee.fullName); setDistanceCovered("");
-    setStartOdo(""); setEndOdo(""); setAmtPerKm("1"); setPhotoFile(null); setPhotoPreview(null);
-  }
-
-  function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPhotoFile(f);
-    const reader = new FileReader();
-    reader.onload = () => setPhotoPreview(reader.result as string);
-    reader.readAsDataURL(f);
+    setTitle(""); setExpenseType(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
+    setDescription(""); setExpenseCategory(""); setManualAmount("");
+    setStartDate(""); setEndDate(""); setModeOfTravel(""); setTravellerName(employee.fullName);
+    setStartOdo(""); setEndOdo(""); setAmtPerKm("1");
+    setStartOdoFile(null); setStartOdoPreview(null);
+    setEndOdoFile(null); setEndOdoPreview(null);
+    setBillsFile(null); setBillsPreview(null);
   }
 
   const filtered = expenses.filter(e => activeTab === "all" || e.status === activeTab);
@@ -169,88 +240,159 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     rejected: expenses.filter(e => e.status === "rejected").length,
     all: expenses.length,
   };
-
   const filteredTypes = EXPENSE_TYPES.filter(t => t.toLowerCase().includes(typeSearch.toLowerCase()));
 
   // ===== DETAIL VIEW =====
   if (view === "detail" && selected) {
     const exp = selected;
     return (
-      <div className="flex flex-col h-full animate-in fade-in">
+      <div className="flex flex-col min-h-full animate-in fade-in">
         <div className="bg-green-700 text-white px-4 pt-5 pb-4 flex items-center gap-3 -mx-4 -mt-4 mb-4">
           <button onClick={() => { setView("list"); setSelected(null); }} className="p-1">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="flex-1">
-            <span className="font-semibold text-base">{exp.expenseCode}</span>
+            <p className="font-semibold">{exp.expenseCode}</p>
+            <p className="text-xs text-green-200">{exp.type}</p>
           </div>
           <StatusPill status={exp.status} />
         </div>
 
-        <div className="bg-green-700 text-white rounded-md px-3 py-2 text-xs font-semibold mb-4">
-          {exp.type}
-        </div>
-
-        <div className="space-y-0 border border-gray-100 rounded-md divide-y divide-gray-100 bg-white text-sm mb-4">
-          {[
-            { label: "Title", value: exp.title },
-            { label: "Amount", value: exp.amount ? `Rs. ${Number(exp.amount).toLocaleString()}` : "-" },
-            { label: "Expense Date", value: fmtDate(exp.expenseDate) },
-            exp.modeOfTravel && { label: "Mode of Travel", value: exp.modeOfTravel },
-            exp.travellerName && { label: "Traveller", value: exp.travellerName },
-            exp.startDate && { label: "Start Date", value: fmtDate(exp.startDate) },
-            exp.endDate && { label: "End Date", value: fmtDate(exp.endDate) },
-            exp.totalDistance && { label: "Distance Covered", value: `${exp.totalDistance} km` },
-            exp.startingOdometer && { label: "Start Odometer", value: `${exp.startingOdometer} km` },
-            exp.endOdometer && { label: "End Odometer", value: `${exp.endOdometer} km` },
-            exp.amountPerKm && { label: "Amount / km", value: `Rs. ${exp.amountPerKm}` },
-            exp.totalTravelAmount && { label: "Travel Amount", value: `Rs. ${Number(exp.totalTravelAmount).toLocaleString()}` },
-            exp.approvedAmount && { label: "Approved Amount", value: `Rs. ${Number(exp.approvedAmount).toLocaleString()}` },
-            exp.workLocation && { label: "Location", value: exp.workLocation },
-          ].filter(Boolean).map((row: any) => (
-            <div key={row.label} className="flex items-start px-3 py-2.5 gap-3">
-              <span className="text-gray-400 text-xs w-32 shrink-0 pt-0.5">{row.label}</span>
-              <span className="text-xs text-gray-300 shrink-0">:</span>
-              <span className="flex-1 text-xs font-medium text-gray-700">{row.value}</span>
-            </div>
-          ))}
-        </div>
-
-        {exp.description && (
-          <div className="border border-gray-100 rounded-md bg-white mb-4 px-3 py-2.5">
-            <p className="text-xs text-gray-400 font-medium mb-1">Description / Notes</p>
-            <p className="text-xs text-gray-600">{exp.description}</p>
+        <div className="space-y-3 pb-4">
+          {/* Core fields */}
+          <div className="border border-gray-100 rounded-md bg-white divide-y divide-gray-100 text-sm">
+            {[
+              { label: "Category", value: exp.category },
+              { label: "Amount", value: exp.amount ? `Rs. ${Number(exp.amount).toLocaleString()}` : "-" },
+              { label: "Expense Date", value: fmtDate(exp.expenseDate) },
+              exp.expenseCategory && { label: "Expense Category", value: exp.expenseCategory },
+              exp.modeOfTravel && { label: "Mode of Travel", value: exp.modeOfTravel },
+              exp.travellerName && { label: "Traveller", value: exp.travellerName },
+              exp.startDate && { label: "Start Date", value: fmtDate(exp.startDate) },
+              exp.endDate && { label: "End Date", value: fmtDate(exp.endDate) },
+              exp.workLocation && { label: "Location", value: exp.workLocation },
+            ].filter(Boolean).map((row: any) => (
+              <div key={row.label} className="flex items-center px-3 py-2.5 gap-3">
+                <span className="text-xs text-gray-400 w-32 shrink-0">{row.label}</span>
+                <span className="text-xs font-medium text-gray-700 flex-1">{row.value}</span>
+              </div>
+            ))}
           </div>
-        )}
 
-        {exp.adminComment && (
-          <div className="border border-amber-200 rounded-md bg-amber-50 mb-4 px-3 py-2.5">
-            <p className="text-xs text-amber-600 font-semibold mb-1">Admin Comment</p>
-            <p className="text-xs text-amber-800">{exp.adminComment}</p>
-            {exp.statusUpdatedBy && (
-              <p className="text-[10px] text-amber-500 mt-1">— {exp.statusUpdatedBy}</p>
+          {/* Odometer details */}
+          {(exp.startingOdometer || exp.endOdometer || exp.totalDistance) && (
+            <div className="border border-gray-100 rounded-md bg-white overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                <Gauge className="h-3.5 w-3.5 text-gray-500" />
+                <span className="text-xs font-semibold text-gray-500">Odometer</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 px-3 py-3">
+                {/* Start odometer */}
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Starting Odometer</p>
+                  <p className="text-sm font-bold text-gray-700">{exp.startingOdometer || "-"}</p>
+                </div>
+                {/* End odometer */}
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">End Odometer</p>
+                  <p className="text-sm font-bold text-gray-700">{exp.endOdometer || "-"}</p>
+                </div>
+              </div>
+
+              {/* Photos */}
+              <div className="grid grid-cols-2 gap-3 px-3 pb-3">
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">Starting Odometer picture</p>
+                  {exp.startingOdometerPhoto ? (
+                    <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                  ) : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">End Odometer picture</p>
+                  {exp.endOdometerPhoto ? (
+                    <img src={exp.endOdometerPhoto} alt="End odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                  ) : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
+                </div>
+              </div>
+
+              {/* Calculated values */}
+              <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+                <div className="px-3 py-2">
+                  <p className="text-[10px] text-gray-400">Total Distance</p>
+                  <p className="text-xs font-bold text-gray-700">{exp.totalDistance ? `${exp.totalDistance} km` : "-"}</p>
+                </div>
+                <div className="px-3 py-2">
+                  <p className="text-[10px] text-gray-400">Amount/Km</p>
+                  <p className="text-xs font-bold text-gray-700">Rs. {exp.amountPerKm || "1"}</p>
+                </div>
+              </div>
+              <div className="px-3 py-2 border-t border-gray-100 bg-green-50">
+                <p className="text-[10px] text-gray-400">Total Travel Amount</p>
+                <p className="text-sm font-bold text-green-700">Rs. {exp.totalTravelAmount ? Number(exp.totalTravelAmount).toLocaleString() : "-"}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Final amount */}
+          <div className="border border-gray-100 rounded-md bg-white divide-y divide-gray-100">
+            <div className="flex items-center px-3 py-2.5 gap-3">
+              <span className="text-xs text-gray-400 w-32 shrink-0">Amount</span>
+              <span className="text-xs font-medium text-gray-700">Rs. {exp.amount ? Number(exp.amount).toLocaleString() : "-"}</span>
+            </div>
+            <div className="flex items-center px-3 py-2.5 gap-3 bg-green-50">
+              <span className="text-xs text-gray-500 w-32 shrink-0 font-semibold">Final Amount</span>
+              <span className="text-sm font-bold text-green-700">Rs. {exp.finalAmount ? Number(exp.finalAmount).toLocaleString() : "-"}</span>
+            </div>
+            {exp.approvedAmount && (
+              <div className="flex items-center px-3 py-2.5 gap-3">
+                <span className="text-xs text-gray-400 w-32 shrink-0">Approved Amount</span>
+                <span className="text-xs font-bold text-green-700">Rs. {Number(exp.approvedAmount).toLocaleString()}</span>
+              </div>
             )}
           </div>
-        )}
 
-        {exp.status === "pending" && (
-          <div className="flex items-center justify-center gap-2 text-amber-600 text-xs font-semibold bg-amber-50 rounded-md border border-amber-200 py-3">
-            <Clock className="h-4 w-4" />
-            Awaiting approval from your RM
-          </div>
-        )}
-        {exp.status === "approved" && (
-          <div className="flex items-center justify-center gap-2 text-green-700 text-xs font-semibold bg-green-50 rounded-md border border-green-200 py-3">
-            <CheckCircle className="h-4 w-4" />
-            Expense Approved
-          </div>
-        )}
-        {exp.status === "rejected" && (
-          <div className="flex items-center justify-center gap-2 text-red-600 text-xs font-semibold bg-red-50 rounded-md border border-red-200 py-3">
-            <XCircle className="h-4 w-4" />
-            Expense Rejected
-          </div>
-        )}
+          {/* Bills photo */}
+          {exp.billsTicketPhoto && (
+            <div className="border border-gray-100 rounded-md bg-white px-3 py-3">
+              <p className="text-xs text-gray-400 mb-2 font-medium">Bills / Tickets</p>
+              <img src={exp.billsTicketPhoto} alt="Bills" className="w-full h-40 object-cover rounded" />
+            </div>
+          )}
+
+          {/* Description */}
+          {exp.description && (
+            <div className="border border-gray-100 rounded-md bg-white px-3 py-2.5">
+              <p className="text-xs text-gray-400 mb-1">Description</p>
+              <p className="text-xs text-gray-600">{exp.description}</p>
+            </div>
+          )}
+
+          {/* Admin comment */}
+          {exp.adminComment && (
+            <div className="border border-amber-200 rounded-md bg-amber-50 px-3 py-2.5">
+              <p className="text-xs font-semibold text-amber-600 mb-1">Admin Comment</p>
+              <p className="text-xs text-amber-800">{exp.adminComment}</p>
+            </div>
+          )}
+
+          {/* Status banner */}
+          {exp.status === "pending" && (
+            <div className="flex items-center justify-center gap-2 text-amber-600 text-xs font-semibold bg-amber-50 rounded-md border border-amber-200 py-3">
+              <Clock className="h-4 w-4" />Awaiting approval
+            </div>
+          )}
+          {exp.status === "approved" && (
+            <div className="flex items-center justify-center gap-2 text-green-700 text-xs font-semibold bg-green-50 rounded-md border border-green-200 py-3">
+              <CheckCircle className="h-4 w-4" />Expense Approved
+            </div>
+          )}
+          {exp.status === "rejected" && (
+            <div className="flex items-center justify-center gap-2 text-red-600 text-xs font-semibold bg-red-50 rounded-md border border-red-200 py-3">
+              <XCircle className="h-4 w-4" />Expense Rejected
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -263,179 +405,247 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           <button onClick={() => { setView("list"); resetForm(); }} className="p-1">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <span className="font-semibold text-base">Create Expense</span>
+          <span className="font-semibold text-base">Submit Expense</span>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-          {/* Where you spent */}
-          <div className="border border-gray-200 rounded-md px-3 py-2 bg-white">
-            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Where you spent</p>
 
-            {/* Title */}
-            <div className="border-b border-gray-100 pb-2 mb-2">
-              <Input
-                placeholder="Title (optional)"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                className="border-0 px-0 text-sm h-7 focus-visible:ring-0 bg-transparent"
-                data-testid="input-expense-title"
-              />
+          {/* Basic info */}
+          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+              <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Expense Details</p>
             </div>
 
-            {/* Expense Type */}
-            <div className="relative">
-              <button
-                className="w-full text-left flex items-center justify-between py-2 text-sm"
-                onClick={() => setShowTypeList(v => !v)}
-                data-testid="button-expense-type"
-              >
-                <span className={expenseType ? "text-gray-800 text-xs font-semibold" : "text-gray-400 text-sm"}>
-                  {expenseType || "Expense Type *"}
-                </span>
-                <ChevronRight className="h-4 w-4 text-gray-400 rotate-90" />
-              </button>
-              {showTypeList && (
-                <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg mt-1">
-                  <div className="p-2 border-b">
-                    <div className="flex items-center gap-2 bg-gray-50 rounded px-2">
-                      <Search className="h-3.5 w-3.5 text-gray-400" />
-                      <input autoFocus value={typeSearch} onChange={e => setTypeSearch(e.target.value)} className="flex-1 bg-transparent py-1.5 text-sm outline-none" placeholder="Search..." />
+            <div className="divide-y divide-gray-100">
+              {/* Expense Type */}
+              <div className="relative px-3 py-2.5">
+                <button
+                  className="w-full text-left flex items-center justify-between"
+                  onClick={() => setShowTypeList(v => !v)}
+                  data-testid="button-expense-type"
+                >
+                  <div>
+                    <p className="text-[10px] text-gray-400">Expense Type *</p>
+                    <p className={`text-sm ${expenseType ? "text-gray-800 font-semibold" : "text-gray-400"}`}>
+                      {expenseType || "Select type..."}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-400 rotate-90 shrink-0" />
+                </button>
+                {showTypeList && (
+                  <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-xl mt-1">
+                    <div className="p-2 border-b">
+                      <div className="flex items-center gap-2 bg-gray-50 rounded px-2">
+                        <Search className="h-3.5 w-3.5 text-gray-400" />
+                        <input autoFocus value={typeSearch} onChange={e => setTypeSearch(e.target.value)} className="flex-1 bg-transparent py-1.5 text-sm outline-none" placeholder="Search..." />
+                      </div>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto">
+                      {filteredTypes.map(t => (
+                        <button key={t} onClick={() => { setExpenseType(t); setShowTypeList(false); setTypeSearch(""); }}
+                          className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 ${expenseType === t ? "bg-green-50 text-green-700 font-semibold" : ""}`}
+                          data-testid={`option-type-${t}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="max-h-48 overflow-y-auto">
-                    {filteredTypes.map(t => (
-                      <button key={t} onClick={() => { setExpenseType(t); setShowTypeList(false); setTypeSearch(""); }} className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 ${expenseType === t ? "bg-green-50 text-green-700 font-semibold" : ""}`} data-testid={`option-exp-type-${t}`}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Amount for non-travel types */}
-            {!isLocalTravel && (
-              <div className="border-t border-gray-100 pt-2 mt-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Rs.</span>
-                  <Input
-                    type="number"
-                    placeholder="Amount *"
-                    value={amount}
-                    onChange={e => setAmount(e.target.value)}
-                    className="border-0 px-0 text-sm h-7 focus-visible:ring-0"
-                    data-testid="input-expense-amount"
-                  />
-                </div>
+                )}
               </div>
-            )}
+
+              {/* Category */}
+              <div className="px-3 py-2.5">
+                <p className="text-[10px] text-gray-400 mb-1">Expense Category *</p>
+                <select
+                  value={expenseCategory}
+                  onChange={e => setExpenseCategory(e.target.value)}
+                  className="w-full text-sm bg-transparent outline-none text-gray-700"
+                  data-testid="select-expense-category"
+                >
+                  <option value="">Select category...</option>
+                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {/* Expense Date */}
+              <div className="px-3 py-2.5">
+                <p className="text-[10px] text-gray-400 mb-1">Expense Date *</p>
+                <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)}
+                  className="w-full text-sm bg-transparent outline-none text-gray-700" data-testid="input-expense-date" />
+              </div>
+
+              {/* Title */}
+              <div className="px-3 py-2.5">
+                <p className="text-[10px] text-gray-400 mb-1">Description</p>
+                <input value={description} onChange={e => setDescription(e.target.value)}
+                  placeholder="Add description or notes..."
+                  className="w-full text-sm bg-transparent outline-none text-gray-700" data-testid="input-description" />
+              </div>
+            </div>
           </div>
 
-          {/* LOCAL TRAVEL CLAIM specific fields */}
+          {/* LOCAL TRAVEL CLAIM specific */}
           {isLocalTravel && (
             <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-              <div className="px-3 py-2 bg-green-700 text-white text-xs font-semibold">
-                LOCAL TRAVEL CLAIM
-              </div>
+              <div className="px-3 py-2 bg-green-700 text-white text-xs font-semibold">LOCAL TRAVEL CLAIM</div>
               <div className="divide-y divide-gray-100">
-                {/* Start Date */}
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">START DATE *</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-travel-start-date" />
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] text-gray-400 mb-1">Start Date</p>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                    className="w-full text-sm bg-transparent outline-none" data-testid="input-start-date" />
                 </div>
-                {/* End Date */}
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">END DATE *</label>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-travel-end-date" />
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] text-gray-400 mb-1">End Date</p>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                    className="w-full text-sm bg-transparent outline-none" data-testid="input-end-date" />
                 </div>
-                {/* Mode of Travel */}
-                <div className="flex items-center px-3 py-2.5 gap-3 relative">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">MODE OF TRAVEL *</label>
-                  <button className="flex-1 text-left flex items-center justify-between" onClick={() => setShowModeList(v => !v)} data-testid="button-mode-travel">
-                    <span className={modeOfTravel ? "text-xs text-gray-800" : "text-xs text-gray-400"}>{modeOfTravel || "Select"}</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-gray-400 rotate-90" />
+                <div className="relative px-3 py-2.5">
+                  <button className="w-full text-left flex items-center justify-between" onClick={() => setShowModeList(v => !v)} data-testid="button-mode-travel">
+                    <div>
+                      <p className="text-[10px] text-gray-400">Mode of Travel</p>
+                      <p className={`text-sm ${modeOfTravel ? "text-gray-800" : "text-gray-400"}`}>{modeOfTravel || "Select..."}</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-400 rotate-90 shrink-0" />
                   </button>
                   {showModeList && (
-                    <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg mt-1">
+                    <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-xl mt-1">
                       {TRAVEL_MODES.map(m => (
-                        <button key={m} onClick={() => { setModeOfTravel(m); setShowModeList(false); }} className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 ${modeOfTravel === m ? "bg-green-50 text-green-700 font-semibold" : ""}`} data-testid={`option-mode-${m}`}>{m}</button>
+                        <button key={m} onClick={() => { setModeOfTravel(m); setShowModeList(false); }}
+                          className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 ${modeOfTravel === m ? "bg-green-50 text-green-700 font-semibold" : ""}`}
+                          data-testid={`option-mode-${m}`}
+                        >{m}</button>
                       ))}
                     </div>
                   )}
                 </div>
-                {/* Fare Amount */}
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">FARE AMOUNT *</label>
-                  <div className="flex-1 flex items-center gap-1">
-                    <span className="text-xs text-gray-500">Rs.</span>
-                    <input type="number" value={fareAmount} onChange={e => setFareAmount(e.target.value)} placeholder="Enter amount" className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-fare-amount" />
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] text-gray-400 mb-1">Traveller Name</p>
+                  <input value={travellerName} onChange={e => setTravellerName(e.target.value)}
+                    className="w-full text-sm bg-transparent outline-none" data-testid="input-traveller" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ODOMETER SECTION */}
+          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+              <Gauge className="h-3.5 w-3.5 text-gray-600" />
+              <span className="text-xs font-semibold text-gray-600">Expense (Odometer)</span>
+            </div>
+
+            <div className="px-3 py-3 space-y-4">
+              {/* Starting Odometer */}
+              <div>
+                <label className="text-xs text-gray-500 font-medium block mb-1.5">
+                  Starting Odometer <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="number"
+                  placeholder="Enter starting km reading"
+                  value={startOdo}
+                  onChange={e => setStartOdo(e.target.value)}
+                  className="text-sm mb-3"
+                  data-testid="input-start-odometer"
+                />
+                <p className="text-xs text-gray-500 font-medium mb-1.5">
+                  Starting Odometer picture <span className="text-red-500">*</span>
+                </p>
+                <OdoPhotoBox
+                  label="Start Odometer"
+                  mandatory
+                  preview={startOdoPreview}
+                  onCapture={() => startOdoPhotoRef.current?.click()}
+                  onClear={() => { setStartOdoFile(null); setStartOdoPreview(null); }}
+                  inputRef={startOdoPhotoRef}
+                />
+                <input
+                  ref={startOdoPhotoRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => handlePhotoChange(e, setStartOdoFile, setStartOdoPreview)}
+                />
+              </div>
+
+              {/* End Odometer */}
+              <div>
+                <label className="text-xs text-gray-500 font-medium block mb-1.5">End Odometer</label>
+                <Input
+                  type="number"
+                  placeholder="Please enter number"
+                  value={endOdo}
+                  onChange={e => setEndOdo(e.target.value)}
+                  className="text-sm mb-3"
+                  data-testid="input-end-odometer"
+                />
+                <p className="text-xs text-gray-500 font-medium mb-1.5">End Odometer picture</p>
+                <OdoPhotoBox
+                  label="End Odometer"
+                  preview={endOdoPreview}
+                  onCapture={() => endOdoPhotoRef.current?.click()}
+                  onClear={() => { setEndOdoFile(null); setEndOdoPreview(null); }}
+                  inputRef={endOdoPhotoRef}
+                />
+                <input
+                  ref={endOdoPhotoRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => handlePhotoChange(e, setEndOdoFile, setEndOdoPreview)}
+                />
+              </div>
+
+              {/* Computed row */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Total Distance</p>
+                  <div className="bg-gray-50 rounded px-2 py-1.5 text-xs font-bold text-gray-700">
+                    {totalDistance > 0 ? `${totalDistance} km` : "-"}
                   </div>
                 </div>
-                {/* Traveller Name */}
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">NAME OF TRAVELLER *</label>
-                  <input value={travellerName} onChange={e => setTravellerName(e.target.value)} placeholder="Traveller name" className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-traveller-name" />
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Amount /Km *</p>
+                  <Input
+                    type="number"
+                    value={amtPerKm}
+                    onChange={e => setAmtPerKm(e.target.value)}
+                    className="text-xs h-8 px-2"
+                    data-testid="input-amt-per-km"
+                  />
                 </div>
-                {/* Distance */}
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">DISTANCE (km)</label>
-                  <input type="number" value={distanceCovered} onChange={e => setDistanceCovered(e.target.value)} placeholder="km covered" className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-distance" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Odometer section (for all types but especially travel) */}
-          {isLocalTravel && (
-            <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                <Gauge className="h-3.5 w-3.5 text-gray-500" />
-                <span className="text-xs font-semibold text-gray-500">Odometer (Optional)</span>
-              </div>
-              <div className="divide-y divide-gray-100">
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">Start Reading</label>
-                  <input type="number" value={startOdo} onChange={e => setStartOdo(e.target.value)} placeholder="e.g. 50000" className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-start-odo" />
-                </div>
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">End Reading</label>
-                  <input type="number" value={endOdo} onChange={e => setEndOdo(e.target.value)} placeholder="e.g. 50185" className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-end-odo" />
-                </div>
-                <div className="flex items-center px-3 py-2.5 gap-3">
-                  <label className="text-xs text-gray-400 w-28 shrink-0">Rate (Rs./km)</label>
-                  <input type="number" value={amtPerKm} onChange={e => setAmtPerKm(e.target.value)} className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-amt-per-km" />
-                </div>
-                {computedDistance > 0 && (
-                  <div className="px-3 py-2.5 bg-green-50 grid grid-cols-3 gap-3">
-                    <div><p className="text-[10px] text-gray-400">Distance</p><p className="text-xs font-bold">{computedDistance} km</p></div>
-                    <div><p className="text-[10px] text-gray-400">Travel Amt</p><p className="text-xs font-bold text-green-700">Rs.{computedTravel.toFixed(0)}</p></div>
-                    <div><p className="text-[10px] text-gray-400">Fare / Travel</p><p className="text-xs font-bold text-green-700">Rs.{fareAmount || computedTravel.toFixed(0)}</p></div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Total Travel Amt</p>
+                  <div className={`rounded px-2 py-1.5 text-xs font-bold ${totalTravelAmt > 0 ? "bg-green-50 text-green-700" : "bg-gray-50 text-gray-700"}`}>
+                    {totalTravelAmt > 0 ? `Rs.${totalTravelAmt.toFixed(0)}` : "-"}
                   </div>
-                )}
+                </div>
+              </div>
+
+              {/* Amount + Final */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Amount</p>
+                  <Input
+                    type="number"
+                    placeholder="Manual amount"
+                    value={manualAmount}
+                    onChange={e => setManualAmount(e.target.value)}
+                    className="text-sm h-9"
+                    data-testid="input-manual-amount"
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Final Amount</p>
+                  <div className={`rounded-md px-3 py-2 text-sm font-bold border ${finalAmount > 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-400 border-gray-200"}`}>
+                    {finalAmount > 0 ? `Rs. ${finalAmount.toFixed(0)}` : "-"}
+                  </div>
+                </div>
               </div>
             </div>
-          )}
-
-          {/* Expense date (non-travel) */}
-          {!isLocalTravel && (
-            <div className="border border-gray-200 rounded-md bg-white">
-              <div className="flex items-center px-3 py-2.5 gap-3">
-                <label className="text-xs text-gray-400 w-28 shrink-0">Expense Date</label>
-                <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className="flex-1 text-xs outline-none border-0 bg-transparent" data-testid="input-expense-date" />
-              </div>
-            </div>
-          )}
-
-          {/* Description */}
-          <div className="border border-gray-200 rounded-md bg-white px-3 py-2.5">
-            <p className="text-xs text-gray-400 font-medium mb-1">Description / Notes</p>
-            <Textarea
-              placeholder="Additional notes..."
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              className="border-0 px-0 focus-visible:ring-0 resize-none min-h-[60px] text-xs"
-              data-testid="input-expense-description"
-            />
           </div>
 
           {/* Bills / Tickets */}
@@ -443,32 +653,39 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5 text-gray-500" />
-                <span className="text-xs font-semibold text-gray-500">BILLS / TICKETS</span>
+                <span className="text-xs font-semibold text-gray-500">Bills / Tickets</span>
               </div>
-              <button onClick={() => fileInputRef.current?.click()} className="text-green-700 text-xs font-semibold flex items-center gap-1" data-testid="button-add-photo">
+              <button onClick={() => billsPhotoRef.current?.click()} className="text-green-700 text-xs font-semibold flex items-center gap-1" data-testid="button-add-bills">
                 <Plus className="h-3.5 w-3.5" /> Add Photo
               </button>
             </div>
-            {photoPreview ? (
+            {billsPreview ? (
               <div className="relative p-2">
-                <img src={photoPreview} alt="Bill" className="w-full h-32 object-cover rounded" />
-                <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} className="absolute top-3 right-3 bg-white rounded-full p-0.5 shadow">
+                <img src={billsPreview} alt="Bills" className="w-full h-32 object-cover rounded" />
+                <button onClick={() => { setBillsFile(null); setBillsPreview(null); }} className="absolute top-3 right-3 bg-white rounded-full p-0.5 shadow">
                   <X className="h-4 w-4 text-gray-600" />
                 </button>
               </div>
             ) : (
-              <div className="px-3 py-4 text-center text-xs text-gray-400">
-                No photo attached
-              </div>
+              <div className="px-3 py-4 text-center text-xs text-gray-400">No photo attached</div>
             )}
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+            <input ref={billsPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={e => handlePhotoChange(e, setBillsFile, setBillsPreview)} />
           </div>
+
+          {/* Warning if photo missing */}
+          {expenseType && !startOdoFile && (
+            <div className="flex items-start gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-md">
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">Please capture the starting odometer photo to proceed.</p>
+            </div>
+          )}
         </div>
 
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-green-700 hover:bg-green-800 font-bold py-3"
-            disabled={!expenseType || createMutation.isPending || (!finalAmt || finalAmt === "0")}
+            disabled={!expenseType || !startOdoFile || createMutation.isPending || finalAmount <= 0}
             onClick={() => createMutation.mutate()}
             data-testid="button-submit-expense"
           >
@@ -497,7 +714,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex-1 py-2.5 text-xs font-semibold transition-colors relative ${activeTab === tab.key ? "text-green-700 border-b-2 border-green-700" : "text-gray-400"}`}
-            data-testid={`tab-expense-${tab.key}`}
+            data-testid={`tab-${tab.key}`}
           >
             {tab.label}
             {counts[tab.key] > 0 && (
@@ -509,8 +726,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         ))}
       </div>
 
-      {/* Cards */}
-      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+      {/* Expense cards */}
+      <div className="flex-1 overflow-y-auto space-y-3 pb-20">
         {isLoading ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-green-600" /></div>
         ) : filtered.length === 0 ? (
@@ -519,7 +736,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               <Banknote className="h-6 w-6 text-gray-300" />
             </div>
             <p className="text-sm font-medium">No Expenses Found</p>
-            <p className="text-xs text-gray-300">Tap + to submit an expense claim</p>
+            <p className="text-xs text-gray-300">Tap + to submit an expense</p>
           </div>
         ) : (
           filtered.map(exp => (
@@ -529,35 +746,31 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               onClick={() => { setSelected(exp); setView("detail"); }}
               data-testid={`card-expense-${exp.id}`}
             >
-              <div className="px-3 pt-3 pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="text-xs text-green-700 font-semibold">{exp.expenseCode}</p>
-                    <p className="text-sm font-bold text-gray-800 leading-tight">{exp.title}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">{exp.type}</p>
-                  </div>
-                  <StatusPill status={exp.status} />
+              <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <p className="text-[11px] text-green-700 font-semibold">{exp.expenseCode}</p>
+                  <p className="text-sm font-bold text-gray-800 leading-tight">{exp.title}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{exp.type}</p>
                 </div>
+                <StatusPill status={exp.status} />
               </div>
-              <div className="px-3 pb-2 flex items-center justify-between">
-                <div className="flex items-center gap-3 text-[11px] text-gray-400">
-                  {exp.startDate && <span>{fmtDate(exp.startDate)} – {fmtDate(exp.endDate)}</span>}
-                  {!exp.startDate && <span>{fmtDate(exp.expenseDate)}</span>}
+              <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
+                <div className="px-2 py-1.5 text-center">
+                  <p className="text-[10px] text-gray-400">Distance</p>
+                  <p className="text-xs font-bold text-gray-600">{exp.totalDistance ? `${exp.totalDistance}km` : "-"}</p>
                 </div>
-                <p className="text-sm font-bold text-gray-700">
-                  Rs. {Number(exp.finalAmount || exp.amount || 0).toLocaleString()}
-                </p>
+                <div className="px-2 py-1.5 text-center">
+                  <p className="text-[10px] text-gray-400">Travel Amt</p>
+                  <p className="text-xs font-bold text-gray-600">{exp.totalTravelAmount ? `Rs.${Number(exp.totalTravelAmount).toFixed(0)}` : "-"}</p>
+                </div>
+                <div className="px-2 py-1.5 text-center">
+                  <p className="text-[10px] text-gray-400">Final</p>
+                  <p className="text-xs font-bold text-green-700">Rs.{Number(exp.finalAmount || exp.amount || 0).toLocaleString()}</p>
+                </div>
               </div>
               {exp.adminComment && (
                 <div className="px-3 py-1.5 border-t border-amber-100 bg-amber-50">
                   <p className="text-[11px] text-amber-700 truncate">{exp.adminComment}</p>
-                </div>
-              )}
-              {exp.modeOfTravel && (
-                <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50 flex items-center gap-1.5">
-                  <Gauge className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] text-gray-500">{exp.modeOfTravel}</span>
-                  {exp.totalDistance && <span className="text-[11px] text-gray-400">· {exp.totalDistance} km</span>}
                 </div>
               )}
             </div>

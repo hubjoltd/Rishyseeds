@@ -3260,7 +3260,11 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/employee/expenses", async (req: any, res) => {
+  app.post("/api/employee/expenses", upload.fields([
+    { name: "startingOdometerPhoto", maxCount: 1 },
+    { name: "endOdometerPhoto", maxCount: 1 },
+    { name: "billsTicketPhoto", maxCount: 1 },
+  ]), async (req: any, res) => {
     try {
       const empId = req.employeeId;
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
@@ -3270,12 +3274,19 @@ export async function registerRoutes(
       const nextNum = countResult.length + 1;
       const expenseCode = `EXP-${String(nextNum).padStart(4, "0")}`;
       const title = req.body.title || `${emp.fullName}-${emp.employeeId}-Expense`;
+      const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+      const startPhotoPath = files.startingOdometerPhoto?.[0] ? `/uploads/${files.startingOdometerPhoto[0].filename}` : undefined;
+      const endPhotoPath = files.endOdometerPhoto?.[0] ? `/uploads/${files.endOdometerPhoto[0].filename}` : undefined;
+      const billsPhotoPath = files.billsTicketPhoto?.[0] ? `/uploads/${files.billsTicketPhoto[0].filename}` : undefined;
       const expense = await storage.createExpense({
         ...req.body,
         employeeDbId: empId,
         expenseCode,
         title,
         status: "pending",
+        ...(startPhotoPath ? { startingOdometerPhoto: startPhotoPath } : {}),
+        ...(endPhotoPath ? { endOdometerPhoto: endPhotoPath } : {}),
+        ...(billsPhotoPath ? { billsTicketPhoto: billsPhotoPath } : {}),
       });
       await storage.createExpenseAudit({
         expenseId: expense.id,
