@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileText, Download, Loader2, IndianRupee, Printer, Eye, Building2, Calendar, User, Banknote } from "lucide-react";
 import { getEmployeeToken } from "../EmployeeLogin";
-import logo from "@assets/adaptive-icon_1773664442681.png";
+import logo from "@assets/image_1773664509659.png";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();

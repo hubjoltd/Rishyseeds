@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import logo from "@assets/adaptive-icon_1773664442681.png";
+import logo from "@assets/image_1773664509659.png";
 
 const EMPLOYEE_TOKEN_KEY = 'employee_auth_token';
 
