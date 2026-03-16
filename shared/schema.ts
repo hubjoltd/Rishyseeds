@@ -578,6 +578,11 @@ export const expenses = pgTable("expenses", {
   finalAmount: decimal("final_amount"),
   statusUpdatedBy: text("status_updated_by"),
   statusUpdatedOn: timestamp("status_updated_on"),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  modeOfTravel: text("mode_of_travel"),
+  travellerName: text("traveller_name"),
+  billsTicketPhoto: text("bills_ticket_photo"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
