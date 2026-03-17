@@ -233,37 +233,59 @@ function LiveMap({
         );
     });
 
-    // — Current location (pulsing blue dot — last GPS point) —
+    // — Current location: blue teardrop with person icon (TrackOlap style) —
     if (gpsPoints.length > 0) {
       const lastPt = gpsPoints[gpsPoints.length - 1];
       const curIcon = L.divIcon({
         className: "",
-        html: `<div style="position:relative;width:22px;height:22px">
-          <div style="position:absolute;inset:0;background:rgba(37,99,235,0.3);border-radius:50%;animation:gpsPing 1.6s ease-out infinite"></div>
-          <div style="position:absolute;inset:4px;background:#2563eb;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(37,99,235,0.7)"></div>
-        </div>
-        <style>@keyframes gpsPing{0%{transform:scale(1);opacity:0.8}100%{transform:scale(2.4);opacity:0}}</style>`,
-        iconSize: [22, 22], iconAnchor: [11, 11],
+        html: `
+          <div style="position:relative;width:36px;height:42px">
+            <div style="
+              width:36px;height:36px;
+              background:#1d4ed8;
+              border-radius:50% 50% 50% 0;
+              transform:rotate(-45deg);
+              border:3px solid white;
+              box-shadow:0 3px 10px rgba(29,78,216,0.55);
+              display:flex;align-items:center;justify-content:center;
+            ">
+              <svg style="transform:rotate(45deg);fill:white" width="18" height="18" viewBox="0 0 24 24">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </div>
+            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:6px;height:8px;background:#1d4ed8;clip-path:polygon(0 0,100% 0,50% 100%)"></div>
+          </div>`,
+        iconSize: [36, 42], iconAnchor: [18, 42],
       });
-      L.marker(lastPt, { icon: curIcon }).addTo(map).bindPopup("<b>Current Location</b>");
+      L.marker(lastPt, { icon: curIcon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>Current Location</b>");
     }
 
-    // — Punch In badge (green) —
+    // — Punch In badge (green flag) —
     if (punchInLat && punchInLng) {
       const icon = L.divIcon({
         className: "",
-        html: `<div style="background:#16a34a;color:white;font-size:9px;font-weight:800;padding:3px 6px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;letter-spacing:0.5px">IN</div>`,
-        iconSize: [30, 22], iconAnchor: [15, 11],
+        html: `<div style="display:flex;flex-direction:column;align-items:center">
+          <div style="background:#16a34a;color:white;font-size:9px;font-weight:800;padding:3px 7px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);letter-spacing:0.5px;white-space:nowrap">
+            ● IN
+          </div>
+          <div style="width:2px;height:6px;background:#16a34a"></div>
+        </div>`,
+        iconSize: [36, 28], iconAnchor: [18, 28],
       });
       L.marker([punchInLat, punchInLng], { icon }).addTo(map).bindPopup("<b>Punch In</b>");
     }
 
-    // — Punch Out badge (red) —
+    // — Punch Out badge (red flag) —
     if (punchOutLat && punchOutLng) {
       const icon = L.divIcon({
         className: "",
-        html: `<div style="background:#dc2626;color:white;font-size:9px;font-weight:800;padding:3px 6px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;letter-spacing:0.5px">OUT</div>`,
-        iconSize: [36, 22], iconAnchor: [18, 11],
+        html: `<div style="display:flex;flex-direction:column;align-items:center">
+          <div style="background:#dc2626;color:white;font-size:9px;font-weight:800;padding:3px 7px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);letter-spacing:0.5px;white-space:nowrap">
+            ● OUT
+          </div>
+          <div style="width:2px;height:6px;background:#dc2626"></div>
+        </div>`,
+        iconSize: [40, 28], iconAnchor: [20, 28],
       });
       L.marker([punchOutLat, punchOutLng], { icon }).addTo(map).bindPopup("<b>Punch Out</b>");
     }
@@ -296,7 +318,7 @@ function LiveMap({
       {/* Legend */}
       <div className="absolute bottom-4 left-3 z-[1000] bg-white/95 border shadow-md rounded-xl px-3 py-2 flex flex-col gap-1.5 text-[11px]">
         <div className="flex items-center gap-2">
-          <div style={{ width: 18, height: 4, background: "#2563eb", borderRadius: 2 }} />
+          <div style={{ width: 20, height: 4, background: "#1d4ed8", borderRadius: 2 }} />
           <span className="text-muted-foreground font-medium">Route</span>
         </div>
         <div className="flex items-center gap-2">
@@ -304,15 +326,15 @@ function LiveMap({
           <span className="text-muted-foreground font-medium">Customer Stop</span>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ width: 16, height: 16, background: "#2563eb", borderRadius: "50%", border: "2px solid white" }} />
-          <span className="text-muted-foreground font-medium">Current</span>
+          <div style={{ width: 16, height: 16, background: "#1d4ed8", borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", border: "2px solid white" }} />
+          <span className="text-muted-foreground font-medium">Current Location</span>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ background: "#16a34a", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 3 }}>IN</div>
+          <div style={{ background: "#16a34a", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>IN</div>
           <span className="text-muted-foreground font-medium">Punch In</span>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ background: "#dc2626", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 3 }}>OUT</div>
+          <div style={{ background: "#dc2626", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>OUT</div>
           <span className="text-muted-foreground font-medium">Punch Out</span>
         </div>
       </div>
