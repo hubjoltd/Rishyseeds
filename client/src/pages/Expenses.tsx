@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Search, CheckCircle, XCircle, History, MessageSquare,
   FileText, Send, Loader2, BanknoteIcon, Gauge, Camera, Upload,
-  Plus, Pencil, Save, X,
+  Plus, Pencil, Save, X, Settings,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -835,6 +835,72 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
 // Sort order: approved first, then pending, then rejected; newest within each group
 const STATUS_SORT_ORDER: Record<string, number> = { approved: 0, pending: 1, rejected: 2 };
 
+// ===== DA Rate Settings Modal =====
+function DASettingsModal({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const { data: settings = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-settings", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}` },
+      });
+      if (!r.ok) return {};
+      return r.json();
+    },
+  });
+  const [daRate, setDaRate] = useState("");
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/company-settings/da_rate_per_day", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}` },
+        body: JSON.stringify({ value: daRate }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "D.A. Rate saved" });
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const currentRate = settings["da_rate_per_day"] || "0";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Settings className="h-4 w-4 text-primary" /> Expense Settings
+          </h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">D.A. Rate Per Day (₹)</Label>
+          <p className="text-xs text-muted-foreground">Current: ₹{currentRate}/day — employees use this for Daily Allowance calculation.</p>
+          <Input
+            type="number"
+            min="0"
+            placeholder={`Current: ₹${currentRate}`}
+            value={daRate}
+            onChange={e => setDaRate(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={!daRate || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />} Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== Main list page =====
 export default function Expenses() {
   const [search, setSearch] = useState("");
@@ -845,6 +911,7 @@ export default function Expenses() {
   const PAGE_SIZE = 20;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const { data: expenseList = [], isLoading } = useQuery<ExpenseWithEmployee[]>({
     queryKey: ["/api/expenses"],
@@ -890,6 +957,7 @@ export default function Expenses() {
           onCreated={id => { setShowCreate(false); setSelectedId(id); }}
         />
       )}
+      {showSettings && <DASettingsModal onClose={() => setShowSettings(false)} />}
 
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -901,9 +969,14 @@ export default function Expenses() {
             <p className="text-muted-foreground text-sm">All Expenses</p>
           </div>
         </div>
-        <Button onClick={() => setShowCreate(true)} data-testid="button-new-expense">
-          <Plus className="h-4 w-4 mr-2" /> New Expense
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)} data-testid="button-expense-settings">
+            <Settings className="h-4 w-4 mr-1" /> Settings
+          </Button>
+          <Button onClick={() => setShowCreate(true)} data-testid="button-new-expense">
+            <Plus className="h-4 w-4 mr-2" /> New Expense
+          </Button>
+        </div>
       </div>
 
       <div className="border-b">

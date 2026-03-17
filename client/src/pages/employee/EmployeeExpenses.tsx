@@ -2,11 +2,10 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Plus, Loader2, ChevronRight, Camera, CheckCircle,
-  XCircle, Clock, Gauge, FileText, Banknote, Search, X, AlertCircle,
+  XCircle, Clock, Gauge, FileText, Banknote, Search, X, AlertCircle, Lock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -31,8 +30,6 @@ const EXPENSE_TYPES = [
   "OTHER",
 ];
 
-const EXPENSE_CATEGORIES = ["Food", "Fuel", "Travel", "Office", "Medical", "Accommodation", "Communication", "Other"];
-
 const TRAVEL_MODES = ["TAXICAB", "AUTO RICKSHAW", "BUS", "TRAIN", "FLIGHT", "OWN VEHICLE", "BIKE", "OTHER"];
 
 function fmtDate(dt: string | null | undefined) {
@@ -56,11 +53,11 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function OdoPhotoBox({
-  label, mandatory, preview, onCapture, onClear, inputRef,
+function PhotoBox({
+  label, mandatory, preview, onCapture, onClear, disabled,
 }: {
   label: string; mandatory?: boolean; preview: string | null;
-  onCapture: () => void; onClear: () => void; inputRef: React.RefObject<HTMLInputElement>;
+  onCapture: () => void; onClear: () => void; disabled?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
@@ -79,12 +76,13 @@ function OdoPhotoBox({
         </div>
       ) : (
         <button
-          onClick={onCapture}
-          className="w-28 h-20 border-2 border-dashed border-gray-300 rounded-md flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-green-400 hover:text-green-500 transition-colors"
-          data-testid={`button-capture-${label.toLowerCase().replace(/\s/g, "-")}`}
+          onClick={disabled ? undefined : onCapture}
+          disabled={disabled}
+          className={`w-28 h-20 border-2 border-dashed rounded-md flex flex-col items-center justify-center gap-1 transition-colors
+            ${disabled ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50" : "border-gray-300 text-gray-400 hover:border-green-400 hover:text-green-500"}`}
         >
           <Camera className="h-5 w-5" />
-          <span className="text-[10px]">Capture</span>
+          <span className="text-[10px]">{disabled ? "Locked" : "Capture"}</span>
         </button>
       )}
     </div>
@@ -161,6 +159,51 @@ function ExpenseCommentSection({ expenseId, employeeName }: { expenseId: number;
   );
 }
 
+function FareRow({
+  label, value, onChange, placeholder, remarks, onRemarksChange, required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  remarks?: string;
+  onRemarksChange?: (v: string) => void;
+  required?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-600 w-36 shrink-0 font-medium">
+          {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+        </span>
+        <div className="relative flex-1">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">₹</span>
+          <input
+            type="number"
+            min="0"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder || "0"}
+            className="w-full pl-5 pr-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white outline-none focus:ring-1 focus:ring-green-400 focus:border-green-400"
+          />
+        </div>
+      </div>
+      {onRemarksChange !== undefined && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 w-36 shrink-0">Remarks</span>
+          <input
+            type="text"
+            value={remarks ?? ""}
+            onChange={e => onRemarksChange(e.target.value)}
+            placeholder="Enter remarks..."
+            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white outline-none focus:ring-1 focus:ring-green-400"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -172,7 +215,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<any | null>(null);
-  const [commentText, setCommentText] = useState("");
 
   // Basic fields
   const [title, setTitle] = useState("");
@@ -181,8 +223,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [typeSearch, setTypeSearch] = useState("");
   const [expenseDate, setExpenseDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [description, setDescription] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState("");
-  const [manualAmount, setManualAmount] = useState("");
 
   // LOCAL TRAVEL CLAIM fields
   const [startDate, setStartDate] = useState("");
@@ -191,26 +231,67 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [showModeList, setShowModeList] = useState(false);
   const [travellerName, setTravellerName] = useState(employee.fullName);
 
-  // Odometer fields
-  const [startOdo, setStartOdo] = useState("");
-  const [endOdo, setEndOdo] = useState("");
-  const [amtPerKm, setAmtPerKm] = useState("1");
+  // Odometer photos (captured first)
   const [startOdoPreview, setStartOdoPreview] = useState<string | null>(null);
   const [startOdoFile, setStartOdoFile] = useState<File | null>(null);
   const [endOdoPreview, setEndOdoPreview] = useState<string | null>(null);
   const [endOdoFile, setEndOdoFile] = useState<File | null>(null);
+
+  // Odometer readings (only enabled when both photos uploaded)
+  const [startOdo, setStartOdo] = useState("");
+  const [endOdo, setEndOdo] = useState("");
+  const [amtPerKm, setAmtPerKm] = useState("1");
+
+  // Bills photo
   const [billsPreview, setBillsPreview] = useState<string | null>(null);
   const [billsFile, setBillsFile] = useState<File | null>(null);
+
+  // Other expense breakdown fares
+  const [bikeFare, setBikeFare] = useState("");
+  const [busFare, setBusFare] = useState("");
+  const [trainAirFare, setTrainAirFare] = useState("");
+  const [hotelFare, setHotelFare] = useState("");
+  const [daDays, setDaDays] = useState("");
+  const [conveyanceFare, setConveyanceFare] = useState("");
+  const [postageFare, setPostageFare] = useState("");
+  const [otherFare, setOtherFare] = useState("");
+  const [otherRemarks, setOtherRemarks] = useState("");
+
+  // Fetch company settings (DA rate per day)
+  const { data: companySettings = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/employee/company-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/employee/company-settings", { headers: getHeaders() });
+      if (!r.ok) return {};
+      return r.json();
+    },
+  });
+
+  const daRatePerDay = Number(companySettings["da_rate_per_day"] || "0");
+  const daAmount = daDays && daRatePerDay > 0 ? Number(daDays) * daRatePerDay : 0;
+
+  const bothPhotosUploaded = !!startOdoFile && !!endOdoFile;
 
   const isLocalTravel = expenseType === "LOCAL TRAVEL CLAIM";
 
   const startOdoNum = Number(startOdo) || 0;
   const endOdoNum = Number(endOdo) || 0;
-  const totalDistance = endOdoNum > startOdoNum ? endOdoNum - startOdoNum : 0;
+  const totalDistance = bothPhotosUploaded && endOdoNum > startOdoNum ? endOdoNum - startOdoNum : 0;
   const ratePerKm = Number(amtPerKm) || 1;
   const totalTravelAmt = totalDistance * ratePerKm;
-  const additionalAmt = Number(manualAmount) || 0;
-  const finalAmount = totalTravelAmt > 0 ? totalTravelAmt + additionalAmt : additionalAmt;
+
+  // Sum of all other fares
+  const otherExpensesTotal =
+    (Number(bikeFare) || 0) +
+    (Number(busFare) || 0) +
+    (Number(trainAirFare) || 0) +
+    (Number(hotelFare) || 0) +
+    daAmount +
+    (Number(conveyanceFare) || 0) +
+    (Number(postageFare) || 0) +
+    (Number(otherFare) || 0);
+
+  const finalAmount = totalTravelAmt + otherExpensesTotal;
 
   function handlePhotoChange(
     e: React.ChangeEvent<HTMLInputElement>,
@@ -239,7 +320,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     mutationFn: async () => {
       if (!expenseType) throw new Error("Please select an expense type");
       if (!startOdoFile) throw new Error("Starting odometer photo is required");
-      if (finalAmount <= 0 && !manualAmount) throw new Error("Please enter odometer readings or an amount");
+      if (!endOdoFile) throw new Error("End odometer photo is required");
+      if (finalAmount <= 0) throw new Error("Please enter odometer readings or at least one fare amount");
 
       const fd = new FormData();
       fd.append("title", title.trim() || `${expenseType} - ${employee.fullName}`);
@@ -248,7 +330,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       fd.append("expenseDate", expenseDate);
       if (description) fd.append("description", description);
       if (employee.workLocation) fd.append("workLocation", employee.workLocation);
-      if (expenseCategory) fd.append("expenseCategory", expenseCategory);
 
       // Odometer fields
       if (startOdo) fd.append("startingOdometer", startOdo);
@@ -256,8 +337,20 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       if (totalDistance > 0) fd.append("totalDistance", String(totalDistance));
       fd.append("amountPerKm", amtPerKm || "1");
       if (totalTravelAmt > 0) fd.append("totalTravelAmount", String(totalTravelAmt));
-      if (manualAmount) fd.append("amount", manualAmount);
-      else fd.append("amount", String(finalAmount || 0));
+
+      // Other expense breakdowns
+      if (bikeFare) fd.append("bikeFare", bikeFare);
+      if (busFare) fd.append("busFare", busFare);
+      if (trainAirFare) fd.append("trainAirFare", trainAirFare);
+      if (hotelFare) fd.append("hotelFare", hotelFare);
+      if (daDays) fd.append("daDays", daDays);
+      if (daAmount > 0) fd.append("daAmount", String(daAmount));
+      if (conveyanceFare) fd.append("conveyanceFare", conveyanceFare);
+      if (postageFare) fd.append("postageFare", postageFare);
+      if (otherFare) fd.append("otherFare", otherFare);
+      if (otherRemarks) fd.append("otherRemarks", otherRemarks);
+
+      fd.append("amount", String(finalAmount || 0));
       fd.append("finalAmount", String(finalAmount || 0));
 
       // LOCAL TRAVEL CLAIM fields
@@ -269,8 +362,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       }
 
       // Photos
-      if (startOdoFile) fd.append("startingOdometerPhoto", startOdoFile);
-      if (endOdoFile) fd.append("endOdometerPhoto", endOdoFile);
+      fd.append("startingOdometerPhoto", startOdoFile);
+      fd.append("endOdometerPhoto", endOdoFile);
       if (billsFile) fd.append("billsTicketPhoto", billsFile);
 
       const res = await fetch("/api/employee/expenses", {
@@ -296,12 +389,14 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   function resetForm() {
     setTitle(""); setExpenseType(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
-    setDescription(""); setExpenseCategory(""); setManualAmount("");
+    setDescription("");
     setStartDate(""); setEndDate(""); setModeOfTravel(""); setTravellerName(employee.fullName);
     setStartOdo(""); setEndOdo(""); setAmtPerKm("1");
     setStartOdoFile(null); setStartOdoPreview(null);
     setEndOdoFile(null); setEndOdoPreview(null);
     setBillsFile(null); setBillsPreview(null);
+    setBikeFare(""); setBusFare(""); setTrainAirFare(""); setHotelFare("");
+    setDaDays(""); setConveyanceFare(""); setPostageFare(""); setOtherFare(""); setOtherRemarks("");
   }
 
   const filtered = expenses.filter(e => activeTab === "all" || e.status === activeTab);
@@ -316,6 +411,9 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   // ===== DETAIL VIEW =====
   if (view === "detail" && selected) {
     const exp = selected;
+    const hasOtherFares = exp.bikeFare || exp.busFare || exp.trainAirFare || exp.hotelFare ||
+      exp.daAmount || exp.conveyanceFare || exp.postageFare || exp.otherFare;
+
     return (
       <div className="flex flex-col min-h-full animate-in fade-in">
         <div className="bg-green-700 text-white px-4 pt-5 pb-4 flex items-center gap-3 -mx-4 -mt-4 mb-4">
@@ -330,13 +428,10 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         </div>
 
         <div className="space-y-3 pb-4">
-          {/* Core fields */}
           <div className="border border-gray-100 rounded-md bg-white divide-y divide-gray-100 text-sm">
             {[
               { label: "Category", value: exp.category },
-              { label: "Amount", value: exp.amount ? `Rs. ${Number(exp.amount).toLocaleString()}` : "-" },
               { label: "Expense Date", value: fmtDate(exp.expenseDate) },
-              exp.expenseCategory && { label: "Expense Category", value: exp.expenseCategory },
               exp.modeOfTravel && { label: "Mode of Travel", value: exp.modeOfTravel },
               exp.travellerName && { label: "Traveller", value: exp.travellerName },
               exp.startDate && { label: "Start Date", value: fmtDate(exp.startDate) },
@@ -357,50 +452,70 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 <Gauge className="h-3.5 w-3.5 text-gray-500" />
                 <span className="text-xs font-semibold text-gray-500">Odometer</span>
               </div>
-
               <div className="grid grid-cols-2 gap-3 px-3 py-3">
-                {/* Start odometer */}
                 <div>
                   <p className="text-xs text-gray-400 mb-0.5">Starting Odometer</p>
                   <p className="text-sm font-bold text-gray-700">{exp.startingOdometer || "-"}</p>
                 </div>
-                {/* End odometer */}
                 <div>
                   <p className="text-xs text-gray-400 mb-0.5">End Odometer</p>
                   <p className="text-sm font-bold text-gray-700">{exp.endOdometer || "-"}</p>
                 </div>
               </div>
-
-              {/* Photos */}
               <div className="grid grid-cols-2 gap-3 px-3 pb-3">
                 <div>
                   <p className="text-xs text-gray-400 mb-1">Starting Odometer picture</p>
-                  {exp.startingOdometerPhoto ? (
-                    <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
-                  ) : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
+                  {exp.startingOdometerPhoto
+                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                    : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 mb-1">End Odometer picture</p>
-                  {exp.endOdometerPhoto ? (
-                    <img src={exp.endOdometerPhoto} alt="End odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
-                  ) : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
+                  {exp.endOdometerPhoto
+                    ? <img src={exp.endOdometerPhoto} alt="End odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                    : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
                 </div>
               </div>
-
-              {/* Calculated values */}
-              <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+              <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
                 <div className="px-3 py-2">
                   <p className="text-[10px] text-gray-400">Total Distance</p>
                   <p className="text-xs font-bold text-gray-700">{exp.totalDistance ? `${exp.totalDistance} km` : "-"}</p>
                 </div>
                 <div className="px-3 py-2">
-                  <p className="text-[10px] text-gray-400">Amount/Km</p>
-                  <p className="text-xs font-bold text-gray-700">Rs. {exp.amountPerKm || "1"}</p>
+                  <p className="text-[10px] text-gray-400">Rate/km</p>
+                  <p className="text-xs font-bold text-gray-700">₹{exp.amountPerKm || "1"}</p>
+                </div>
+                <div className="px-3 py-2 bg-green-50">
+                  <p className="text-[10px] text-gray-400">Travel Amt</p>
+                  <p className="text-xs font-bold text-green-700">₹{exp.totalTravelAmount ? Number(exp.totalTravelAmount).toLocaleString() : "-"}</p>
                 </div>
               </div>
-              <div className="px-3 py-2 border-t border-gray-100 bg-green-50">
-                <p className="text-[10px] text-gray-400">Total Travel Amount</p>
-                <p className="text-sm font-bold text-green-700">Rs. {exp.totalTravelAmount ? Number(exp.totalTravelAmount).toLocaleString() : "-"}</p>
+            </div>
+          )}
+
+          {/* Other expense breakdown */}
+          {hasOtherFares && (
+            <div className="border border-gray-100 rounded-md bg-white overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                <span className="text-xs font-semibold text-gray-500">Other Expenses Breakdown</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {[
+                  { label: "Bike", val: exp.bikeFare },
+                  { label: "Bus", val: exp.busFare },
+                  { label: "Train / Air", val: exp.trainAirFare },
+                  { label: "Hotel", val: exp.hotelFare },
+                  { label: "D.A.", val: exp.daAmount, extra: exp.daDays ? `(${exp.daDays} days)` : "" },
+                  { label: "Conveyance on Tour", val: exp.conveyanceFare },
+                  { label: "Postage", val: exp.postageFare },
+                  { label: "Other", val: exp.otherFare, extra: exp.otherRemarks ? `— ${exp.otherRemarks}` : "" },
+                ].filter(r => r.val && Number(r.val) > 0).map(r => (
+                  <div key={r.label} className="flex items-center px-3 py-2 gap-2">
+                    <span className="text-xs text-gray-400 w-32 shrink-0">{r.label}</span>
+                    <span className="text-xs font-semibold text-gray-700">₹{Number(r.val).toLocaleString()}</span>
+                    {r.extra && <span className="text-[10px] text-gray-400">{r.extra}</span>}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -409,21 +524,20 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           <div className="border border-gray-100 rounded-md bg-white divide-y divide-gray-100">
             <div className="flex items-center px-3 py-2.5 gap-3">
               <span className="text-xs text-gray-400 w-32 shrink-0">Amount</span>
-              <span className="text-xs font-medium text-gray-700">Rs. {exp.amount ? Number(exp.amount).toLocaleString() : "-"}</span>
+              <span className="text-xs font-medium text-gray-700">₹{exp.amount ? Number(exp.amount).toLocaleString() : "-"}</span>
             </div>
             <div className="flex items-center px-3 py-2.5 gap-3 bg-green-50">
               <span className="text-xs text-gray-500 w-32 shrink-0 font-semibold">Final Amount</span>
-              <span className="text-sm font-bold text-green-700">Rs. {exp.finalAmount ? Number(exp.finalAmount).toLocaleString() : "-"}</span>
+              <span className="text-sm font-bold text-green-700">₹{exp.finalAmount ? Number(exp.finalAmount).toLocaleString() : "-"}</span>
             </div>
             {exp.approvedAmount && (
               <div className="flex items-center px-3 py-2.5 gap-3">
                 <span className="text-xs text-gray-400 w-32 shrink-0">Approved Amount</span>
-                <span className="text-xs font-bold text-green-700">Rs. {Number(exp.approvedAmount).toLocaleString()}</span>
+                <span className="text-xs font-bold text-green-700">₹{Number(exp.approvedAmount).toLocaleString()}</span>
               </div>
             )}
           </div>
 
-          {/* Bills photo */}
           {exp.billsTicketPhoto && (
             <div className="border border-gray-100 rounded-md bg-white px-3 py-3">
               <p className="text-xs text-gray-400 mb-2 font-medium">Bills / Tickets</p>
@@ -431,7 +545,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
 
-          {/* Description */}
           {exp.description && (
             <div className="border border-gray-100 rounded-md bg-white px-3 py-2.5">
               <p className="text-xs text-gray-400 mb-1">Description</p>
@@ -439,7 +552,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
 
-          {/* Admin comment */}
           {exp.adminComment && (
             <div className="border border-amber-200 rounded-md bg-amber-50 px-3 py-2.5">
               <p className="text-xs font-semibold text-amber-600 mb-1">Admin Comment</p>
@@ -447,7 +559,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
 
-          {/* Status banner */}
           {exp.status === "approved" && (
             <div className="flex items-center justify-center gap-2 text-green-700 text-xs font-semibold bg-green-50 rounded-md border border-green-200 py-3">
               <CheckCircle className="h-4 w-4" />Expense Approved
@@ -459,7 +570,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
 
-          {/* Comment section for pending expenses */}
           {exp.status === "pending" && (
             <ExpenseCommentSection expenseId={exp.id} employeeName={employee.fullName} />
           )}
@@ -525,20 +635,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 )}
               </div>
 
-              {/* Category */}
-              <div className="px-3 py-2.5">
-                <p className="text-[10px] text-gray-400 mb-1">Expense Category *</p>
-                <select
-                  value={expenseCategory}
-                  onChange={e => setExpenseCategory(e.target.value)}
-                  className="w-full text-sm bg-transparent outline-none text-gray-700"
-                  data-testid="select-expense-category"
-                >
-                  <option value="">Select category...</option>
-                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
               {/* Expense Date */}
               <div className="px-3 py-2.5">
                 <p className="text-[10px] text-gray-400 mb-1">Expense Date *</p>
@@ -546,7 +642,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                   className="w-full text-sm bg-transparent outline-none text-gray-700" data-testid="input-expense-date" />
               </div>
 
-              {/* Title */}
+              {/* Description */}
               <div className="px-3 py-2.5">
                 <p className="text-[10px] text-gray-400 mb-1">Description</p>
                 <input value={description} onChange={e => setDescription(e.target.value)}
@@ -599,124 +695,182 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
 
-          {/* ODOMETER SECTION */}
+          {/* ODOMETER SECTION — photos first, then readings unlock */}
           <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
               <Gauge className="h-3.5 w-3.5 text-gray-600" />
-              <span className="text-xs font-semibold text-gray-600">Expense (Odometer)</span>
+              <span className="text-xs font-semibold text-gray-600">Odometer</span>
+              {!bothPhotosUploaded && (
+                <span className="ml-auto text-[10px] text-amber-600 flex items-center gap-1">
+                  <Lock className="h-3 w-3" /> Upload both photos to enter readings
+                </span>
+              )}
             </div>
 
             <div className="px-3 py-3 space-y-4">
-              {/* Starting Odometer */}
+              {/* Step 1: Capture photos */}
               <div>
-                <label className="text-xs text-gray-500 font-medium block mb-1.5">
-                  Starting Odometer <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  type="number"
-                  placeholder="Enter starting km reading"
-                  value={startOdo}
-                  onChange={e => setStartOdo(e.target.value)}
-                  className="text-sm mb-3"
-                  data-testid="input-start-odometer"
-                />
-                <p className="text-xs text-gray-500 font-medium mb-1.5">
-                  Starting Odometer picture <span className="text-red-500">*</span>
+                <p className="text-xs text-gray-500 font-semibold mb-2">Step 1 — Capture Odometer Photos <span className="text-red-500">*</span></p>
+                <div className="flex gap-6">
+                  <div>
+                    <PhotoBox
+                      label="Starting Odometer Photo"
+                      mandatory
+                      preview={startOdoPreview}
+                      onCapture={() => startOdoPhotoRef.current?.click()}
+                      onClear={() => {
+                        setStartOdoFile(null); setStartOdoPreview(null);
+                        setStartOdo(""); setEndOdo("");
+                      }}
+                    />
+                    <input ref={startOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={e => handlePhotoChange(e, setStartOdoFile, setStartOdoPreview)} />
+                  </div>
+                  <div>
+                    <PhotoBox
+                      label="End Odometer Photo"
+                      mandatory
+                      preview={endOdoPreview}
+                      onCapture={() => endOdoPhotoRef.current?.click()}
+                      onClear={() => { setEndOdoFile(null); setEndOdoPreview(null); setEndOdo(""); }}
+                    />
+                    <input ref={endOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={e => handlePhotoChange(e, setEndOdoFile, setEndOdoPreview)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2: Enter readings (only after both photos) */}
+              <div className={!bothPhotosUploaded ? "opacity-50 pointer-events-none select-none" : ""}>
+                <p className="text-xs text-gray-500 font-semibold mb-2 flex items-center gap-1">
+                  Step 2 — Enter Odometer Readings
+                  {!bothPhotosUploaded && <Lock className="h-3 w-3 text-gray-400" />}
                 </p>
-                <OdoPhotoBox
-                  label="Start Odometer"
-                  mandatory
-                  preview={startOdoPreview}
-                  onCapture={() => startOdoPhotoRef.current?.click()}
-                  onClear={() => { setStartOdoFile(null); setStartOdoPreview(null); }}
-                  inputRef={startOdoPhotoRef}
-                />
-                <input
-                  ref={startOdoPhotoRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={e => handlePhotoChange(e, setStartOdoFile, setStartOdoPreview)}
-                />
-              </div>
-
-              {/* End Odometer */}
-              <div>
-                <label className="text-xs text-gray-500 font-medium block mb-1.5">End Odometer</label>
-                <Input
-                  type="number"
-                  placeholder="Please enter number"
-                  value={endOdo}
-                  onChange={e => setEndOdo(e.target.value)}
-                  className="text-sm mb-3"
-                  data-testid="input-end-odometer"
-                />
-                <p className="text-xs text-gray-500 font-medium mb-1.5">End Odometer picture</p>
-                <OdoPhotoBox
-                  label="End Odometer"
-                  preview={endOdoPreview}
-                  onCapture={() => endOdoPhotoRef.current?.click()}
-                  onClear={() => { setEndOdoFile(null); setEndOdoPreview(null); }}
-                  inputRef={endOdoPhotoRef}
-                />
-                <input
-                  ref={endOdoPhotoRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={e => handlePhotoChange(e, setEndOdoFile, setEndOdoPreview)}
-                />
-              </div>
-
-              {/* Computed row */}
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-1">Total Distance</p>
-                  <div className="bg-gray-50 rounded px-2 py-1.5 text-xs font-bold text-gray-700">
-                    {totalDistance > 0 ? `${totalDistance} km` : "-"}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Starting Reading (km)</label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 50000"
+                      value={startOdo}
+                      onChange={e => setStartOdo(e.target.value)}
+                      disabled={!bothPhotosUploaded}
+                      className="text-sm h-9"
+                      data-testid="input-start-odometer"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">End Reading (km)</label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 50120"
+                      value={endOdo}
+                      onChange={e => setEndOdo(e.target.value)}
+                      disabled={!bothPhotosUploaded}
+                      className="text-sm h-9"
+                      data-testid="input-end-odometer"
+                    />
                   </div>
                 </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-1">Amount /Km *</p>
-                  <Input
-                    type="number"
-                    value={amtPerKm}
-                    onChange={e => setAmtPerKm(e.target.value)}
-                    className="text-xs h-8 px-2"
-                    data-testid="input-amt-per-km"
-                  />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-1">Total Travel Amt</p>
-                  <div className={`rounded px-2 py-1.5 text-xs font-bold ${totalTravelAmt > 0 ? "bg-green-50 text-green-700" : "bg-gray-50 text-gray-700"}`}>
-                    {totalTravelAmt > 0 ? `Rs.${totalTravelAmt.toFixed(0)}` : "-"}
-                  </div>
-                </div>
-              </div>
 
-              {/* Amount + Final */}
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-1">Amount</p>
-                  <Input
-                    type="number"
-                    placeholder="Manual amount"
-                    value={manualAmount}
-                    onChange={e => setManualAmount(e.target.value)}
-                    className="text-sm h-9"
-                    data-testid="input-manual-amount"
-                  />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-1">Final Amount</p>
-                  <div className={`rounded-md px-3 py-2 text-sm font-bold border ${finalAmount > 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-400 border-gray-200"}`}>
-                    {finalAmount > 0 ? `Rs. ${finalAmount.toFixed(0)}` : "-"}
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-[10px] text-gray-400 mb-1">Total Distance</p>
+                    <div className="bg-gray-50 rounded px-2 py-1.5 text-xs font-bold text-gray-700">
+                      {totalDistance > 0 ? `${totalDistance} km` : "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-400 mb-1">Amount /Km *</p>
+                    <Input
+                      type="number"
+                      value={amtPerKm}
+                      onChange={e => setAmtPerKm(e.target.value)}
+                      disabled={!bothPhotosUploaded}
+                      className="text-xs h-8 px-2"
+                      data-testid="input-amt-per-km"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-400 mb-1">Travel Amount</p>
+                    <div className={`rounded px-2 py-1.5 text-xs font-bold ${totalTravelAmt > 0 ? "bg-green-50 text-green-700" : "bg-gray-50 text-gray-700"}`}>
+                      {totalTravelAmt > 0 ? `₹${totalTravelAmt.toFixed(0)}` : "-"}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* OTHER EXPENSES BREAKDOWN */}
+          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+              <p className="text-xs font-semibold text-gray-600">Other Expenses Breakdown</p>
+              {daRatePerDay > 0 && (
+                <p className="text-[10px] text-gray-400 mt-0.5">D.A. Rate: ₹{daRatePerDay}/day (admin configured)</p>
+              )}
+            </div>
+
+            <div className="px-3 py-3 space-y-3">
+              <FareRow label="Bike" value={bikeFare} onChange={setBikeFare} />
+              <FareRow label="Bus" value={busFare} onChange={setBusFare} />
+              <FareRow label="Train / Air" value={trainAirFare} onChange={setTrainAirFare} />
+              <FareRow label="Hotel Expenses" value={hotelFare} onChange={setHotelFare} />
+
+              {/* D.A. row — uses admin-configured rate */}
+              <div className="space-y-1 border-t border-gray-100 pt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-600 w-36 shrink-0 font-medium">D.A. (Days)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={daDays}
+                    onChange={e => setDaDays(e.target.value)}
+                    placeholder="No. of days"
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white outline-none focus:ring-1 focus:ring-green-400"
+                  />
+                </div>
+                {daRatePerDay > 0 && daDays && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-36 shrink-0">D.A. Amount</span>
+                    <span className="text-xs font-bold text-green-700">₹{daAmount.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">({daDays} days × ₹{daRatePerDay}/day)</span>
+                  </div>
+                )}
+                {(!daRatePerDay || daRatePerDay === 0) && (
+                  <p className="text-[10px] text-amber-600 ml-[9.5rem]">D.A. rate not configured by admin</p>
+                )}
+              </div>
+
+              <FareRow label="Conveyance on Tour" value={conveyanceFare} onChange={setConveyanceFare} />
+              <FareRow label="Postage" value={postageFare} onChange={setPostageFare} />
+              <FareRow
+                label="Other"
+                value={otherFare}
+                onChange={setOtherFare}
+                remarks={otherRemarks}
+                onRemarksChange={setOtherRemarks}
+              />
+
+              {/* Sub-total of other expenses */}
+              <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
+                <span className="text-xs text-gray-500 font-semibold">Other Expenses Sub-total</span>
+                <span className={`text-sm font-bold ${otherExpensesTotal > 0 ? "text-green-700" : "text-gray-400"}`}>
+                  {otherExpensesTotal > 0 ? `₹${otherExpensesTotal.toFixed(0)}` : "-"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* GRAND TOTAL */}
+          <div className="border border-green-200 rounded-md bg-green-50 px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-green-700 font-semibold">Grand Total</p>
+              <p className="text-[10px] text-green-600">Odometer + Other Expenses</p>
+            </div>
+            <p className={`text-lg font-bold ${finalAmount > 0 ? "text-green-700" : "text-gray-400"}`}>
+              {finalAmount > 0 ? `₹${finalAmount.toFixed(0)}` : "-"}
+            </p>
           </div>
 
           {/* Bills / Tickets */}
@@ -744,11 +898,17 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               onChange={e => handlePhotoChange(e, setBillsFile, setBillsPreview)} />
           </div>
 
-          {/* Warning if photo missing */}
+          {/* Warnings */}
           {expenseType && !startOdoFile && (
             <div className="flex items-start gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-md">
               <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">Please capture the starting odometer photo to proceed.</p>
+              <p className="text-xs text-amber-700">Please capture the starting odometer photo first.</p>
+            </div>
+          )}
+          {startOdoFile && !endOdoFile && (
+            <div className="flex items-start gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-md">
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">Please capture the end odometer photo to unlock readings entry.</p>
             </div>
           )}
         </div>
@@ -756,7 +916,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-green-700 hover:bg-green-800 font-bold py-3"
-            disabled={!expenseType || !startOdoFile || createMutation.isPending || finalAmount <= 0}
+            disabled={!expenseType || !startOdoFile || !endOdoFile || createMutation.isPending || finalAmount <= 0}
             onClick={() => createMutation.mutate()}
             data-testid="button-submit-expense"
           >
@@ -778,7 +938,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   return (
     <div className="flex flex-col h-full animate-in fade-in">
-      {/* Tab bar */}
       <div className="flex border-b border-gray-200 mb-3 -mx-4 px-2">
         {TABS.map(tab => (
           <button
@@ -797,7 +956,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         ))}
       </div>
 
-      {/* Expense cards */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-20">
         {isLoading ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-green-600" /></div>
@@ -817,42 +975,27 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               onClick={() => { setSelected(exp); setView("detail"); }}
               data-testid={`card-expense-${exp.id}`}
             >
-              <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2">
-                <div className="flex-1">
-                  <p className="text-[11px] text-green-700 font-semibold">{exp.expenseCode}</p>
-                  <p className="text-sm font-bold text-gray-800 leading-tight">{exp.title}</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{exp.type}</p>
+              <div className="px-3 py-2.5 flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{exp.title || exp.expenseCode}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{exp.expenseCode} · {fmtDate(exp.expenseDate)}</p>
                 </div>
                 <StatusPill status={exp.status} />
               </div>
-              <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
-                <div className="px-2 py-1.5 text-center">
-                  <p className="text-[10px] text-gray-400">Distance</p>
-                  <p className="text-xs font-bold text-gray-600">{exp.totalDistance ? `${exp.totalDistance}km` : "-"}</p>
-                </div>
-                <div className="px-2 py-1.5 text-center">
-                  <p className="text-[10px] text-gray-400">Travel Amt</p>
-                  <p className="text-xs font-bold text-gray-600">{exp.totalTravelAmount ? `Rs.${Number(exp.totalTravelAmount).toFixed(0)}` : "-"}</p>
-                </div>
-                <div className="px-2 py-1.5 text-center">
-                  <p className="text-[10px] text-gray-400">Final</p>
-                  <p className="text-xs font-bold text-green-700">Rs.{Number(exp.finalAmount || exp.amount || 0).toLocaleString()}</p>
-                </div>
+              <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100">
+                <span className="text-[10px] text-gray-400">{exp.type}</span>
+                <span className="text-sm font-bold text-green-700">
+                  ₹{exp.finalAmount ? Number(exp.finalAmount).toLocaleString() : Number(exp.amount || 0).toLocaleString()}
+                </span>
               </div>
-              {exp.adminComment && (
-                <div className="px-3 py-1.5 border-t border-amber-100 bg-amber-50">
-                  <p className="text-[11px] text-amber-700 truncate">{exp.adminComment}</p>
-                </div>
-              )}
             </div>
           ))
         )}
       </div>
 
-      {/* FAB */}
       <button
         onClick={() => setView("create")}
-        className="fixed bottom-20 right-4 w-14 h-14 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-xl flex items-center justify-center z-50 transition-transform active:scale-95"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-green-700 text-white rounded-full shadow-xl flex items-center justify-center hover:bg-green-800 active:scale-95 transition-all z-10"
         data-testid="button-new-expense"
       >
         <Plus className="h-7 w-7" />

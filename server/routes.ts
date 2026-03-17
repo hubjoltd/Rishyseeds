@@ -3831,6 +3831,28 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // === COMPANY SETTINGS ===
+  app.get("/api/company-settings", async (req: any, res) => {
+    try {
+      const settings = await storage.getAllCompanySettings();
+      res.json(settings);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/company-settings/:key", async (req: any, res) => {
+    try {
+      await storage.setCompanySetting(req.params.key, String(req.body.value ?? ""));
+      res.json({ key: req.params.key, value: req.body.value });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/employee/company-settings", async (req: any, res) => {
+    try {
+      const settings = await storage.getAllCompanySettings();
+      res.json(settings);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 

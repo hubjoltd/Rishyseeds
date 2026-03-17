@@ -584,6 +584,17 @@ export const expenses = pgTable("expenses", {
   travellerName: text("traveller_name"),
   billsTicketPhoto: text("bills_ticket_photo"),
   createdAt: timestamp("created_at").defaultNow(),
+  // Other expense breakdown
+  bikeFare: decimal("bike_fare"),
+  busFare: decimal("bus_fare"),
+  trainAirFare: decimal("train_air_fare"),
+  hotelFare: decimal("hotel_fare"),
+  daAmount: decimal("da_amount"),
+  daDays: decimal("da_days"),
+  conveyanceFare: decimal("conveyance_fare"),
+  postageFare: decimal("postage_fare"),
+  otherFare: decimal("other_fare"),
+  otherRemarks: text("other_remarks"),
 });
 
 export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true });
@@ -736,7 +747,15 @@ export const insertEmployeeConfigSchema = createInsertSchema(employeeConfigs).om
 export type EmployeeConfig = typeof employeeConfigs.$inferSelect;
 export type InsertEmployeeConfig = z.infer<typeof insertEmployeeConfigSchema>;
 
-// === PUSH SUBSCRIPTIONS ===
+// === COMPANY SETTINGS ===
+export const companySettings = pgTable("company_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type CompanySetting = typeof companySettings.$inferSelect;
+
 export const pushSubscriptions = pgTable("push_subscriptions", {
   id: serial("id").primaryKey(),
   employeeDbId: integer("employee_db_id").notNull(),

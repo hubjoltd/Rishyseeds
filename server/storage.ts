@@ -9,7 +9,7 @@ import {
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   employeeLocations,
-  leaves, leaveBalances, holidays, chatMessages, employeeConfigs, pushSubscriptions,
+  leaves, leaveBalances, holidays, chatMessages, employeeConfigs, pushSubscriptions, companySettings,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -262,6 +262,10 @@ export interface IStorage {
   savePushSubscription(data: { employeeDbId: number; endpoint: string; p256dh: string; auth: string }): Promise<any>;
   getPushSubscriptionsByEmployee(employeeDbId: number): Promise<any[]>;
   deletePushSubscription(endpoint: string): Promise<void>;
+  // Company Settings
+  getCompanySetting(key: string): Promise<string | null>;
+  setCompanySetting(key: string, value: string): Promise<void>;
+  getAllCompanySettings(): Promise<Record<string, string>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1276,6 +1280,27 @@ export class DatabaseStorage implements IStorage {
 
   async deletePushSubscription(endpoint: string): Promise<void> {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  }
+
+  async getCompanySetting(key: string): Promise<string | null> {
+    const [row] = await db.select().from(companySettings).where(eq(companySettings.key, key));
+    return row ? row.value : null;
+  }
+
+  async setCompanySetting(key: string, value: string): Promise<void> {
+    const existing = await this.getCompanySetting(key);
+    if (existing !== null) {
+      await db.update(companySettings).set({ value, updatedAt: new Date() }).where(eq(companySettings.key, key));
+    } else {
+      await db.insert(companySettings).values({ key, value });
+    }
+  }
+
+  async getAllCompanySettings(): Promise<Record<string, string>> {
+    const rows = await db.select().from(companySettings);
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.key] = row.value;
+    return result;
   }
 }
 
