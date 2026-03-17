@@ -571,12 +571,40 @@ export default function EmployeeProfile() {
     });
   });
 
-  const allTimelineEvents: TimelineEvent[] = [
+  type GapTravel = { type: "gap_travel"; startTime: string; endTime: string };
+
+  const rawTimelineEvents: TimelineEvent[] = [
     ...(punchInEvent ? [punchInEvent] : []),
     ...filteredGpsSegments,
     ...liveDateVisitEvents,
     ...(punchOutEvent ? [punchOutEvent] : []),
   ].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Helper: get the end-time of an event (for gap detection)
+  const eventEndTime = (e: TimelineEvent): string | null => {
+    if (e.type === "punch_in") return e.startTime;
+    if (e.type === "punch_out") return e.startTime;
+    if (e.type === "travelled" || e.type === "stoppage") return (e as any).endTime ?? null;
+    if (e.type === "visit") return e.endTime ?? e.startTime;
+    return null;
+  };
+
+  // Fill gaps > 90s between consecutive events with a synthesised "Travelled" entry
+  const allTimelineEvents: (TimelineEvent | GapTravel)[] = [];
+  for (let i = 0; i < rawTimelineEvents.length; i++) {
+    const ev = rawTimelineEvents[i];
+    allTimelineEvents.push(ev);
+    if (i < rawTimelineEvents.length - 1) {
+      const endT = eventEndTime(ev);
+      const nextStartT = rawTimelineEvents[i + 1].startTime;
+      if (endT) {
+        const gapMs = new Date(nextStartT).getTime() - new Date(endT).getTime();
+        if (gapMs > 90 * 1000) {
+          allTimelineEvents.push({ type: "gap_travel", startTime: endT, endTime: nextStartT });
+        }
+      }
+    }
+  }
 
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
@@ -746,6 +774,24 @@ export default function EmployeeProfile() {
                         {allTimelineEvents.map((seg, idx) => {
                           const startT = new Date(seg.startTime);
                           const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                          if (seg.type === "gap_travel") {
+                            const gapEndT = new Date((seg as any).endTime);
+                            const gapDur = formatDuration(startT, gapEndT);
+                            return (
+                              <div key={idx} className="flex items-start gap-3 py-1.5">
+                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                  <Navigation className="w-3.5 h-3.5 text-primary mt-0.5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-primary">Travelled</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground">
+                                    {fmtTime(startT)}–{fmtTime(gapEndT)} <span className="text-muted-foreground/60">({gapDur})</span>
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          }
 
                           if (seg.type === "punch_in") {
                             return (
