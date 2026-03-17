@@ -3411,12 +3411,12 @@ export async function registerRoutes(
     }
   });
 
-  // Employee portal customers list
+  // Employee portal customers list — only shows customers added by this employee
   app.get("/api/employee/customers", async (req: any, res) => {
     try {
       const empId = req.employeeId;
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
-      const list = await storage.getCustomers();
+      const list = await storage.getCustomersByEmployee(empId);
       res.json(list);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to fetch customers" });
