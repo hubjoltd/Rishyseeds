@@ -3874,4 +3874,11 @@ async function seedDatabase() {
   await seedProductsAndWarehouses();
   await seedRoles();
   await seedEmployees();
+
+  // Seed default DA rate if not already set
+  const daRate = await storage.getCompanySetting("da_rate_per_day");
+  if (!daRate || daRate === "0") {
+    await storage.setCompanySetting("da_rate_per_day", "150");
+    console.log("Seeded default DA rate: ₹150/day");
+  }
 }
