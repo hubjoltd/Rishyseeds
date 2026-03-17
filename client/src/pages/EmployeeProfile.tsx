@@ -413,6 +413,17 @@ export default function EmployeeProfile() {
     refetchInterval: 30000,
   });
 
+  const { data: liveCheckins = [], refetch: refetchCheckins } = useQuery<any[]>({
+    queryKey: ["/api/employees", empId, "checkins", liveDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${empId}/checkins?date=${liveDate}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId && activeTab === "live",
+    refetchInterval: 30000,
+  });
+
   const { data: attendanceRecords = [], isLoading: attLoading } = useQuery<any[]>({
     queryKey: ["/api/employees", empId, "attendance"],
     queryFn: async () => {
@@ -489,8 +500,7 @@ export default function EmployeeProfile() {
 
   const expenses = trips.filter(t => t.expenseAmount && Number(t.expenseAmount) > 0);
 
-  // Build visit events (customer check-in/check-out) for the selected live date
-  // These are treated as stoppages in the timeline
+  // Build visit events from customer_checkins table (real check-in/check-out data from employee app)
   type VisitStoppage = {
     type: "visit";
     startTime: string;
@@ -500,21 +510,15 @@ export default function EmployeeProfile() {
     lat: number | null;
     lng: number | null;
   };
-  const liveDateVisitEvents: VisitStoppage[] = trips
-    .filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === liveDate)
-    .flatMap(t =>
-      (t.visits || [])
-        .filter(v => v.punchInTime)
-        .map(v => ({
-          type: "visit" as const,
-          startTime: v.punchInTime as unknown as string,
-          endTime: v.punchOutTime as unknown as string | null,
-          customerName: (v as any).customerName || "Customer Visit",
-          locationName: (v as any).punchInLocationName || (v as any).punchOutLocationName || null,
-          lat: (v as any).punchInLatitude ? Number((v as any).punchInLatitude) : null,
-          lng: (v as any).punchInLongitude ? Number((v as any).punchInLongitude) : null,
-        }))
-    );
+  const liveDateVisitEvents: VisitStoppage[] = liveCheckins.map((c: any) => ({
+    type: "visit" as const,
+    startTime: c.checkedInAt,
+    endTime: c.checkedOutAt || null,
+    customerName: c.customerName || "Customer Visit",
+    locationName: c.locationName || null,
+    lat: c.locationLatitude ? Number(c.locationLatitude) : null,
+    lng: c.locationLongitude ? Number(c.locationLongitude) : null,
+  }));
 
   type GpsSegment =
     | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
@@ -733,7 +737,7 @@ export default function EmployeeProfile() {
               <div className="flex items-center gap-4 ml-auto">
                 <div className="text-center">
                   <p className="text-xs text-muted-foreground">Completed</p>
-                  <p className="text-sm font-bold text-primary">{locationData?.stoppageCount ?? 0}</p>
+                  <p className="text-sm font-bold text-primary">{liveCheckins.length > 0 ? liveCheckins.length : (locationData?.stoppageCount ?? 0)}</p>
                 </div>
                 <div className="w-px h-8 bg-border" />
                 <div className="text-center">

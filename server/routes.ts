@@ -3528,6 +3528,18 @@ export async function registerRoutes(
     }
   });
 
+  // Admin fetches customer check-ins for an employee on a given date
+  app.get("/api/employees/:id/checkins", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const rows = await storage.getCustomerCheckinsByEmployeeAndDate(empId, date);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch checkins" });
+    }
+  });
+
   // Admin fetches location history for an employee on a given date, with stoppages computed
   app.get("/api/employees/:id/locations", checkPermission('employees', 'view'), async (req, res) => {
     try {

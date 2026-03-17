@@ -1076,6 +1076,18 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getCustomerCheckinsByEmployeeAndDate(employeeDbId: number, date: string): Promise<CustomerCheckin[]> {
+    const startOfDay = new Date(date + "T00:00:00.000Z");
+    const endOfDay = new Date(date + "T23:59:59.999Z");
+    return db.select().from(customerCheckins)
+      .where(and(
+        eq(customerCheckins.employeeDbId, employeeDbId),
+        gte(customerCheckins.checkedInAt, startOfDay),
+        lte(customerCheckins.checkedInAt, endOfDay)
+      ))
+      .orderBy(customerCheckins.checkedInAt);
+  }
+
   // Tasks
   async getTasks(): Promise<Task[]> {
     return db.select().from(tasks).orderBy(desc(tasks.createdAt));
