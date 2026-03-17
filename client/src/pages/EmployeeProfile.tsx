@@ -149,7 +149,6 @@ interface LiveMapSegment {
 interface VisitStop { lat: number; lng: number; customerName: string; locationName: string | null; durationStr: string }
 
 function LiveMap({
-  trips,
   locationPoints = [],
   segments = [],
   visitStops = [],
@@ -158,7 +157,6 @@ function LiveMap({
   punchOutLat,
   punchOutLng,
 }: {
-  trips: TripWithVisits[];
   locationPoints?: any[];
   segments?: LiveMapSegment[];
   visitStops?: VisitStop[];
@@ -172,120 +170,150 @@ function LiveMap({
 
   useEffect(() => {
     if (!mapRef.current) return;
-    if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
+
+    // Destroy old instance
+    if (mapInstanceRef.current) {
+      try { mapInstanceRef.current.remove(); } catch (_) {}
+      mapInstanceRef.current = null;
+    }
 
     const gpsPoints: [number, number][] = locationPoints
       .filter(lp => lp.latitude && lp.longitude)
-      .map(lp => [Number(lp.latitude), Number(lp.longitude)]);
+      .map(lp => [Number(lp.latitude), Number(lp.longitude)] as [number, number]);
 
-    const today = new Date().toDateString();
-    const todayTrips = trips.filter(t => t.startTime && new Date(t.startTime).toDateString() === today);
-    const allTrips = todayTrips.length > 0 ? todayTrips : trips.slice(0, 1);
-    const tripPoints: [number, number][] = [];
-    allTrips.forEach(trip => {
-      if (trip.startLatitude && trip.startLongitude)
-        tripPoints.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
-      (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) tripPoints.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
-        if (v.punchOutLatitude && v.punchOutLongitude) tripPoints.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
-      });
-      if (trip.endLatitude && trip.endLongitude)
-        tripPoints.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
-    });
-
-    const points = gpsPoints.length > 0 ? gpsPoints : tripPoints;
+    // Collect all lat/lng candidates for auto-fit
+    const allCoords: [number, number][] = [...gpsPoints];
+    visitStops.filter(v => v.lat && v.lng).forEach(v => allCoords.push([v.lat, v.lng]));
+    if (punchInLat && punchInLng) allCoords.push([punchInLat, punchInLng]);
+    if (punchOutLat && punchOutLng) allCoords.push([punchOutLat, punchOutLng]);
 
     const defaultCenter: [number, number] = [17.4, 78.5];
-    const initialCenter = points.length > 0 ? points[points.length - 1] : defaultCenter;
-    const map = L.map(mapRef.current).setView(initialCenter, 13);
+    const initialCenter: [number, number] = allCoords.length > 0 ? allCoords[allCoords.length - 1] : defaultCenter;
+
+    const map = L.map(mapRef.current, { zoomControl: true }).setView(initialCenter, 14);
     mapInstanceRef.current = map;
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 }).addTo(map);
 
-    if (points.length > 0) {
-      const pl = L.polyline(points, { color: "#1d4ed8", weight: 4, opacity: 0.85 }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
 
-      const firstIcon = L.divIcon({
-        className: "",
-        html: `<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
-        iconSize: [14, 14], iconAnchor: [7, 7],
-      });
-      L.marker(points[0], { icon: firstIcon }).addTo(map).bindPopup("<b>Start Point</b>");
-
-      const lastPt = points[points.length - 1];
-      const lastIcon = L.divIcon({
-        className: "",
-        html: `<div style="position:relative;width:20px;height:20px">
-          <div style="position:absolute;inset:0;background:rgba(37,99,235,0.25);border-radius:50%;animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite"></div>
-          <div style="position:absolute;inset:3px;background:#2563eb;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(37,99,235,0.6)"></div>
-        </div>
-        <style>@keyframes ping{75%,100%{transform:scale(2);opacity:0}}</style>`,
-        iconSize: [20, 20], iconAnchor: [10, 10],
-      });
-      L.marker(lastPt, { icon: lastIcon }).addTo(map).bindPopup("<b>Current Location</b>");
-
-      if (points.length > 1) map.fitBounds(pl.getBounds().pad(0.2));
+    // — GPS route polyline (blue) —
+    if (gpsPoints.length > 1) {
+      L.polyline(gpsPoints, { color: "#2563eb", weight: 4, opacity: 0.85, dashArray: undefined }).addTo(map);
     }
 
+    // — GPS stoppage dots (non-visit) —
     segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
       const mins = Math.floor((s.durationSecs || 0) / 60);
       const secs = Math.round((s.durationSecs || 0) % 60);
       const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-      const stopIcon = L.divIcon({
-        className: "",
-        html: `<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(220,38,38,0.6)"></div>`,
-        iconSize: [12, 12], iconAnchor: [6, 6],
-      });
-      L.marker([s.lat!, s.lng!], { icon: stopIcon })
-        .addTo(map)
-        .bindPopup(`<b>Stoppage ${dur}</b><br/>${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}`);
+      L.circleMarker([s.lat!, s.lng!], {
+        radius: 7, color: "#dc2626", fillColor: "#dc2626", fillOpacity: 1, weight: 2,
+      }).addTo(map).bindPopup(`<b>Stoppage ${dur}</b>`);
     });
 
-    visitStops.filter(v => v.lat && v.lng).forEach(v => {
-      const stopIcon = L.divIcon({
+    // — Numbered visit stoppage markers —
+    visitStops.filter(v => v.lat && v.lng).forEach((v, i) => {
+      const num = i + 1;
+      const loc = v.locationName || "";
+      const icon = L.divIcon({
         className: "",
-        html: `<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(220,38,38,0.6)"></div>`,
-        iconSize: [12, 12], iconAnchor: [6, 6],
+        html: `<div style="background:#dc2626;color:white;font-size:11px;font-weight:700;width:26px;height:26px;border-radius:50%;border:2.5px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(220,38,38,0.5);line-height:1">${num}</div>`,
+        iconSize: [26, 26], iconAnchor: [13, 13],
       });
-      const loc = v.locationName || `${v.lat.toFixed(5)}, ${v.lng.toFixed(5)}`;
-      L.marker([v.lat, v.lng], { icon: stopIcon })
+      L.marker([v.lat, v.lng], { icon })
         .addTo(map)
-        .bindPopup(`<div style="font-family:sans-serif;font-size:12px"><b>Stoppage ${v.durationStr}</b><div style="color:#555;margin-top:3px">${v.customerName}</div><div style="color:#888;font-size:11px;margin-top:2px">${loc}</div></div>`);
+        .bindPopup(
+          `<div style="font-family:sans-serif;min-width:140px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:3px">${v.customerName}</div>
+            <div style="color:#dc2626;font-size:11px;margin-bottom:2px">Stoppage ${v.durationStr}</div>
+            ${loc ? `<div style="color:#666;font-size:11px">${loc}</div>` : ""}
+          </div>`
+        );
     });
 
+    // — Current location (pulsing blue dot — last GPS point) —
+    if (gpsPoints.length > 0) {
+      const lastPt = gpsPoints[gpsPoints.length - 1];
+      const curIcon = L.divIcon({
+        className: "",
+        html: `<div style="position:relative;width:22px;height:22px">
+          <div style="position:absolute;inset:0;background:rgba(37,99,235,0.3);border-radius:50%;animation:gpsPing 1.6s ease-out infinite"></div>
+          <div style="position:absolute;inset:4px;background:#2563eb;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(37,99,235,0.7)"></div>
+        </div>
+        <style>@keyframes gpsPing{0%{transform:scale(1);opacity:0.8}100%{transform:scale(2.4);opacity:0}}</style>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
+      });
+      L.marker(lastPt, { icon: curIcon }).addTo(map).bindPopup("<b>Current Location</b>");
+    }
+
+    // — Punch In badge (green) —
     if (punchInLat && punchInLng) {
-      const piIcon = L.divIcon({
+      const icon = L.divIcon({
         className: "",
-        html: `<div style="background:#15803d;color:white;font-size:9px;font-weight:700;width:22px;height:22px;border-radius:4px;border:2px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4)">IN</div>`,
-        iconSize: [22, 22], iconAnchor: [11, 11],
+        html: `<div style="background:#16a34a;color:white;font-size:9px;font-weight:800;padding:3px 6px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;letter-spacing:0.5px">IN</div>`,
+        iconSize: [30, 22], iconAnchor: [15, 11],
       });
-      L.marker([punchInLat, punchInLng], { icon: piIcon }).addTo(map).bindPopup("<b>Punch In Location</b>");
+      L.marker([punchInLat, punchInLng], { icon }).addTo(map).bindPopup("<b>Punch In</b>");
     }
 
+    // — Punch Out badge (red) —
     if (punchOutLat && punchOutLng) {
-      const poIcon = L.divIcon({
+      const icon = L.divIcon({
         className: "",
-        html: `<div style="background:#dc2626;color:white;font-size:9px;font-weight:700;width:22px;height:22px;border-radius:4px;border:2px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4)">OUT</div>`,
-        iconSize: [22, 22], iconAnchor: [11, 11],
+        html: `<div style="background:#dc2626;color:white;font-size:9px;font-weight:800;padding:3px 6px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;letter-spacing:0.5px">OUT</div>`,
+        iconSize: [36, 22], iconAnchor: [18, 11],
       });
-      L.marker([punchOutLat, punchOutLng], { icon: poIcon }).addTo(map).bindPopup("<b>Punch Out Location</b>");
+      L.marker([punchOutLat, punchOutLng], { icon }).addTo(map).bindPopup("<b>Punch Out</b>");
     }
 
-    setTimeout(() => map.invalidateSize(), 100);
-    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [trips, locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
+    // Auto-fit to all markers
+    if (allCoords.length > 1) {
+      try { map.fitBounds(L.latLngBounds(allCoords).pad(0.25)); } catch (_) {}
+    }
+
+    // Guard invalidateSize — map may have been removed by cleanup before timer fires
+    const sizeTimer = setTimeout(() => {
+      if (mapInstanceRef.current) {
+        try { mapInstanceRef.current.invalidateSize(); } catch (_) {}
+      }
+    }, 120);
+
+    return () => {
+      clearTimeout(sizeTimer);
+      if (mapInstanceRef.current) {
+        try { mapInstanceRef.current.remove(); } catch (_) {}
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={mapRef} className="h-full w-full" />
-      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5">
-        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
-          <div className="w-3 h-1.5 rounded bg-[#1d4ed8]" /> <span className="text-muted-foreground">Route</span>
+
+      {/* Legend */}
+      <div className="absolute bottom-4 left-3 z-[1000] bg-white/95 border shadow-md rounded-xl px-3 py-2 flex flex-col gap-1.5 text-[11px]">
+        <div className="flex items-center gap-2">
+          <div style={{ width: 18, height: 4, background: "#2563eb", borderRadius: 2 }} />
+          <span className="text-muted-foreground font-medium">Route</span>
         </div>
-        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
-          <div className="w-3 h-3 rounded-full bg-red-600" /> <span className="text-muted-foreground">Stoppage</span>
+        <div className="flex items-center gap-2">
+          <div style={{ width: 16, height: 16, background: "#dc2626", borderRadius: "50%", border: "2px solid white", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 9, fontWeight: 700 }}>1</div>
+          <span className="text-muted-foreground font-medium">Customer Stop</span>
         </div>
-        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
-          <div className="w-3 h-3 rounded-full bg-[#2563eb]" /> <span className="text-muted-foreground">Current</span>
+        <div className="flex items-center gap-2">
+          <div style={{ width: 16, height: 16, background: "#2563eb", borderRadius: "50%", border: "2px solid white" }} />
+          <span className="text-muted-foreground font-medium">Current</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div style={{ background: "#16a34a", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 3 }}>IN</div>
+          <span className="text-muted-foreground font-medium">Punch In</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div style={{ background: "#dc2626", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 3 }}>OUT</div>
+          <span className="text-muted-foreground font-medium">Punch Out</span>
         </div>
       </div>
     </div>
@@ -932,7 +960,6 @@ export default function EmployeeProfile() {
                   </div>
                 ) : (
                   <LiveMap
-                    trips={trips}
                     locationPoints={locationData?.points ?? []}
                     segments={filteredGpsSegments as LiveMapSegment[]}
                     visitStops={liveDateVisitEvents
