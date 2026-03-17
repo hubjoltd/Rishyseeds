@@ -225,8 +225,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [description, setDescription] = useState("");
 
   // LOCAL TRAVEL CLAIM fields
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [modeOfTravel, setModeOfTravel] = useState("");
   const [showModeList, setShowModeList] = useState(false);
   const [travellerName, setTravellerName] = useState(employee.fullName);
@@ -246,18 +246,19 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [billsPreview, setBillsPreview] = useState<string | null>(null);
   const [billsFile, setBillsFile] = useState<File | null>(null);
 
+  // Headquarters
+  const [headquarters, setHeadquarters] = useState("");
+
   // Other expense breakdown fares
-  const [bikeFare, setBikeFare] = useState("");
   const [busFare, setBusFare] = useState("");
   const [trainAirFare, setTrainAirFare] = useState("");
   const [hotelFare, setHotelFare] = useState("");
-  const [daDays, setDaDays] = useState("");
   const [conveyanceFare, setConveyanceFare] = useState("");
   const [postageFare, setPostageFare] = useState("");
   const [otherFare, setOtherFare] = useState("");
   const [otherRemarks, setOtherRemarks] = useState("");
 
-  // Fetch company settings (DA rate per day)
+  // Fetch company settings (DA fixed rate)
   const { data: companySettings = {} } = useQuery<Record<string, string>>({
     queryKey: ["/api/employee/company-settings"],
     queryFn: async () => {
@@ -267,8 +268,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     },
   });
 
-  const daRatePerDay = Number(companySettings["da_rate_per_day"] || "0");
-  const daAmount = daDays && daRatePerDay > 0 ? Number(daDays) * daRatePerDay : 0;
+  const daAmount = Number(companySettings["da_rate_per_day"] || "0");
 
   const bothPhotosUploaded = !!startOdoFile && !!endOdoFile;
 
@@ -282,7 +282,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   // Sum of all other fares
   const otherExpensesTotal =
-    (Number(bikeFare) || 0) +
     (Number(busFare) || 0) +
     (Number(trainAirFare) || 0) +
     (Number(hotelFare) || 0) +
@@ -338,12 +337,13 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       fd.append("amountPerKm", amtPerKm || "1");
       if (totalTravelAmt > 0) fd.append("totalTravelAmount", String(totalTravelAmt));
 
+      // Headquarters
+      if (headquarters) fd.append("headquarters", headquarters);
+
       // Other expense breakdowns
-      if (bikeFare) fd.append("bikeFare", bikeFare);
       if (busFare) fd.append("busFare", busFare);
       if (trainAirFare) fd.append("trainAirFare", trainAirFare);
       if (hotelFare) fd.append("hotelFare", hotelFare);
-      if (daDays) fd.append("daDays", daDays);
       if (daAmount > 0) fd.append("daAmount", String(daAmount));
       if (conveyanceFare) fd.append("conveyanceFare", conveyanceFare);
       if (postageFare) fd.append("postageFare", postageFare);
@@ -389,14 +389,15 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   function resetForm() {
     setTitle(""); setExpenseType(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
-    setDescription("");
-    setStartDate(""); setEndDate(""); setModeOfTravel(""); setTravellerName(employee.fullName);
+    setDescription(""); setHeadquarters("");
+    setStartDate(format(new Date(), "yyyy-MM-dd")); setEndDate(format(new Date(), "yyyy-MM-dd"));
+    setModeOfTravel(""); setTravellerName(employee.fullName);
     setStartOdo(""); setEndOdo(""); setAmtPerKm("1");
     setStartOdoFile(null); setStartOdoPreview(null);
     setEndOdoFile(null); setEndOdoPreview(null);
     setBillsFile(null); setBillsPreview(null);
-    setBikeFare(""); setBusFare(""); setTrainAirFare(""); setHotelFare("");
-    setDaDays(""); setConveyanceFare(""); setPostageFare(""); setOtherFare(""); setOtherRemarks("");
+    setBusFare(""); setTrainAirFare(""); setHotelFare("");
+    setConveyanceFare(""); setPostageFare(""); setOtherFare(""); setOtherRemarks("");
   }
 
   const filtered = expenses.filter(e => activeTab === "all" || e.status === activeTab);
@@ -411,7 +412,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   // ===== DETAIL VIEW =====
   if (view === "detail" && selected) {
     const exp = selected;
-    const hasOtherFares = exp.bikeFare || exp.busFare || exp.trainAirFare || exp.hotelFare ||
+    const hasOtherFares = exp.busFare || exp.trainAirFare || exp.hotelFare ||
       exp.daAmount || exp.conveyanceFare || exp.postageFare || exp.otherFare;
 
     return (
@@ -432,6 +433,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             {[
               { label: "Category", value: exp.category },
               { label: "Expense Date", value: fmtDate(exp.expenseDate) },
+              exp.headquarters && { label: "Headquarters", value: exp.headquarters },
               exp.modeOfTravel && { label: "Mode of Travel", value: exp.modeOfTravel },
               exp.travellerName && { label: "Traveller", value: exp.travellerName },
               exp.startDate && { label: "Start Date", value: fmtDate(exp.startDate) },
@@ -501,11 +503,10 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               </div>
               <div className="divide-y divide-gray-50">
                 {[
-                  { label: "Bike", val: exp.bikeFare },
                   { label: "Bus", val: exp.busFare },
                   { label: "Train / Air", val: exp.trainAirFare },
                   { label: "Hotel", val: exp.hotelFare },
-                  { label: "D.A.", val: exp.daAmount, extra: exp.daDays ? `(${exp.daDays} days)` : "" },
+                  { label: "D.A.", val: exp.daAmount, extra: "(fixed daily wages)" },
                   { label: "Conveyance on Tour", val: exp.conveyanceFare },
                   { label: "Postage", val: exp.postageFare },
                   { label: "Other", val: exp.otherFare, extra: exp.otherRemarks ? `— ${exp.otherRemarks}` : "" },
@@ -640,6 +641,14 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 <p className="text-[10px] text-gray-400 mb-1">Expense Date *</p>
                 <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)}
                   className="w-full text-sm bg-transparent outline-none text-gray-700" data-testid="input-expense-date" />
+              </div>
+
+              {/* Headquarters */}
+              <div className="px-3 py-2.5">
+                <p className="text-[10px] text-gray-400 mb-1">Headquarters</p>
+                <input value={headquarters} onChange={e => setHeadquarters(e.target.value)}
+                  placeholder="Enter headquarters location..."
+                  className="w-full text-sm bg-transparent outline-none text-gray-700" data-testid="input-headquarters" />
               </div>
 
               {/* Description */}
@@ -806,39 +815,24 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
               <p className="text-xs font-semibold text-gray-600">Other Expenses Breakdown</p>
-              {daRatePerDay > 0 && (
-                <p className="text-[10px] text-gray-400 mt-0.5">D.A. Rate: ₹{daRatePerDay}/day (admin configured)</p>
+              {daAmount > 0 && (
+                <p className="text-[10px] text-gray-400 mt-0.5">D.A.: ₹{daAmount} fixed daily wages</p>
               )}
             </div>
 
             <div className="px-3 py-3 space-y-3">
-              <FareRow label="Bike" value={bikeFare} onChange={setBikeFare} />
               <FareRow label="Bus" value={busFare} onChange={setBusFare} />
               <FareRow label="Train / Air" value={trainAirFare} onChange={setTrainAirFare} />
               <FareRow label="Hotel Expenses" value={hotelFare} onChange={setHotelFare} />
 
-              {/* D.A. row — uses admin-configured rate */}
-              <div className="space-y-1 border-t border-gray-100 pt-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600 w-36 shrink-0 font-medium">D.A. (Days)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={daDays}
-                    onChange={e => setDaDays(e.target.value)}
-                    placeholder="No. of days"
-                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white outline-none focus:ring-1 focus:ring-green-400"
-                  />
-                </div>
-                {daRatePerDay > 0 && daDays && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-36 shrink-0">D.A. Amount</span>
-                    <span className="text-xs font-bold text-green-700">₹{daAmount.toFixed(0)}</span>
-                    <span className="text-[10px] text-gray-400">({daDays} days × ₹{daRatePerDay}/day)</span>
-                  </div>
-                )}
-                {(!daRatePerDay || daRatePerDay === 0) && (
-                  <p className="text-[10px] text-amber-600 ml-[9.5rem]">D.A. rate not configured by admin</p>
+              {/* D.A. — fixed rate from admin settings */}
+              <div className="flex items-center gap-2 border-t border-gray-100 pt-3">
+                <span className="text-xs text-gray-600 w-36 shrink-0 font-medium">D.A.</span>
+                <span className={`text-xs font-bold ${daAmount > 0 ? "text-green-700" : "text-gray-400"}`}>
+                  {daAmount > 0 ? `₹${daAmount}` : "Not configured"}
+                </span>
+                {daAmount > 0 && (
+                  <span className="text-[10px] text-gray-400">(fixed daily wages)</span>
                 )}
               </div>
 

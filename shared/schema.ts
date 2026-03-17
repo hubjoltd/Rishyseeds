@@ -585,7 +585,7 @@ export const expenses = pgTable("expenses", {
   billsTicketPhoto: text("bills_ticket_photo"),
   createdAt: timestamp("created_at").defaultNow(),
   // Other expense breakdown
-  bikeFare: decimal("bike_fare"),
+  headquarters: text("headquarters"),
   busFare: decimal("bus_fare"),
   trainAirFare: decimal("train_air_fare"),
   hotelFare: decimal("hotel_fare"),

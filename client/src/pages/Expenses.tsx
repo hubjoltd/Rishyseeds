@@ -906,7 +906,8 @@ export default function Expenses() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [employeeFilter, setEmployeeFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -929,7 +930,8 @@ export default function Expenses() {
         (exp.title || "").toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || exp.status === statusFilter;
       const matchEmployee = employeeFilter === "all" || exp.employeeName === employeeFilter;
-      const matchDate = !dateFilter || (exp.expenseDate || "").startsWith(dateFilter);
+      const d = (exp.expenseDate || "").split("T")[0];
+      const matchDate = (!fromDate || d >= fromDate) && (!toDate || d <= toDate);
       return matchSearch && matchStatus && matchEmployee && matchDate;
     })
     .sort((a, b) => {
@@ -1014,19 +1016,29 @@ export default function Expenses() {
               </SelectContent>
             </Select>
 
-            {/* Date filter */}
-            <Input
-              type="date"
-              className="h-9 w-44"
-              value={dateFilter}
-              onChange={e => { setDateFilter(e.target.value); setPage(1); }}
-              data-testid="input-filter-date"
-            />
-            {dateFilter && (
-              <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground" onClick={() => { setDateFilter(""); setPage(1); }}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            {/* Date range filter */}
+            <div className="flex items-center gap-1">
+              <Input
+                type="date"
+                className="h-9 w-36"
+                value={fromDate}
+                onChange={e => { setFromDate(e.target.value); setPage(1); }}
+                data-testid="input-filter-from-date"
+              />
+              <span className="text-xs text-muted-foreground">–</span>
+              <Input
+                type="date"
+                className="h-9 w-36"
+                value={toDate}
+                onChange={e => { setToDate(e.target.value); setPage(1); }}
+                data-testid="input-filter-to-date"
+              />
+              {(fromDate || toDate) && (
+                <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground" onClick={() => { setFromDate(""); setToDate(""); setPage(1); }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
 
             <span className="text-sm text-muted-foreground ml-auto">{filtered.length} of {expenseList.length} items</span>
           </div>
@@ -1037,6 +1049,7 @@ export default function Expenses() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>Employee</TableHead>
@@ -1046,7 +1059,6 @@ export default function Expenses() {
                   <TableHead>Rate/km</TableHead>
                   <TableHead>Claimed</TableHead>
                   <TableHead>Approved</TableHead>
-                  <TableHead>Created On</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1060,6 +1072,7 @@ export default function Expenses() {
                 ) : (
                   paginatedExpenses.map(exp => (
                     <TableRow key={exp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedId(exp.id)} data-testid={`row-expense-${exp.id}`}>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(exp.expenseDate)}</TableCell>
                       <TableCell>
                         <span className="text-primary text-sm font-medium hover:underline" data-testid={`text-expense-title-${exp.id}`}>
                           {exp.title || exp.expenseCode}
@@ -1084,7 +1097,6 @@ export default function Expenses() {
                       <TableCell className="text-sm font-medium text-primary">{exp.amountPerKm ? `₹${exp.amountPerKm}/km` : "-"}</TableCell>
                       <TableCell className="text-sm">{exp.amount ? `₹${Number(exp.amount).toLocaleString()}` : "-"}</TableCell>
                       <TableCell className="text-sm">{exp.approvedAmount ? `₹${Number(exp.approvedAmount).toLocaleString()}` : "-"}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDT(exp.createdAt)}</TableCell>
                     </TableRow>
                   ))
                 )}
