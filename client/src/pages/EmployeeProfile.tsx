@@ -146,10 +146,13 @@ interface LiveMapSegment {
   lng?: number;
 }
 
+interface VisitStop { lat: number; lng: number; customerName: string; locationName: string | null; durationStr: string }
+
 function LiveMap({
   trips,
   locationPoints = [],
   segments = [],
+  visitStops = [],
   punchInLat,
   punchInLng,
   punchOutLat,
@@ -158,6 +161,7 @@ function LiveMap({
   trips: TripWithVisits[];
   locationPoints?: any[];
   segments?: LiveMapSegment[];
+  visitStops?: VisitStop[];
   punchInLat?: number | null;
   punchInLng?: number | null;
   punchOutLat?: number | null;
@@ -236,6 +240,18 @@ function LiveMap({
         .bindPopup(`<b>Stoppage ${dur}</b><br/>${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}`);
     });
 
+    visitStops.filter(v => v.lat && v.lng).forEach(v => {
+      const stopIcon = L.divIcon({
+        className: "",
+        html: `<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(220,38,38,0.6)"></div>`,
+        iconSize: [12, 12], iconAnchor: [6, 6],
+      });
+      const loc = v.locationName || `${v.lat.toFixed(5)}, ${v.lng.toFixed(5)}`;
+      L.marker([v.lat, v.lng], { icon: stopIcon })
+        .addTo(map)
+        .bindPopup(`<div style="font-family:sans-serif;font-size:12px"><b>Stoppage ${v.durationStr}</b><div style="color:#555;margin-top:3px">${v.customerName}</div><div style="color:#888;font-size:11px;margin-top:2px">${loc}</div></div>`);
+    });
+
     if (punchInLat && punchInLng) {
       const piIcon = L.divIcon({
         className: "",
@@ -256,7 +272,7 @@ function LiveMap({
 
     setTimeout(() => map.invalidateSize(), 100);
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [trips, locationPoints, segments, punchInLat, punchInLng, punchOutLat, punchOutLng]);
+  }, [trips, locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
 
   return (
     <div className="relative h-full w-full">
@@ -473,9 +489,18 @@ export default function EmployeeProfile() {
 
   const expenses = trips.filter(t => t.expenseAmount && Number(t.expenseAmount) > 0);
 
-  // Build visit events from already-fetched trip data for the selected live date
-  type VisitEvent = { type: "visit"; startTime: string; endTime: string | null; customerName: string; locationName: string | null };
-  const liveDateVisitEvents: VisitEvent[] = trips
+  // Build visit events (customer check-in/check-out) for the selected live date
+  // These are treated as stoppages in the timeline
+  type VisitStoppage = {
+    type: "visit";
+    startTime: string;
+    endTime: string | null;
+    customerName: string;
+    locationName: string | null;
+    lat: number | null;
+    lng: number | null;
+  };
+  const liveDateVisitEvents: VisitStoppage[] = trips
     .filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === liveDate)
     .flatMap(t =>
       (t.visits || [])
@@ -486,6 +511,8 @@ export default function EmployeeProfile() {
           endTime: v.punchOutTime as unknown as string | null,
           customerName: (v as any).customerName || "Customer Visit",
           locationName: (v as any).punchInLocationName || (v as any).punchOutLocationName || null,
+          lat: (v as any).punchInLatitude ? Number((v as any).punchInLatitude) : null,
+          lng: (v as any).punchInLongitude ? Number((v as any).punchInLongitude) : null,
         }))
     );
 
@@ -493,7 +520,7 @@ export default function EmployeeProfile() {
     | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
     | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
   type PunchEvent = { type: "punch_in" | "punch_out"; startTime: string; location: string | null; lat: number | null; lng: number | null };
-  type TimelineEvent = GpsSegment | VisitEvent | PunchEvent;
+  type TimelineEvent = GpsSegment | VisitStoppage | PunchEvent;
 
   // Find attendance record for the selected live date
   const liveDateAttendance = attendanceRecords.find((r: any) => {
@@ -501,17 +528,19 @@ export default function EmployeeProfile() {
     try { return format(new Date(r.date), "yyyy-MM-dd") === liveDate; } catch { return false; }
   });
 
+  const makeTimeISO = (hhmm: string, dateStr: string): string => {
+    try {
+      const parts = hhmm.split(":");
+      const d = new Date(dateStr);
+      d.setHours(Number(parts[0]), Number(parts[1]), Number(parts[2] || 0), 0);
+      return d.toISOString();
+    } catch { return new Date(dateStr).toISOString(); }
+  };
+
   const punchInEvent: PunchEvent | null = liveDateAttendance?.checkIn
     ? {
         type: "punch_in",
-        startTime: (() => {
-          try {
-            const [h, m] = String(liveDateAttendance.checkIn).split(":");
-            const d = new Date(liveDate);
-            d.setHours(Number(h), Number(m), 0, 0);
-            return d.toISOString();
-          } catch { return new Date(liveDate).toISOString(); }
-        })(),
+        startTime: makeTimeISO(String(liveDateAttendance.checkIn), liveDate),
         location: liveDateAttendance.checkInLocation || null,
         lat: liveDateAttendance.checkInLatitude ? Number(liveDateAttendance.checkInLatitude) : null,
         lng: liveDateAttendance.checkInLongitude ? Number(liveDateAttendance.checkInLongitude) : null,
@@ -521,23 +550,30 @@ export default function EmployeeProfile() {
   const punchOutEvent: PunchEvent | null = liveDateAttendance?.checkOut
     ? {
         type: "punch_out",
-        startTime: (() => {
-          try {
-            const [h, m] = String(liveDateAttendance.checkOut).split(":");
-            const d = new Date(liveDate);
-            d.setHours(Number(h), Number(m), 0, 0);
-            return d.toISOString();
-          } catch { return new Date(liveDate).toISOString(); }
-        })(),
+        startTime: makeTimeISO(String(liveDateAttendance.checkOut), liveDate),
         location: liveDateAttendance.checkOutLocation || null,
         lat: liveDateAttendance.checkOutLatitude ? Number(liveDateAttendance.checkOutLatitude) : null,
         lng: liveDateAttendance.checkOutLongitude ? Number(liveDateAttendance.checkOutLongitude) : null,
       }
     : null;
 
+  // Remove GPS-computed stoppages that overlap with customer visits (same time window)
+  // so we don't show duplicate stoppages at the same location/time
+  const filteredGpsSegments = (locationData?.segments || [] as GpsSegment[]).filter(seg => {
+    if (seg.type !== "stoppage") return true; // always keep travelled segments
+    const segStart = new Date(seg.startTime).getTime();
+    const segEnd = new Date(seg.endTime).getTime();
+    const OVERLAP_MS = 3 * 60 * 1000; // 3 min tolerance
+    return !liveDateVisitEvents.some(v => {
+      const vStart = new Date(v.startTime).getTime();
+      const vEnd = v.endTime ? new Date(v.endTime).getTime() : Date.now();
+      return segStart <= (vEnd + OVERLAP_MS) && segEnd >= (vStart - OVERLAP_MS);
+    });
+  });
+
   const allTimelineEvents: TimelineEvent[] = [
     ...(punchInEvent ? [punchInEvent] : []),
-    ...(locationData?.segments || []),
+    ...filteredGpsSegments,
     ...liveDateVisitEvents,
     ...(punchOutEvent ? [punchOutEvent] : []),
   ].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -769,18 +805,24 @@ export default function EmployeeProfile() {
 
                           if (seg.type === "visit") {
                             const outT = seg.endTime ? new Date(seg.endTime) : null;
-                            const durStr = outT ? formatDuration(startT, outT) : null;
+                            const durStr = outT ? formatDuration(startT, outT) : "ongoing";
                             return (
                               <div key={idx} className="flex items-start gap-3 py-1.5">
                                 <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <div className="w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow mt-0.5" />
+                                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold text-blue-700">{seg.customerName}</p>
+                                  <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
                                   <p className="text-[10px] font-mono text-muted-foreground">
-                                    {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}{durStr ? ` (${durStr})` : ""}
+                                    {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}
                                   </p>
-                                  {seg.locationName && <p className="text-[10px] text-muted-foreground">{seg.locationName}</p>}
+                                  {seg.locationName && (
+                                    <p className="text-[10px] text-muted-foreground leading-relaxed">{seg.locationName}</p>
+                                  )}
+                                  {!seg.locationName && seg.lat && seg.lng && (
+                                    <StoppageAddress lat={seg.lat} lng={seg.lng} />
+                                  )}
+                                  <p className="text-[10px] text-blue-600 font-medium mt-0.5">{seg.customerName}</p>
                                 </div>
                               </div>
                             );
@@ -842,7 +884,18 @@ export default function EmployeeProfile() {
                   <LiveMap
                     trips={trips}
                     locationPoints={locationData?.points ?? []}
-                    segments={(locationData?.segments ?? []) as LiveMapSegment[]}
+                    segments={filteredGpsSegments as LiveMapSegment[]}
+                    visitStops={liveDateVisitEvents
+                      .filter(v => v.lat && v.lng)
+                      .map(v => ({
+                        lat: v.lat!,
+                        lng: v.lng!,
+                        customerName: v.customerName,
+                        locationName: v.locationName,
+                        durationStr: v.endTime
+                          ? formatDuration(new Date(v.startTime), new Date(v.endTime))
+                          : "ongoing",
+                      }))}
                     punchInLat={punchInEvent?.lat ?? null}
                     punchInLng={punchInEvent?.lng ?? null}
                     punchOutLat={punchOutEvent?.lat ?? null}
