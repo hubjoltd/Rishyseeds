@@ -203,91 +203,78 @@ function LiveMap({
       L.polyline(gpsPoints, { color: "#2563eb", weight: 4, opacity: 0.85, dashArray: undefined }).addTo(map);
     }
 
-    // — GPS stoppage dots (non-visit) —
+    // — GPS stoppage dots —
     segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
       const mins = Math.floor((s.durationSecs || 0) / 60);
       const secs = Math.round((s.durationSecs || 0) % 60);
       const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
       L.circleMarker([s.lat!, s.lng!], {
-        radius: 7, color: "#dc2626", fillColor: "#dc2626", fillOpacity: 1, weight: 2,
-      }).addTo(map).bindPopup(`<b>Stoppage ${dur}</b>`);
+        radius: 6, color: "#fff", fillColor: "#e11d48", fillOpacity: 1, weight: 2,
+      }).addTo(map).bindPopup(`<div style="font-family:sans-serif;font-size:12px"><b>Stoppage</b><br/>${dur}</div>`);
     });
 
-    // — Numbered visit stoppage markers —
-    visitStops.filter(v => v.lat && v.lng).forEach((v, i) => {
-      const num = i + 1;
+    // — Customer visit stoppage dots —
+    visitStops.filter(v => v.lat && v.lng).forEach(v => {
       const loc = v.locationName || "";
-      const icon = L.divIcon({
-        className: "",
-        html: `<div style="background:#dc2626;color:white;font-size:11px;font-weight:700;width:26px;height:26px;border-radius:50%;border:2.5px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(220,38,38,0.5);line-height:1">${num}</div>`,
-        iconSize: [26, 26], iconAnchor: [13, 13],
-      });
-      L.marker([v.lat, v.lng], { icon })
-        .addTo(map)
-        .bindPopup(
-          `<div style="font-family:sans-serif;min-width:140px">
-            <div style="font-weight:700;font-size:13px;margin-bottom:3px">${v.customerName}</div>
-            <div style="color:#dc2626;font-size:11px;margin-bottom:2px">Stoppage ${v.durationStr}</div>
-            ${loc ? `<div style="color:#666;font-size:11px">${loc}</div>` : ""}
-          </div>`
-        );
+      L.circleMarker([v.lat, v.lng], {
+        radius: 7, color: "#fff", fillColor: "#e11d48", fillOpacity: 1, weight: 2.5,
+      }).addTo(map).bindPopup(
+        `<div style="font-family:sans-serif;min-width:150px">
+          <div style="font-weight:700;font-size:13px;margin-bottom:3px">${v.customerName}</div>
+          <div style="color:#e11d48;font-size:11px;margin-bottom:2px">⏱ Stoppage ${v.durationStr}</div>
+          ${loc ? `<div style="color:#555;font-size:11px">${loc}</div>` : ""}
+        </div>`
+      );
     });
 
-    // — Current location: blue teardrop with person icon (TrackOlap style) —
-    if (gpsPoints.length > 0) {
-      const lastPt = gpsPoints[gpsPoints.length - 1];
-      const curIcon = L.divIcon({
-        className: "",
-        html: `
-          <div style="position:relative;width:36px;height:42px">
-            <div style="
-              width:36px;height:36px;
-              background:#1d4ed8;
-              border-radius:50% 50% 50% 0;
-              transform:rotate(-45deg);
-              border:3px solid white;
-              box-shadow:0 3px 10px rgba(29,78,216,0.55);
-              display:flex;align-items:center;justify-content:center;
-            ">
-              <svg style="transform:rotate(45deg);fill:white" width="18" height="18" viewBox="0 0 24 24">
-                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-              </svg>
-            </div>
-            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:6px;height:8px;background:#1d4ed8;clip-path:polygon(0 0,100% 0,50% 100%)"></div>
-          </div>`,
-        iconSize: [36, 42], iconAnchor: [18, 42],
-      });
-      L.marker(lastPt, { icon: curIcon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>Current Location</b>");
-    }
-
-    // — Punch In badge (green flag) —
+    // — Punch In: small green circle marker —
     if (punchInLat && punchInLng) {
       const icon = L.divIcon({
         className: "",
-        html: `<div style="display:flex;flex-direction:column;align-items:center">
-          <div style="background:#16a34a;color:white;font-size:9px;font-weight:800;padding:3px 7px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);letter-spacing:0.5px;white-space:nowrap">
-            ● IN
-          </div>
-          <div style="width:2px;height:6px;background:#16a34a"></div>
+        html: `<div style="display:flex;flex-direction:column;align-items:center;gap:0">
+          <div style="background:#15803d;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 5px rgba(0,0,0,0.3)">IN</div>
+          <div style="width:2px;height:5px;background:#15803d"></div>
+          <div style="width:5px;height:5px;background:#15803d;border-radius:50%"></div>
         </div>`,
-        iconSize: [36, 28], iconAnchor: [18, 28],
+        iconSize: [24, 26], iconAnchor: [12, 26],
       });
       L.marker([punchInLat, punchInLng], { icon }).addTo(map).bindPopup("<b>Punch In</b>");
     }
 
-    // — Punch Out badge (red flag) —
+    // — Punch Out: small red circle marker —
     if (punchOutLat && punchOutLng) {
       const icon = L.divIcon({
         className: "",
-        html: `<div style="display:flex;flex-direction:column;align-items:center">
-          <div style="background:#dc2626;color:white;font-size:9px;font-weight:800;padding:3px 7px;border-radius:5px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);letter-spacing:0.5px;white-space:nowrap">
-            ● OUT
-          </div>
-          <div style="width:2px;height:6px;background:#dc2626"></div>
+        html: `<div style="display:flex;flex-direction:column;align-items:center;gap:0">
+          <div style="background:#dc2626;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 5px rgba(0,0,0,0.3)">OUT</div>
+          <div style="width:2px;height:5px;background:#dc2626"></div>
+          <div style="width:5px;height:5px;background:#dc2626;border-radius:50%"></div>
         </div>`,
-        iconSize: [40, 28], iconAnchor: [20, 28],
+        iconSize: [28, 26], iconAnchor: [14, 26],
       });
       L.marker([punchOutLat, punchOutLng], { icon }).addTo(map).bindPopup("<b>Punch Out</b>");
+    }
+
+    // — Current location: blue circle avatar with person icon (TrackOlap style) —
+    if (gpsPoints.length > 0) {
+      const lastPt = gpsPoints[gpsPoints.length - 1];
+      const curIcon = L.divIcon({
+        className: "",
+        html: `<div style="
+            width:38px;height:38px;
+            background:#1d4ed8;
+            border-radius:50%;
+            border:3px solid white;
+            box-shadow:0 2px 10px rgba(29,78,216,0.6);
+            display:flex;align-items:center;justify-content:center;
+          ">
+          <svg fill="white" width="22" height="22" viewBox="0 0 24 24">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+        </div>`,
+        iconSize: [38, 38], iconAnchor: [19, 19],
+      });
+      L.marker(lastPt, { icon: curIcon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>Current Location</b>");
     }
 
     // Auto-fit to all markers
@@ -314,30 +301,6 @@ function LiveMap({
   return (
     <div className="relative h-full w-full">
       <div ref={mapRef} className="h-full w-full" />
-
-      {/* Legend */}
-      <div className="absolute bottom-4 left-3 z-[1000] bg-white/95 border shadow-md rounded-xl px-3 py-2 flex flex-col gap-1.5 text-[11px]">
-        <div className="flex items-center gap-2">
-          <div style={{ width: 20, height: 4, background: "#1d4ed8", borderRadius: 2 }} />
-          <span className="text-muted-foreground font-medium">Route</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div style={{ width: 16, height: 16, background: "#dc2626", borderRadius: "50%", border: "2px solid white", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 9, fontWeight: 700 }}>1</div>
-          <span className="text-muted-foreground font-medium">Customer Stop</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div style={{ width: 16, height: 16, background: "#1d4ed8", borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", border: "2px solid white" }} />
-          <span className="text-muted-foreground font-medium">Current Location</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div style={{ background: "#16a34a", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>IN</div>
-          <span className="text-muted-foreground font-medium">Punch In</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div style={{ background: "#dc2626", color: "white", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>OUT</div>
-          <span className="text-muted-foreground font-medium">Punch Out</span>
-        </div>
-      </div>
     </div>
   );
 }
