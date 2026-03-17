@@ -110,22 +110,44 @@ function StoppageAddress({ lat, lng }: { lat: number; lng: number }) {
   return <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>;
 }
 
-function LiveMap({ trips, locationPoints = [] }: { trips: TripWithVisits[]; locationPoints?: any[] }) {
+interface LiveMapSegment {
+  type: "travelled" | "stoppage";
+  startTime: string;
+  endTime: string;
+  distanceKm?: number;
+  durationSecs?: number;
+  lat?: number;
+  lng?: number;
+}
+
+function LiveMap({
+  trips,
+  locationPoints = [],
+  segments = [],
+  punchInLat,
+  punchInLng,
+  punchOutLat,
+  punchOutLng,
+}: {
+  trips: TripWithVisits[];
+  locationPoints?: any[];
+  segments?: LiveMapSegment[];
+  punchInLat?: number | null;
+  punchInLng?: number | null;
+  punchOutLat?: number | null;
+  punchOutLng?: number | null;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const [geoError, setGeoError] = useState<string | null>(null);
-  const [geoLoading, setGeoLoading] = useState(true);
 
   useEffect(() => {
     if (!mapRef.current) return;
     if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
 
-    // GPS location points from continuous tracking
     const gpsPoints: [number, number][] = locationPoints
       .filter(lp => lp.latitude && lp.longitude)
       .map(lp => [Number(lp.latitude), Number(lp.longitude)]);
 
-    // Fallback: trip start/end/visit points
     const today = new Date().toDateString();
     const todayTrips = trips.filter(t => t.startTime && new Date(t.startTime).toDateString() === today);
     const allTrips = todayTrips.length > 0 ? todayTrips : trips.slice(0, 1);
@@ -143,87 +165,87 @@ function LiveMap({ trips, locationPoints = [] }: { trips: TripWithVisits[]; loca
 
     const points = gpsPoints.length > 0 ? gpsPoints : tripPoints;
 
-    const defaultCenter: [number, number] = [22.8, 80.0];
+    const defaultCenter: [number, number] = [17.4, 78.5];
     const initialCenter = points.length > 0 ? points[points.length - 1] : defaultCenter;
     const map = L.map(mapRef.current).setView(initialCenter, 13);
     mapInstanceRef.current = map;
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 }).addTo(map);
 
     if (points.length > 0) {
-      const pl = L.polyline(points, { color: "#16a34a", weight: 4, opacity: 0.9 }).addTo(map);
-      // Draw small dots for GPS pings, larger for first/last
-      points.forEach((p, i) => {
-        const isFirst = i === 0;
-        const isLast = i === points.length - 1;
-        const isSpecial = isFirst || isLast;
-        const icon = L.divIcon({
-          className: "",
-          html: `<div style="background:${isLast ? "#15803d" : isFirst ? "#16a34a" : "#4ade80"};width:${isSpecial ? 14 : 7}px;height:${isSpecial ? 14 : 7}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
-          iconSize: [isSpecial ? 14 : 7, isSpecial ? 14 : 7],
-          iconAnchor: [(isSpecial ? 14 : 7) / 2, (isSpecial ? 14 : 7) / 2],
-        });
-        L.marker(p, { icon }).addTo(map);
+      const pl = L.polyline(points, { color: "#1d4ed8", weight: 4, opacity: 0.85 }).addTo(map);
+
+      const firstIcon = L.divIcon({
+        className: "",
+        html: `<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7],
       });
+      L.marker(points[0], { icon: firstIcon }).addTo(map).bindPopup("<b>Start Point</b>");
+
+      const lastPt = points[points.length - 1];
+      const lastIcon = L.divIcon({
+        className: "",
+        html: `<div style="position:relative;width:20px;height:20px">
+          <div style="position:absolute;inset:0;background:rgba(37,99,235,0.25);border-radius:50%;animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite"></div>
+          <div style="position:absolute;inset:3px;background:#2563eb;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(37,99,235,0.6)"></div>
+        </div>
+        <style>@keyframes ping{75%,100%{transform:scale(2);opacity:0}}</style>`,
+        iconSize: [20, 20], iconAnchor: [10, 10],
+      });
+      L.marker(lastPt, { icon: lastIcon }).addTo(map).bindPopup("<b>Current Location</b>");
+
       if (points.length > 1) map.fitBounds(pl.getBounds().pad(0.2));
     }
 
-    // Request admin's current location
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setGeoLoading(false);
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          const adminIcon = L.divIcon({
-            className: "",
-            html: `<div style="width:20px;height:20px;background:#16a34a;border-radius:50%;border:3px solid white;box-shadow:0 0 0 5px rgba(22,163,74,0.25),0 2px 8px rgba(0,0,0,0.3)"></div>`,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10],
-          });
-          if (mapInstanceRef.current) {
-            L.marker([lat, lng], { icon: adminIcon })
-              .bindPopup("<b>Your Location</b><br>Admin current position")
-              .addTo(mapInstanceRef.current);
-            if (points.length === 0) {
-              mapInstanceRef.current.setView([lat, lng], 14);
-            }
-          }
-        },
-        (err) => {
-          setGeoLoading(false);
-          setGeoError(err.code === 1 ? "Location permission denied" : "Could not get location");
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    } else {
-      setGeoLoading(false);
-      setGeoError("Geolocation not supported in this browser");
+    segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
+      const mins = Math.floor((s.durationSecs || 0) / 60);
+      const secs = Math.round((s.durationSecs || 0) % 60);
+      const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      const stopIcon = L.divIcon({
+        className: "",
+        html: `<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(220,38,38,0.6)"></div>`,
+        iconSize: [12, 12], iconAnchor: [6, 6],
+      });
+      L.marker([s.lat!, s.lng!], { icon: stopIcon })
+        .addTo(map)
+        .bindPopup(`<b>Stoppage ${dur}</b><br/>${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}`);
+    });
+
+    if (punchInLat && punchInLng) {
+      const piIcon = L.divIcon({
+        className: "",
+        html: `<div style="background:#15803d;color:white;font-size:9px;font-weight:700;width:22px;height:22px;border-radius:4px;border:2px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4)">IN</div>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
+      });
+      L.marker([punchInLat, punchInLng], { icon: piIcon }).addTo(map).bindPopup("<b>Punch In Location</b>");
+    }
+
+    if (punchOutLat && punchOutLng) {
+      const poIcon = L.divIcon({
+        className: "",
+        html: `<div style="background:#dc2626;color:white;font-size:9px;font-weight:700;width:22px;height:22px;border-radius:4px;border:2px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4)">OUT</div>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
+      });
+      L.marker([punchOutLat, punchOutLng], { icon: poIcon }).addTo(map).bindPopup("<b>Punch Out Location</b>");
     }
 
     setTimeout(() => map.invalidateSize(), 100);
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [trips, locationPoints]);
+  }, [trips, locationPoints, segments, punchInLat, punchInLng, punchOutLat, punchOutLng]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={mapRef} className="h-full w-full" />
-      {geoLoading && (
-        <div className="absolute top-3 right-3 z-[1000] bg-white/90 dark:bg-black/70 text-xs px-3 py-1.5 rounded-full shadow flex items-center gap-1.5">
-          <Loader2 className="h-3 w-3 animate-spin text-green-600" />
-          <span>Getting your location...</span>
+      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5">
+        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
+          <div className="w-3 h-1.5 rounded bg-[#1d4ed8]" /> <span className="text-muted-foreground">Route</span>
         </div>
-      )}
-      {!geoLoading && geoError && (
-        <div className="absolute top-3 right-3 z-[1000] bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-1.5 rounded-full shadow">
-          {geoError}
+        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
+          <div className="w-3 h-3 rounded-full bg-red-600" /> <span className="text-muted-foreground">Stoppage</span>
         </div>
-      )}
-      {!geoLoading && !geoError && (
-        <div className="absolute top-3 right-3 z-[1000] bg-green-50 border border-green-200 text-green-700 text-xs px-3 py-1.5 rounded-full shadow flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          Live
+        <div className="bg-white/95 border shadow-md rounded-lg px-2.5 py-1.5 flex items-center gap-2 text-xs">
+          <div className="w-3 h-3 rounded-full bg-[#2563eb]" /> <span className="text-muted-foreground">Current</span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -403,7 +425,7 @@ export default function EmployeeProfile() {
     return (
       <div className="p-8 text-center text-muted-foreground">
         Employee not found.
-        <Button variant="link" onClick={() => navigate("/employees")}>Back to Employees</Button>
+        <Button variant="ghost" onClick={() => navigate("/employees")}>Back to Employees</Button>
       </div>
     );
   }
@@ -444,14 +466,57 @@ export default function EmployeeProfile() {
   type GpsSegment =
     | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
     | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
-  type TimelineEvent = GpsSegment | VisitEvent;
+  type PunchEvent = { type: "punch_in" | "punch_out"; startTime: string; location: string | null; lat: number | null; lng: number | null };
+  type TimelineEvent = GpsSegment | VisitEvent | PunchEvent;
+
+  // Find attendance record for the selected live date
+  const liveDateAttendance = attendanceRecords.find((r: any) => {
+    if (!r.date) return false;
+    try { return format(new Date(r.date), "yyyy-MM-dd") === liveDate; } catch { return false; }
+  });
+
+  const punchInEvent: PunchEvent | null = liveDateAttendance?.checkIn
+    ? {
+        type: "punch_in",
+        startTime: (() => {
+          try {
+            const [h, m] = String(liveDateAttendance.checkIn).split(":");
+            const d = new Date(liveDate);
+            d.setHours(Number(h), Number(m), 0, 0);
+            return d.toISOString();
+          } catch { return new Date(liveDate).toISOString(); }
+        })(),
+        location: liveDateAttendance.checkInLocation || null,
+        lat: liveDateAttendance.checkInLatitude ? Number(liveDateAttendance.checkInLatitude) : null,
+        lng: liveDateAttendance.checkInLongitude ? Number(liveDateAttendance.checkInLongitude) : null,
+      }
+    : null;
+
+  const punchOutEvent: PunchEvent | null = liveDateAttendance?.checkOut
+    ? {
+        type: "punch_out",
+        startTime: (() => {
+          try {
+            const [h, m] = String(liveDateAttendance.checkOut).split(":");
+            const d = new Date(liveDate);
+            d.setHours(Number(h), Number(m), 0, 0);
+            return d.toISOString();
+          } catch { return new Date(liveDate).toISOString(); }
+        })(),
+        location: liveDateAttendance.checkOutLocation || null,
+        lat: liveDateAttendance.checkOutLatitude ? Number(liveDateAttendance.checkOutLatitude) : null,
+        lng: liveDateAttendance.checkOutLongitude ? Number(liveDateAttendance.checkOutLongitude) : null,
+      }
+    : null;
 
   const allTimelineEvents: TimelineEvent[] = [
+    ...(punchInEvent ? [punchInEvent] : []),
     ...(locationData?.segments || []),
     ...liveDateVisitEvents,
+    ...(punchOutEvent ? [punchOutEvent] : []),
   ].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  const hasTimeline = allTimelineEvents.length > 0;
+  const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
   const playbackKm = playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
@@ -551,16 +616,15 @@ export default function EmployeeProfile() {
 
       <div className="p-4 md:p-6">
         {activeTab === "live" && (
-          <div className="flex gap-4 flex-wrap md:flex-nowrap">
-            {/* LEFT: Stoppage timeline */}
-            <div className="w-full md:w-72 shrink-0 space-y-3">
-              {/* Date picker + refresh */}
-              <div className="bg-card border rounded-lg p-3 flex items-center gap-2">
+          <div className="space-y-3">
+            {/* Top bar: date picker + punch status + stats */}
+            <div className="bg-card border rounded-xl p-3 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
                 <Input
                   type="date"
                   value={liveDate}
                   onChange={(e) => setLiveDate(e.target.value)}
-                  className="h-8 text-sm flex-1"
+                  className="h-8 text-sm w-36"
                   data-testid="input-live-date"
                 />
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => refetchLocations()} data-testid="button-refresh-locations">
@@ -568,130 +632,193 @@ export default function EmployeeProfile() {
                 </Button>
               </div>
 
-              {/* Summary stats */}
-              <div className="bg-card border rounded-lg p-3">
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-muted/50 rounded-lg p-2">
-                    <p className="text-sm font-bold text-primary">{(locationData?.totalKm ?? 0).toFixed(1)}</p>
-                    <p className="text-[10px] text-muted-foreground">KM</p>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-2">
-                    <p className="text-sm font-bold text-amber-600">{locationData?.stoppageCount ?? 0}</p>
-                    <p className="text-[10px] text-muted-foreground">Stops</p>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-2">
-                    <p className="text-sm font-bold text-primary">{locationData?.points?.length ?? 0}</p>
-                    <p className="text-[10px] text-muted-foreground">Pings</p>
-                  </div>
+              {/* Punch status pill */}
+              {liveDateAttendance ? (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${liveDateAttendance.checkOut ? "bg-red-50 border-red-200 text-red-700" : "bg-green-50 border-green-200 text-green-700"}`}>
+                  <div className={`w-2 h-2 rounded-full ${liveDateAttendance.checkOut ? "bg-red-500" : "bg-green-500 animate-pulse"}`} />
+                  {liveDateAttendance.checkOut ? "Punched Out" : "Punched In — Live"}
                 </div>
-              </div>
+              ) : null}
 
-              {/* Stoppage timeline */}
-              <div className="bg-card border rounded-lg overflow-hidden" style={{ maxHeight: "520px", overflowY: "auto" }}>
-                <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Timeline</span>
-                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              <div className="flex items-center gap-4 ml-auto">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Completed</p>
+                  <p className="text-sm font-bold text-primary">{locationData?.stoppageCount ?? 0}</p>
                 </div>
-                {locationLoading && !hasTimeline ? (
-                  <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                ) : !hasTimeline ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground text-xs gap-2">
-                    <Timer className="h-8 w-8 opacity-30" />
-                    <p>No activity for this date</p>
-                    <p className="text-[10px] opacity-70">GPS pings and customer visits appear here</p>
-                  </div>
-                ) : (
-                  <div className="relative px-3 py-3">
-                    <div className="absolute left-6 top-3 bottom-3 w-px bg-border" />
-                    <div className="space-y-1">
-                      {allTimelineEvents.map((seg, idx) => {
-                        const startT = new Date(seg.startTime);
-                        const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-
-                        if (seg.type === "stoppage") {
-                          const mins = Math.floor(seg.durationSecs / 60);
-                          const secs = Math.round(seg.durationSecs % 60);
-                          const durStr = mins > 0 ? `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` : `00:${String(secs).padStart(2, "0")}`;
-                          return (
-                            <div key={idx} className="flex items-start gap-3 py-1.5">
-                              <div className="relative z-10 shrink-0 w-6 flex justify-center">
-                                <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
-                                <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
-                                <StoppageAddress lat={seg.lat} lng={seg.lng} />
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (seg.type === "visit") {
-                          const outT = seg.endTime ? new Date(seg.endTime) : null;
-                          const durStr = outT ? formatDuration(startT, outT) : null;
-                          return (
-                            <div key={idx} className="flex items-start gap-3 py-1.5">
-                              <div className="relative z-10 shrink-0 w-6 flex justify-center">
-                                <div className="w-3 h-3 rounded-full bg-green-600 border-2 border-white shadow mt-0.5" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-green-700">{seg.customerName}</p>
-                                <p className="text-[10px] text-muted-foreground">
-                                  {fmtTime(startT)}{outT ? ` – ${fmtTime(outT)}` : ""}{durStr ? ` (${durStr})` : ""}
-                                </p>
-                                {seg.locationName && (
-                                  <p className="text-[10px] text-muted-foreground leading-relaxed">{seg.locationName}</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        // travelled
-                        return (
-                          <div key={idx} className="flex items-start gap-3 py-1.5">
-                            <div className="relative z-10 shrink-0 w-6 flex justify-center">
-                              <div className="w-3 h-3 rounded-full bg-primary border-2 border-white shadow mt-0.5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs font-semibold text-primary">
-                                  Travelled ({formatDuration(new Date(seg.startTime), new Date(seg.endTime))})
-                                </p>
-                                <span className="text-[10px] text-muted-foreground font-mono">{(seg as any).distanceKm.toFixed(2)}km</span>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground">{fmtTime(startT)}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {/* Nearest Location footer */}
-                      {lastLocation && (
-                        <div className="flex items-start gap-3 py-1.5 mt-1 border-t">
-                          <div className="relative z-10 shrink-0 w-6 flex justify-center">
-                            <div className="w-3 h-3 rounded-full bg-green-600 border-2 border-white shadow mt-0.5" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-green-700">Last Known Location</p>
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">{lastLocation}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <div className="w-px h-8 bg-border" />
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Distance</p>
+                  <p className="text-sm font-bold text-primary">{(locationData?.totalKm ?? 0).toFixed(2)} Km</p>
+                </div>
+                <div className="w-px h-8 bg-border" />
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">GPS Pings</p>
+                  <p className="text-sm font-bold text-primary">{locationData?.points?.length ?? 0}</p>
+                </div>
               </div>
             </div>
 
-            {/* RIGHT: Map */}
-            <div className="flex-1 bg-card border rounded-lg overflow-hidden" style={{ minHeight: "500px" }}>
-              {tripsLoading ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="flex gap-3 flex-wrap md:flex-nowrap">
+              {/* LEFT: Timeline */}
+              <div className="w-full md:w-72 shrink-0">
+                <div className="bg-card border rounded-xl overflow-hidden" style={{ maxHeight: "580px", overflowY: "auto" }}>
+                  <div className="px-3 py-2.5 border-b bg-gradient-to-r from-green-50 to-transparent flex items-center justify-between sticky top-0 z-10">
+                    <span className="text-xs font-bold text-green-700 uppercase tracking-wide flex items-center gap-1.5">
+                      <Radio className="h-3 w-3" /> Timeline
+                    </span>
+                    {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
+
+                  {locationLoading && !hasTimeline ? (
+                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                  ) : !hasTimeline ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
+                      <Timer className="h-10 w-10 opacity-20" />
+                      <p className="font-medium">No activity recorded</p>
+                      <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds while the employee is active</p>
+                    </div>
+                  ) : (
+                    <div className="relative px-3 py-3">
+                      <div className="absolute left-[22px] top-3 bottom-3 w-px bg-border/70" />
+                      <div className="space-y-0.5">
+                        {allTimelineEvents.map((seg, idx) => {
+                          const startT = new Date(seg.startTime);
+                          const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                          if (seg.type === "punch_in") {
+                            return (
+                              <div key={idx} className="flex items-start gap-3 py-2">
+                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                  <div className="w-5 h-5 rounded-full bg-green-600 border-2 border-white shadow flex items-center justify-center">
+                                    <LogIn className="w-2.5 h-2.5 text-white" />
+                                  </div>
+                                </div>
+                                <div className="flex-1 min-w-0 pb-2 border-b border-dashed border-border/50">
+                                  <p className="text-xs font-bold text-green-700">Punch In</p>
+                                  <p className="text-xs font-mono text-foreground">{fmtTime(startT)}</p>
+                                  {seg.location && <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">{seg.location}</p>}
+                                  {!seg.location && seg.lat && seg.lng && <StoppageAddress lat={seg.lat} lng={seg.lng} />}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (seg.type === "punch_out") {
+                            return (
+                              <div key={idx} className="flex items-start gap-3 py-2">
+                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                  <div className="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow flex items-center justify-center">
+                                    <LogOut className="w-2.5 h-2.5 text-white" />
+                                  </div>
+                                </div>
+                                <div className="flex-1 min-w-0 pt-2 border-t border-dashed border-border/50">
+                                  <p className="text-xs font-bold text-red-700">Punch Out</p>
+                                  <p className="text-xs font-mono text-foreground">{fmtTime(startT)}</p>
+                                  {seg.location && <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">{seg.location}</p>}
+                                  {!seg.location && seg.lat && seg.lng && <StoppageAddress lat={seg.lat} lng={seg.lng} />}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (seg.type === "stoppage") {
+                            const mins = Math.floor(seg.durationSecs / 60);
+                            const secs = Math.round(seg.durationSecs % 60);
+                            const durStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                            return (
+                              <div key={idx} className="flex items-start gap-3 py-1.5">
+                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground">
+                                    {fmtTime(new Date(seg.startTime))}–{fmtTime(new Date(seg.endTime))}
+                                  </p>
+                                  <StoppageAddress lat={seg.lat} lng={seg.lng} />
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (seg.type === "visit") {
+                            const outT = seg.endTime ? new Date(seg.endTime) : null;
+                            const durStr = outT ? formatDuration(startT, outT) : null;
+                            return (
+                              <div key={idx} className="flex items-start gap-3 py-1.5">
+                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                  <div className="w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow mt-0.5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-blue-700">{seg.customerName}</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground">
+                                    {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}{durStr ? ` (${durStr})` : ""}
+                                  </p>
+                                  {seg.locationName && <p className="text-[10px] text-muted-foreground">{seg.locationName}</p>}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // travelled
+                          const endT = new Date((seg as any).endTime);
+                          const distKm = (seg as any).distanceKm ?? 0;
+                          const durTravelled = formatDuration(startT, endT);
+                          return (
+                            <div key={idx} className="flex items-start gap-3 py-1.5">
+                              <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                <Navigation className="w-3.5 h-3.5 text-primary mt-0.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-xs font-semibold text-primary">
+                                    Travelled ({distKm.toFixed(2)})
+                                  </p>
+                                </div>
+                                <p className="text-[10px] font-mono text-muted-foreground">
+                                  {fmtTime(startT)}–{fmtTime(endT)} <span className="text-muted-foreground/60">({durTravelled})</span>
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Nearest Location footer when not punched out */}
+                        {lastLocation && !punchOutEvent && (
+                          <div className="flex items-start gap-3 py-2 mt-1 border-t border-dashed border-border/50">
+                            <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                              <MapPin className="w-3.5 h-3.5 text-green-600 mt-0.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-green-700">Nearest Location</p>
+                              <p className="text-[10px] text-muted-foreground leading-relaxed">{lastLocation}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <LiveMap trips={trips} locationPoints={locationData?.points ?? []} />
-              )}
+              </div>
+
+              {/* RIGHT: Map */}
+              <div className="flex-1 bg-card border rounded-xl overflow-hidden" style={{ minHeight: "540px" }}>
+                {tripsLoading ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : (
+                  <LiveMap
+                    trips={trips}
+                    locationPoints={locationData?.points ?? []}
+                    segments={(locationData?.segments ?? []) as LiveMapSegment[]}
+                    punchInLat={punchInEvent?.lat ?? null}
+                    punchInLng={punchInEvent?.lng ?? null}
+                    punchOutLat={punchOutEvent?.lat ?? null}
+                    punchOutLng={punchOutEvent?.lng ?? null}
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}
