@@ -564,7 +564,7 @@ export default function PurchasedStock() {
                   <FormItem>
                     <FormLabel>Total Quantity <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                      <Input data-testid="input-quantity" type="number" min="0" step="0.01" placeholder="0" {...field} />
+                      <Input data-testid="input-quantity" type="number" min="0" step="1" placeholder="0" {...field} onChange={e => field.onChange(Math.round(Number(e.target.value)) || 0)} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
