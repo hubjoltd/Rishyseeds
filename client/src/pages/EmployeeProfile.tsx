@@ -110,6 +110,32 @@ function StoppageAddress({ lat, lng }: { lat: number; lng: number }) {
   return <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>;
 }
 
+function LastGpsAddress({ point }: { point: { latitude: string; longitude: string; recordedAt: string } }) {
+  const [address, setAddress] = useState<string | null>(null);
+  const lat = Number(point.latitude);
+  const lng = Number(point.longitude);
+  useEffect(() => {
+    if (!lat || !lng) return;
+    let cancelled = false;
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setAddress(d.display_name || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [lat, lng]);
+  const t = new Date(point.recordedAt);
+  const timeStr = `${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
+  return (
+    <div>
+      {address
+        ? <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>
+        : <p className="text-[10px] text-muted-foreground">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
+      }
+      <p className="text-[10px] text-muted-foreground/60 mt-0.5">Last ping at {timeStr}</p>
+    </div>
+  );
+}
+
 interface LiveMapSegment {
   type: "travelled" | "stoppage";
   startTime: string;
@@ -783,18 +809,23 @@ export default function EmployeeProfile() {
                           );
                         })}
 
-                        {/* Nearest Location footer when not punched out */}
-                        {lastLocation && !punchOutEvent && (
-                          <div className="flex items-start gap-3 py-2 mt-1 border-t border-dashed border-border/50">
-                            <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                              <MapPin className="w-3.5 h-3.5 text-green-600 mt-0.5" />
+                        {/* Nearest Location — last GPS ping address, always shown if GPS data exists */}
+                        {(locationData?.points?.length ?? 0) > 0 && (() => {
+                          const lastPt = locationData!.points[locationData!.points.length - 1];
+                          return (
+                            <div className="flex items-start gap-3 py-2 mt-1 border-t border-dashed border-border/50">
+                              <div className="relative z-10 shrink-0 w-8 flex justify-center">
+                                <MapPin className="w-3.5 h-3.5 text-green-600 mt-0.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-green-700 flex items-center gap-1">
+                                  Nearest Location
+                                </p>
+                                <LastGpsAddress point={lastPt} />
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-green-700">Nearest Location</p>
-                              <p className="text-[10px] text-muted-foreground leading-relaxed">{lastLocation}</p>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
