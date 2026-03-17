@@ -832,10 +832,15 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
   );
 }
 
+// Sort order: approved first, then pending, then rejected; newest within each group
+const STATUS_SORT_ORDER: Record<string, number> = { approved: 0, pending: 1, rejected: 2 };
+
 // ===== Main list page =====
 export default function Expenses() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [employeeFilter, setEmployeeFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -849,14 +854,23 @@ export default function Expenses() {
     return <ExpenseDetailPage expenseId={selectedId} onBack={() => setSelectedId(null)} />;
   }
 
-  const filtered = expenseList.filter(exp => {
-    const matchSearch =
-      exp.employeeName.toLowerCase().includes(search.toLowerCase()) ||
-      exp.expenseCode.toLowerCase().includes(search.toLowerCase()) ||
-      (exp.title || "").toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || exp.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = expenseList
+    .filter(exp => {
+      const matchSearch =
+        exp.employeeName.toLowerCase().includes(search.toLowerCase()) ||
+        exp.expenseCode.toLowerCase().includes(search.toLowerCase()) ||
+        (exp.title || "").toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === "all" || exp.status === statusFilter;
+      const matchEmployee = employeeFilter === "all" || exp.employeeName === employeeFilter;
+      const matchDate = !dateFilter || (exp.expenseDate || "").startsWith(dateFilter);
+      return matchSearch && matchStatus && matchEmployee && matchDate;
+    })
+    .sort((a, b) => {
+      const so = (STATUS_SORT_ORDER[a.status] ?? 9) - (STATUS_SORT_ORDER[b.status] ?? 9);
+      if (so !== 0) return so;
+      return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+    });
+
   const paginatedExpenses = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const tabs = [
@@ -865,6 +879,8 @@ export default function Expenses() {
     { key: "approved", label: "Approved" },
     { key: "rejected", label: "Rejected" },
   ];
+
+  const uniqueEmployees = Array.from(new Set(expenseList.map(e => e.employeeName))).sort();
 
   return (
     <div className="space-y-5 animate-in fade-in">
@@ -893,7 +909,7 @@ export default function Expenses() {
       <div className="border-b">
         <div className="flex items-center gap-1 overflow-x-auto">
           {tabs.map(({ key, label }) => (
-            <button key={key} onClick={() => setStatusFilter(key)}
+            <button key={key} onClick={() => { setStatusFilter(key); setPage(1); }}
               className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${statusFilter === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               data-testid={`tab-expense-filter-${key}`}
             >
@@ -905,12 +921,41 @@ export default function Expenses() {
 
       <Card className="border shadow-sm">
         <CardContent className="p-0">
-          <div className="flex items-center gap-3 p-4 border-b justify-between flex-wrap">
-            <div className="relative max-w-xs flex-1">
+          <div className="flex items-center gap-3 p-4 border-b flex-wrap">
+            {/* Search */}
+            <div className="relative w-52">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search expenses..." className="pl-9 h-9" value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-expenses" />
+              <Input placeholder="Search expenses..." className="pl-9 h-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} data-testid="input-search-expenses" />
             </div>
-            <span className="text-sm text-muted-foreground">{filtered.length} of {expenseList.length} items</span>
+
+            {/* Employee filter */}
+            <Select value={employeeFilter} onValueChange={v => { setEmployeeFilter(v); setPage(1); }}>
+              <SelectTrigger className="h-9 w-52" data-testid="select-filter-employee">
+                <SelectValue placeholder="All Employees" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Employees</SelectItem>
+                {uniqueEmployees.map(name => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Date filter */}
+            <Input
+              type="date"
+              className="h-9 w-44"
+              value={dateFilter}
+              onChange={e => { setDateFilter(e.target.value); setPage(1); }}
+              data-testid="input-filter-date"
+            />
+            {dateFilter && (
+              <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground" onClick={() => { setDateFilter(""); setPage(1); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+
+            <span className="text-sm text-muted-foreground ml-auto">{filtered.length} of {expenseList.length} items</span>
           </div>
 
           {isLoading ? (
