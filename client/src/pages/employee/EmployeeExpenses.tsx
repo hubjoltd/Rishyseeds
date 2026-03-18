@@ -228,7 +228,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [modeOfTravel, setModeOfTravel] = useState("");
-  const [showModeList, setShowModeList] = useState(false);
   const [travellerName, setTravellerName] = useState(employee.fullName);
 
   // Odometer photos (captured first)
@@ -676,24 +675,17 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
                     className="w-full text-sm bg-transparent outline-none" data-testid="input-end-date" />
                 </div>
-                <div className="relative px-3 py-2.5">
-                  <button className="w-full text-left flex items-center justify-between" onClick={() => setShowModeList(v => !v)} data-testid="button-mode-travel">
-                    <div>
-                      <p className="text-[10px] text-gray-400">Mode of Travel</p>
-                      <p className={`text-sm ${modeOfTravel ? "text-gray-800" : "text-gray-400"}`}>{modeOfTravel || "Select..."}</p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-gray-400 rotate-90 shrink-0" />
-                  </button>
-                  {showModeList && (
-                    <div className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-xl mt-1">
-                      {TRAVEL_MODES.map(m => (
-                        <button key={m} onClick={() => { setModeOfTravel(m); setShowModeList(false); }}
-                          className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 ${modeOfTravel === m ? "bg-green-50 text-green-700 font-semibold" : ""}`}
-                          data-testid={`option-mode-${m}`}
-                        >{m}</button>
-                      ))}
-                    </div>
-                  )}
+                <div className="px-3 py-2.5">
+                  <p className="text-[10px] text-gray-400 mb-1">Mode of Travel</p>
+                  <select
+                    value={modeOfTravel}
+                    onChange={e => setModeOfTravel(e.target.value)}
+                    className="w-full text-sm bg-transparent outline-none text-gray-800 appearance-none"
+                    data-testid="select-mode-travel"
+                  >
+                    <option value="">Select...</option>
+                    {TRAVEL_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </div>
                 <div className="px-3 py-2.5">
                   <p className="text-[10px] text-gray-400 mb-1">Traveller Name</p>
