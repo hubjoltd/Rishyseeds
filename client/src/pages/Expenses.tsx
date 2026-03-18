@@ -537,6 +537,58 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                   </div>
                 )}
               </div>
+
+              {/* Other Expenses Breakdown */}
+              {(() => {
+                const exp = expense as any;
+                const rows = [
+                  { label: "Bus", value: exp.busFare },
+                  { label: "Train / Air", value: exp.trainAirFare },
+                  { label: "Hotel", value: exp.hotelFare },
+                  { label: "D.A.", value: exp.daAmount, note: "(fixed daily wages)" },
+                  { label: "Conveyance on Tour", value: exp.conveyanceFare },
+                  { label: "Postage", value: exp.postageFare },
+                  { label: "Other", value: exp.otherFare, note: exp.otherRemarks ? `— ${exp.otherRemarks}` : "" },
+                ].filter(r => r.value && Number(r.value) > 0);
+                const hasOther = rows.length > 0 || exp.headquarters || exp.modeOfTravel || exp.startDate || exp.endDate;
+                if (!hasOther) return null;
+                return (
+                  <div className="border rounded-lg p-5 space-y-4">
+                    <h3 className="font-semibold text-sm border-b pb-2 flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-primary" /> Other Expenses Breakdown
+                    </h3>
+                    {/* Trip info */}
+                    {(exp.headquarters || exp.modeOfTravel || exp.startDate || exp.endDate) && (
+                      <div className="grid grid-cols-4 gap-4 text-sm pb-3 border-b">
+                        {exp.headquarters && <FieldRow label="Headquarters" value={exp.headquarters} />}
+                        {exp.modeOfTravel && <FieldRow label="Mode of Travel" value={exp.modeOfTravel} />}
+                        {exp.startDate && <FieldRow label="Start Date" value={formatDate(exp.startDate)} />}
+                        {exp.endDate && <FieldRow label="End Date" value={formatDate(exp.endDate)} />}
+                      </div>
+                    )}
+                    {/* Fare rows */}
+                    {rows.length > 0 && (
+                      <div className="space-y-2">
+                        {rows.map(r => (
+                          <div key={r.label} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                            <span className="text-sm text-muted-foreground">{r.label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">₹{Number(r.value).toLocaleString()}</span>
+                              {r.note && <span className="text-xs text-muted-foreground">{r.note}</span>}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                          <span className="text-sm font-semibold">Other Expenses Sub-total</span>
+                          <span className="text-sm font-bold text-primary">
+                            ₹{rows.reduce((s, r) => s + Number(r.value || 0), 0).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
