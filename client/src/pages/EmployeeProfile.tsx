@@ -208,16 +208,50 @@ function LiveMap({
 
     const infoWindow = new google.maps.InfoWindow();
 
-    // GPS tracking polyline (orange — actual path taken)
+    // GPS tracking — snap to roads using Directions API
     if (gpsPoints.length > 1) {
-      new google.maps.Polyline({
-        path: gpsPoints,
-        geodesic: false,
-        strokeColor: "#e67c22",
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        map,
-      });
+      // Downsample: keep at most ~20 evenly-spaced points to stay within API limits
+      const MAX_PTS = 20;
+      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
+      const sampled: { lat: number; lng: number }[] = [];
+      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
+      // Always include the last point
+      const lastPt = gpsPoints[gpsPoints.length - 1];
+      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
+
+      const ds = new google.maps.DirectionsService();
+      const CHUNK = 23; // max intermediate waypoints per request
+
+      const drawChunk = (pts: { lat: number; lng: number }[]) => {
+        if (pts.length < 2) return;
+        const origin = pts[0];
+        const destination = pts[pts.length - 1];
+        const waypoints = pts.slice(1, -1).map(p => ({
+          location: new google.maps.LatLng(p.lat, p.lng),
+          stopover: false as const,
+        }));
+        ds.route(
+          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
+          (result, status) => {
+            if (status === "OK" && result) {
+              new google.maps.DirectionsRenderer({
+                map,
+                directions: result,
+                suppressMarkers: true,
+                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
+              });
+            } else {
+              // Fallback to raw polyline if Directions API fails
+              new google.maps.Polyline({ path: pts, geodesic: false, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
+            }
+          },
+        );
+      };
+
+      // Process in chunks of CHUNK+1 points (overlap at boundaries)
+      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
+        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
+      }
     }
 
     // Stoppage markers
