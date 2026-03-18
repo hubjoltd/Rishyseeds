@@ -174,7 +174,7 @@ function drawRouteSegment(
   );
 }
 
-function TripMap({ trip }: { trip: TripDetail }) {
+function TripMap({ trip, locationPoints = [] }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(googleMapsLoaded);
 
@@ -185,25 +185,27 @@ function TripMap({ trip }: { trip: TripDetail }) {
   useEffect(() => {
     if (!ready || !mapRef.current) return;
 
-    const points: MapPoint[] = [];
+    const waypoints: MapPoint[] = [];
 
     if (trip.startLatitude && trip.startLongitude)
-      points.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `🟢 Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a", icon: "large" });
+      waypoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a", icon: "large" });
 
     (trip.visits || []).forEach((v, i) => {
       if (v.punchInLatitude && v.punchInLongitude)
-        points.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `🔵 Visit ${i + 1} Check-In: ${v.punchInLocationName || ""}`, color: "#2563eb", icon: "small" });
+        waypoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `Visit ${i + 1} Check-In: ${v.punchInLocationName || ""}`, color: "#2563eb", icon: "small" });
       if (v.punchOutLatitude && v.punchOutLongitude)
-        points.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `🟣 Visit ${i + 1} Check-Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed", icon: "small" });
+        waypoints.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `Visit ${i + 1} Check-Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed", icon: "small" });
     });
 
     if (trip.endLatitude && trip.endLongitude)
-      points.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `🔴 End: ${trip.endLocationName || "End Point"}`, color: "#dc2626", icon: "large" });
+      waypoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `End: ${trip.endLocationName || "End Point"}`, color: "#dc2626", icon: "large" });
 
-    if (points.length === 0) return;
+    const hasGps = locationPoints.length > 1;
+    const allCoords = hasGps ? locationPoints : waypoints.map(p => ({ lat: p.lat, lng: p.lng }));
+    if (allCoords.length === 0) return;
 
     const map = new google.maps.Map(mapRef.current, {
-      center: { lat: points[0].lat, lng: points[0].lng },
+      center: allCoords[0],
       zoom: 12,
       mapTypeControl: false,
       streetViewControl: false,
@@ -212,44 +214,57 @@ function TripMap({ trip }: { trip: TripDetail }) {
     });
 
     const bounds = new google.maps.LatLngBounds();
-    const infoWindow = new google.maps.InfoWindow();
-    points.forEach(p => {
-      bounds.extend({ lat: p.lat, lng: p.lng });
-      placeMarker(map, p, infoWindow);
-    });
-    if (points.length > 1) map.fitBounds(bounds, 40);
+    allCoords.forEach(p => bounds.extend(p));
+    if (allCoords.length > 1) map.fitBounds(bounds, 40);
 
-    if (points.length >= 2) {
-      const directionsService = new google.maps.DirectionsService();
+    const infoWindow = new google.maps.InfoWindow();
+
+    // Draw actual GPS breadcrumb trail if available (orange — exact path taken)
+    if (hasGps) {
+      new google.maps.Polyline({
+        path: locationPoints,
+        geodesic: false,
+        strokeColor: "#e67c22",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+      });
+    } else if (waypoints.length >= 2) {
+      // Fallback: use Directions API road route between waypoints
+      const ds = new google.maps.DirectionsService();
       const CHUNK = 10;
-      for (let i = 0; i < points.length - 1; i += CHUNK) {
-        const chunk = points.slice(i, Math.min(i + CHUNK + 1, points.length));
+      for (let i = 0; i < waypoints.length - 1; i += CHUNK) {
+        const chunk = waypoints.slice(i, Math.min(i + CHUNK + 1, waypoints.length));
         if (chunk.length < 2) break;
-        const origin: google.maps.LatLngLiteral = { lat: chunk[0].lat, lng: chunk[0].lng };
-        const destination: google.maps.LatLngLiteral = { lat: chunk[chunk.length - 1].lat, lng: chunk[chunk.length - 1].lng };
-        const waypoints: google.maps.DirectionsWaypoint[] = chunk.slice(1, -1).map(p => ({
-          location: new google.maps.LatLng(p.lat, p.lng),
-          stopover: false,
-        }));
-        drawRouteSegment(directionsService, map, origin, destination, waypoints, "#e67c22");
+        drawRouteSegment(
+          ds, map,
+          { lat: chunk[0].lat, lng: chunk[0].lng },
+          { lat: chunk[chunk.length - 1].lat, lng: chunk[chunk.length - 1].lng },
+          chunk.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const })),
+          "#e67c22",
+        );
       }
     }
-  }, [ready, trip]);
+
+    // Always draw the waypoint markers on top
+    waypoints.forEach(p => placeMarker(map, p, infoWindow));
+
+  }, [ready, trip, locationPoints]);
 
   if (!ready) return (
-    <div className="h-[340px] w-full rounded-md flex items-center justify-center bg-muted/30">
+    <div className="h-[380px] w-full rounded-md flex items-center justify-center bg-muted/30">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
     </div>
   );
   return (
     <div className="space-y-2">
-      <div ref={mapRef} className="h-[340px] w-full rounded-lg border shadow-sm" />
+      <div ref={mapRef} className="h-[380px] w-full rounded-lg border shadow-sm" />
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-1">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Start</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Check-In</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-600 inline-block" /> Check-Out</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> End</span>
-        <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> Road Route</span>
+        <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> GPS Trail</span>
       </div>
     </div>
   );
@@ -272,6 +287,23 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
       return res.json();
     },
   });
+
+  const tripDate = trip?.startTime ? format(new Date(trip.startTime), "yyyy-MM-dd") : null;
+  const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string }[] }>({
+    queryKey: ["/api/employees", trip?.employeeId, "locations", tripDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${trip!.employeeId}/locations?date=${tripDate}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) return { points: [] };
+      return res.json();
+    },
+    enabled: !!trip?.employeeId && !!tripDate,
+  });
+
+  const gpsPoints = (locationData?.points ?? [])
+    .filter((p: any) => p.latitude && p.longitude)
+    .map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
 
   const { data: comments } = useQuery<TripComment[]>({
     queryKey: ["/api/trips", tripId, "comments"],
@@ -563,7 +595,7 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Route className="h-4 w-4 text-primary" /> Route Map
                 </h3>
-                <TripMap trip={trip} />
+                <TripMap trip={trip} locationPoints={gpsPoints} />
                 <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Start</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Check In</span>
