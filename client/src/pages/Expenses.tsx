@@ -550,7 +550,7 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                   { label: "Postage", value: exp.postageFare },
                   { label: "Other", value: exp.otherFare, note: exp.otherRemarks ? `— ${exp.otherRemarks}` : "" },
                 ].filter(r => r.value && Number(r.value) > 0);
-                const hasOther = rows.length > 0 || exp.headquarters || exp.modeOfTravel || exp.startDate || exp.endDate;
+                const hasOther = rows.length > 0 || exp.headquarters || exp.modeOfTravel || exp.startDate || exp.endDate || exp.billsTicketPhoto;
                 if (!hasOther) return null;
                 return (
                   <div className="border rounded-lg p-5 space-y-4">
@@ -583,6 +583,25 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                           <span className="text-sm font-bold text-primary">
                             ₹{rows.reduce((s, r) => s + Number(r.value || 0), 0).toLocaleString()}
                           </span>
+                        </div>
+                      </div>
+                    )}
+                    {/* Bills / Ticket Photo */}
+                    {exp.billsTicketPhoto && (
+                      <div className="space-y-2 pt-3 border-t">
+                        <Label className="text-xs text-muted-foreground font-medium">Bills / Tickets Photo</Label>
+                        <div
+                          className="relative group w-40 h-32 cursor-pointer"
+                          onClick={() => window.open(exp.billsTicketPhoto, "_blank")}
+                        >
+                          <img
+                            src={exp.billsTicketPhoto}
+                            alt="Bills / Tickets"
+                            className="w-40 h-32 object-cover rounded-lg border shadow-sm hover:opacity-90 transition-opacity"
+                          />
+                          <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="text-white text-xs font-medium">Click to open</span>
+                          </div>
                         </div>
                       </div>
                     )}
