@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -93,12 +92,6 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
-  // Start trip form
-  const [startMeter, setStartMeter] = useState("");
-
-  // End trip form
-  const [endMeter, setEndMeter] = useState("");
-
   // Visit form
   const [visitCustomer, setVisitCustomer] = useState("");
   const [visitAddress, setVisitAddress] = useState("");
@@ -152,23 +145,19 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
 
   const startTripMutation = useMutation({
     mutationFn: async () => {
-      if (!startMeter) throw new Error("Please enter start meter reading");
       const loc = await captureGPS();
       const fd = new FormData();
-      fd.append("startMeterReading", startMeter);
       if (loc) {
         fd.append("startLatitude", String(loc.lat));
         fd.append("startLongitude", String(loc.lng));
         if (loc.name) fd.append("startLocationName", loc.name);
       }
-      if (photoFile) fd.append("startMeterPhoto", photoFile);
       const res = await fetch("/api/employee/trips", { method: "POST", headers: getHeaders(), body: fd });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
       return res.json();
     },
     onSuccess: (trip) => {
       qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
-      setStartMeter(""); setPhotoFile(null); setPhotoPreview(null);
       setSelectedTrip(trip); setView("detail");
       toast({ title: "Trip Started", description: "Safe travels!" });
     },
@@ -178,16 +167,13 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const endTripMutation = useMutation({
     mutationFn: async () => {
       if (!selectedTrip) throw new Error("No active trip");
-      if (!endMeter) throw new Error("Please enter end meter reading");
       const loc = await captureGPS();
       const fd = new FormData();
-      fd.append("endMeterReading", endMeter);
       if (loc) {
         fd.append("endLatitude", String(loc.lat));
         fd.append("endLongitude", String(loc.lng));
         if (loc.name) fd.append("endLocationName", loc.name);
       }
-      if (photoFile) fd.append("endMeterPhoto", photoFile);
       const res = await fetch(`/api/employee/trips/${selectedTrip.id}/end`, { method: "PATCH", headers: getHeaders(), body: fd });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
       return res.json();
@@ -195,7 +181,6 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
       qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      setEndMeter(""); setPhotoFile(null); setPhotoPreview(null);
       setView("detail");
       toast({ title: "Trip Ended", description: "Trip submitted for approval" });
     },
@@ -263,51 +248,19 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
         </div>
 
         <div className="flex-1 space-y-4">
-          {/* Odometer */}
-          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-            <div className="px-3 py-2 bg-green-700 text-white text-xs font-semibold flex items-center gap-2">
-              <Gauge className="h-3.5 w-3.5" /> Odometer Reading
+          <div className="border border-green-100 rounded-md bg-green-50 px-3 py-3 flex items-start gap-3">
+            <Navigation className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-green-800 mb-0.5">Ready to Start?</p>
+              <p className="text-xs text-green-700">Your current GPS location will be captured when you tap Start Trip.</p>
             </div>
-            <div className="px-3 py-3">
-              <label className="text-xs text-gray-500 mb-1.5 block">Starting Meter Reading (km) *</label>
-              <Input
-                type="number"
-                placeholder="e.g. 50000"
-                value={startMeter}
-                onChange={e => setStartMeter(e.target.value)}
-                className="text-sm"
-                data-testid="input-start-meter"
-              />
-            </div>
-          </div>
-
-          {/* Meter Photo */}
-          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Camera className="h-3.5 w-3.5 text-gray-500" />
-                <span className="text-xs font-semibold text-gray-500">Meter Photo (Optional)</span>
-              </div>
-              <button onClick={() => fileRef.current?.click()} className="text-green-700 text-xs font-semibold flex items-center gap-1" data-testid="button-photo-start">
-                <Camera className="h-3.5 w-3.5" /> Capture
-              </button>
-            </div>
-            {photoPreview ? (
-              <div className="relative p-2">
-                <img src={photoPreview} alt="Meter" className="w-full h-36 object-cover rounded" />
-                <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} className="absolute top-3 right-3 bg-white rounded-full p-0.5 shadow">
-                  <X className="h-4 w-4 text-gray-600" />
-                </button>
-              </div>
-            ) : <div className="px-3 py-4 text-center text-xs text-gray-400">No photo taken</div>}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
           </div>
         </div>
 
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-green-700 hover:bg-green-800 font-bold py-3"
-            disabled={!startMeter || startTripMutation.isPending || gpsLoading}
+            disabled={startTripMutation.isPending || gpsLoading}
             onClick={() => startTripMutation.mutate()}
             data-testid="button-confirm-start-trip"
           >
@@ -329,58 +282,19 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
         </div>
 
         <div className="flex-1 space-y-4">
-          {/* Starting reading for reference */}
-          {trip?.startMeterReading && (
-            <div className="border border-gray-100 rounded-md bg-gray-50 px-3 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Gauge className="h-4 w-4 text-gray-400" />
-                <span className="text-xs text-gray-500">Start Reading</span>
-              </div>
-              <span className="text-sm font-bold text-gray-700">{trip.startMeterReading} km</span>
+          <div className="border border-red-100 rounded-md bg-red-50 px-3 py-3 flex items-start gap-3">
+            <MapPin className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800 mb-0.5">End Trip?</p>
+              <p className="text-xs text-red-700">Your current GPS location will be captured and the trip will be submitted for approval.</p>
             </div>
-          )}
-          {/* End odometer */}
-          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-            <div className="px-3 py-2 bg-green-700 text-white text-xs font-semibold flex items-center gap-2">
-              <Gauge className="h-3.5 w-3.5" /> End Odometer Reading
-            </div>
-            <div className="px-3 py-3">
-              <label className="text-xs text-gray-500 mb-1.5 block">Ending Meter Reading (km) *</label>
-              <Input
-                type="number"
-                placeholder="e.g. 50185"
-                value={endMeter}
-                onChange={e => setEndMeter(e.target.value)}
-                className="text-sm"
-                data-testid="input-end-meter"
-              />
-            </div>
-            {trip?.startMeterReading && endMeter && Number(endMeter) > Number(trip.startMeterReading) && (
-              <div className="mx-3 mb-3 px-3 py-2 bg-green-50 rounded-md border border-green-100">
-                <p className="text-xs text-green-700 font-semibold">Total Distance: {(Number(endMeter) - Number(trip.startMeterReading)).toFixed(1)} km</p>
-              </div>
-            )}
-          </div>
-          {/* Photo */}
-          <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
-            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2"><Camera className="h-3.5 w-3.5 text-gray-500" /><span className="text-xs font-semibold text-gray-500">Meter Photo (Optional)</span></div>
-              <button onClick={() => fileRef.current?.click()} className="text-green-700 text-xs font-semibold flex items-center gap-1"><Camera className="h-3.5 w-3.5" /> Capture</button>
-            </div>
-            {photoPreview ? (
-              <div className="relative p-2">
-                <img src={photoPreview} alt="Meter" className="w-full h-36 object-cover rounded" />
-                <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} className="absolute top-3 right-3 bg-white rounded-full p-0.5 shadow"><X className="h-4 w-4 text-gray-600" /></button>
-              </div>
-            ) : <div className="px-3 py-4 text-center text-xs text-gray-400">No photo taken</div>}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
           </div>
         </div>
 
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-red-600 hover:bg-red-700 font-bold py-3"
-            disabled={!endMeter || endTripMutation.isPending || gpsLoading}
+            disabled={endTripMutation.isPending || gpsLoading}
             onClick={() => endTripMutation.mutate()}
             data-testid="button-confirm-end-trip"
           >
