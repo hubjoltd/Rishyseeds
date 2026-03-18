@@ -117,9 +117,65 @@ function loadGoogleMaps(callback: () => void) {
   document.head.appendChild(script);
 }
 
+type MapPoint = { lat: number; lng: number; label: string; color: string; icon: string };
+
+function placeMarker(map: google.maps.Map, p: MapPoint, infoWindow: google.maps.InfoWindow) {
+  const marker = new google.maps.Marker({
+    position: { lat: p.lat, lng: p.lng },
+    map,
+    title: p.label,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: p.icon === "large" ? 10 : 8,
+      fillColor: p.color,
+      fillOpacity: 1,
+      strokeColor: "#ffffff",
+      strokeWeight: 2.5,
+    },
+    zIndex: p.icon === "large" ? 10 : 5,
+  });
+  marker.addListener("click", () => {
+    infoWindow.setContent(`<div style="font-size:13px;font-weight:500;padding:4px 6px;max-width:200px">${p.label}</div>`);
+    infoWindow.open(map, marker);
+  });
+  return marker;
+}
+
+function drawRouteSegment(
+  directionsService: google.maps.DirectionsService,
+  map: google.maps.Map,
+  origin: google.maps.LatLngLiteral,
+  destination: google.maps.LatLngLiteral,
+  waypoints: google.maps.DirectionsWaypoint[],
+  color: string,
+) {
+  directionsService.route(
+    {
+      origin,
+      destination,
+      waypoints,
+      travelMode: google.maps.TravelMode.DRIVING,
+      optimizeWaypoints: false,
+    },
+    (result, status) => {
+      if (status === google.maps.DirectionsStatus.OK && result) {
+        new google.maps.DirectionsRenderer({
+          map,
+          directions: result,
+          suppressMarkers: true,
+          polylineOptions: {
+            strokeColor: color,
+            strokeOpacity: 0.85,
+            strokeWeight: 4,
+          },
+        });
+      }
+    },
+  );
+}
+
 function TripMap({ trip }: { trip: TripDetail }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const [ready, setReady] = useState(googleMapsLoaded);
 
   useEffect(() => {
@@ -129,75 +185,74 @@ function TripMap({ trip }: { trip: TripDetail }) {
   useEffect(() => {
     if (!ready || !mapRef.current) return;
 
-    type LatLng = { lat: number; lng: number; label: string; color: string };
-    const points: LatLng[] = [];
+    const points: MapPoint[] = [];
 
     if (trip.startLatitude && trip.startLongitude)
-      points.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a" });
+      points.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `🟢 Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a", icon: "large" });
+
     (trip.visits || []).forEach((v, i) => {
       if (v.punchInLatitude && v.punchInLongitude)
-        points.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `Visit ${i + 1} In: ${v.punchInLocationName || ""}`, color: "#2563eb" });
+        points.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `🔵 Visit ${i + 1} Check-In: ${v.punchInLocationName || ""}`, color: "#2563eb", icon: "small" });
       if (v.punchOutLatitude && v.punchOutLongitude)
-        points.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `Visit ${i + 1} Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed" });
+        points.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `🟣 Visit ${i + 1} Check-Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed", icon: "small" });
     });
+
     if (trip.endLatitude && trip.endLongitude)
-      points.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `End: ${trip.endLocationName || "End Point"}`, color: "#dc2626" });
+      points.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `🔴 End: ${trip.endLocationName || "End Point"}`, color: "#dc2626", icon: "large" });
 
     if (points.length === 0) return;
 
     const map = new google.maps.Map(mapRef.current, {
       center: { lat: points[0].lat, lng: points[0].lng },
-      zoom: 13,
+      zoom: 12,
       mapTypeControl: false,
       streetViewControl: false,
-      fullscreenControl: false,
+      fullscreenControl: true,
+      zoomControl: true,
     });
-    mapInstanceRef.current = map;
 
     const bounds = new google.maps.LatLngBounds();
     const infoWindow = new google.maps.InfoWindow();
-
-    points.forEach((p) => {
-      const pos = { lat: p.lat, lng: p.lng };
-      bounds.extend(pos);
-      const marker = new google.maps.Marker({
-        position: pos,
-        map,
-        title: p.label,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: p.color,
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-        },
-      });
-      marker.addListener("click", () => {
-        infoWindow.setContent(`<div style="font-size:13px;padding:2px 4px">${p.label}</div>`);
-        infoWindow.open(map, marker);
-      });
+    points.forEach(p => {
+      bounds.extend({ lat: p.lat, lng: p.lng });
+      placeMarker(map, p, infoWindow);
     });
+    if (points.length > 1) map.fitBounds(bounds, 40);
 
-    if (points.length > 1) {
-      new google.maps.Polyline({
-        path: points.map(p => ({ lat: p.lat, lng: p.lng })),
-        geodesic: true,
-        strokeColor: "#6366f1",
-        strokeOpacity: 0.8,
-        strokeWeight: 3,
-        map,
-      });
-      map.fitBounds(bounds);
+    if (points.length >= 2) {
+      const directionsService = new google.maps.DirectionsService();
+      const CHUNK = 10;
+      for (let i = 0; i < points.length - 1; i += CHUNK) {
+        const chunk = points.slice(i, Math.min(i + CHUNK + 1, points.length));
+        if (chunk.length < 2) break;
+        const origin: google.maps.LatLngLiteral = { lat: chunk[0].lat, lng: chunk[0].lng };
+        const destination: google.maps.LatLngLiteral = { lat: chunk[chunk.length - 1].lat, lng: chunk[chunk.length - 1].lng };
+        const waypoints: google.maps.DirectionsWaypoint[] = chunk.slice(1, -1).map(p => ({
+          location: new google.maps.LatLng(p.lat, p.lng),
+          stopover: false,
+        }));
+        drawRouteSegment(directionsService, map, origin, destination, waypoints, "#e67c22");
+      }
     }
   }, [ready, trip]);
 
   if (!ready) return (
-    <div className="h-[260px] w-full rounded-md flex items-center justify-center bg-muted/30">
+    <div className="h-[340px] w-full rounded-md flex items-center justify-center bg-muted/30">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
     </div>
   );
-  return <div ref={mapRef} className="h-[260px] w-full rounded-md" />;
+  return (
+    <div className="space-y-2">
+      <div ref={mapRef} className="h-[340px] w-full rounded-lg border shadow-sm" />
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-1">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Start</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Check-In</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-600 inline-block" /> Check-Out</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> End</span>
+        <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> Road Route</span>
+      </div>
+    </div>
+  );
 }
 
 function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void }) {
