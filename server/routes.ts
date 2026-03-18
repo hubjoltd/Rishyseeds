@@ -3849,6 +3849,14 @@ export async function registerRoutes(
   app.get("/api/employee/company-settings", async (req: any, res) => {
     try {
       const settings = await storage.getAllCompanySettings();
+      // If employee has a per-employee DA rate configured, override the global rate
+      const empId = req.employeeId;
+      if (empId) {
+        const emp = await storage.getEmployee(empId);
+        if (emp && (emp as any).daExpenseRate != null && Number((emp as any).daExpenseRate) > 0) {
+          settings["da_rate_per_day"] = String((emp as any).daExpenseRate);
+        }
+      }
       res.json(settings);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

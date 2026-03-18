@@ -620,12 +620,29 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
 }
 
 // ===== Create Expense Dialog =====
+function FareInput({ label, value, onChange, remarks, onRemarksChange }: {
+  label: string; value: string; onChange: (v: string) => void;
+  remarks?: string; onRemarksChange?: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-muted-foreground w-36 shrink-0">{label}</span>
+        <Input type="number" min="0" value={value} onChange={e => onChange(e.target.value)}
+          placeholder="₹ 0" className="h-8 text-sm" />
+      </div>
+      {onRemarksChange && (
+        <Input value={remarks || ""} onChange={e => onRemarksChange(e.target.value)}
+          placeholder="Remarks..." className="h-7 text-xs ml-[9.25rem]" />
+      )}
+    </div>
+  );
+}
+
 function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
   const { toast } = useToast();
 
-  const { data: employees = [] } = useQuery<any[]>({
-    queryKey: ["/api/employees"],
-  });
+  const { data: employees = [] } = useQuery<any[]>({ queryKey: ["/api/employees"] });
 
   const [form, setForm] = useState({
     employeeDbId: "",
@@ -633,8 +650,13 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
     category: "Expense",
     type: "LOCAL TRAVEL CLAIM",
     expenseDate: format(new Date(), "yyyy-MM-dd"),
+    startDate: format(new Date(), "yyyy-MM-dd"),
+    endDate: format(new Date(), "yyyy-MM-dd"),
     description: "",
+    headquarters: "",
     workLocation: "",
+    modeOfTravel: "",
+    travellerName: "",
     startingOdometer: "",
     endOdometer: "",
     amountPerKm: "1",
@@ -643,8 +665,30 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
     expenseCategory: "",
     amount: "",
     finalAmount: "",
-    adminComment: "",
+    busFare: "",
+    trainAirFare: "",
+    hotelFare: "",
+    conveyanceFare: "",
+    postageFare: "",
+    otherFare: "",
+    otherRemarks: "",
   });
+
+  const selectedEmployee = employees.find((e: any) => String(e.id) === form.employeeDbId) as any;
+
+  const { data: companySettings = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-settings", { headers: getAuthHeader() });
+      if (!r.ok) return {};
+      return r.json();
+    },
+  });
+
+  // Use employee-specific DA rate if set, else global
+  const globalDaRate = Number(companySettings["da_rate_per_day"] || "0");
+  const employeeDaRate = selectedEmployee?.daExpenseRate ? Number(selectedEmployee.daExpenseRate) : 0;
+  const effectiveDaRate = employeeDaRate > 0 ? employeeDaRate : globalDaRate;
 
   function set(key: string, val: string) {
     setForm(prev => {
@@ -654,28 +698,37 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
         const end = Number(next.endOdometer) || 0;
         const rate = Number(next.amountPerKm) || 1;
         const dist = end > start ? end - start : 0;
-        next.totalDistance = dist > 0 ? String(dist) : next.totalDistance;
-        const travel = dist * rate;
-        next.totalTravelAmount = dist > 0 ? String(travel) : next.totalTravelAmount;
-        next.finalAmount = travel > 0 ? String(travel) : next.finalAmount;
+        if (dist > 0) { next.totalDistance = String(dist); next.totalTravelAmount = String(dist * rate); }
       }
       return next;
     });
   }
 
+  const totalDist = Math.max(0, Number(form.endOdometer) - Number(form.startingOdometer));
+  const travelAmt = totalDist > 0 ? totalDist * (Number(form.amountPerKm) || 1) : 0;
+  const otherTotal = (Number(form.busFare) || 0) + (Number(form.trainAirFare) || 0) +
+    (Number(form.hotelFare) || 0) + effectiveDaRate +
+    (Number(form.conveyanceFare) || 0) + (Number(form.postageFare) || 0) + (Number(form.otherFare) || 0);
+  const grandTotal = travelAmt + otherTotal;
+
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!form.employeeDbId) throw new Error("Please select an employee");
       if (!form.expenseDate) throw new Error("Please set the expense date");
+      const payload: any = {
+        ...form,
+        employeeDbId: Number(form.employeeDbId),
+        amount: String(grandTotal || 0),
+        finalAmount: String(grandTotal || 0),
+        totalDistance: totalDist > 0 ? String(totalDist) : undefined,
+        totalTravelAmount: travelAmt > 0 ? String(travelAmt) : undefined,
+        amountPerKm: form.amountPerKm || "1",
+      };
+      if (effectiveDaRate > 0) payload.daAmount = String(effectiveDaRate);
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        body: JSON.stringify({
-          ...form,
-          employeeDbId: Number(form.employeeDbId),
-          amount: form.amount || form.finalAmount || "0",
-          finalAmount: form.finalAmount || form.amount || "0",
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
       return res.json();
@@ -687,9 +740,6 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
-
-  const totalDist = Number(form.endOdometer) - Number(form.startingOdometer);
-  const travelAmt = totalDist > 0 ? totalDist * (Number(form.amountPerKm) || 1) : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -707,7 +757,7 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
               <Select value={form.employeeDbId} onValueChange={v => set("employeeDbId", v)}>
                 <SelectTrigger data-testid="select-new-employee"><SelectValue placeholder="Select employee..." /></SelectTrigger>
                 <SelectContent>
-                  {employees.map((e: any) => (
+                  {(employees as any[]).map((e: any) => (
                     <SelectItem key={e.id} value={String(e.id)}>{e.fullName} ({e.employeeId})</SelectItem>
                   ))}
                 </SelectContent>
@@ -725,26 +775,31 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Category *</Label>
-              <Select value={form.category} onValueChange={v => set("category", v)}>
-                <SelectTrigger data-testid="select-new-category"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["Expense", "Travel", "Food", "Accommodation", "Other"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Expense Date *</Label>
               <Input type="date" value={form.expenseDate} onChange={e => set("expenseDate", e.target.value)} data-testid="input-new-date" />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Expense Category</Label>
-              <Select value={form.expenseCategory} onValueChange={v => set("expenseCategory", v)}>
-                <SelectTrigger data-testid="select-new-exp-cat"><SelectValue placeholder="Select..." /></SelectTrigger>
+              <Label className="text-xs text-muted-foreground">Start Date</Label>
+              <Input type="date" value={form.startDate} onChange={e => set("startDate", e.target.value)} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">End Date</Label>
+              <Input type="date" value={form.endDate} onChange={e => set("endDate", e.target.value)} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Headquarters</Label>
+              <Input value={form.headquarters} onChange={e => set("headquarters", e.target.value)} placeholder="e.g. Hyderabad" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Mode of Travel</Label>
+              <Select value={form.modeOfTravel} onValueChange={v => set("modeOfTravel", v)}>
+                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
-                  {EXPENSE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {["Bike", "Car", "Bus", "Train", "Auto", "Flight", "Other"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -779,45 +834,65 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
                 <Label className="text-xs text-muted-foreground">End Odometer (km)</Label>
                 <Input type="number" placeholder="e.g. 50185" value={form.endOdometer} onChange={e => set("endOdometer", e.target.value)} data-testid="input-new-end-odo" />
               </div>
-
-              {/* Rate field — emphasized */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground font-semibold text-primary">Amount / Km (Rate) *</Label>
-                <Input
-                  type="number"
-                  value={form.amountPerKm}
-                  onChange={e => set("amountPerKm", e.target.value)}
-                  className="border-primary ring-1 ring-primary/30 font-semibold"
-                  placeholder="Rate per km"
-                  data-testid="input-new-rate"
-                />
+                <Label className="text-xs text-muted-foreground font-semibold text-primary">Amount / Km *</Label>
+                <Input type="number" value={form.amountPerKm} onChange={e => set("amountPerKm", e.target.value)}
+                  className="border-primary ring-1 ring-primary/30 font-semibold" placeholder="Rate per km" data-testid="input-new-rate" />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Expense Category</Label>
-                <Input value={form.expenseCategory} placeholder="e.g. Fuel" readOnly className="bg-muted/30" />
-              </div>
-            </div>
-
-            {totalDist > 0 && (
-              <div className="grid grid-cols-3 gap-3 p-3 bg-primary/5 rounded-lg border border-primary/10">
-                <div><p className="text-xs text-muted-foreground">Distance</p><p className="font-bold text-sm">{totalDist} km</p></div>
-                <div><p className="text-xs text-muted-foreground">Travel Amount</p><p className="font-bold text-sm text-primary">₹ {travelAmt.toFixed(0)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Final Amount</p><p className="font-bold text-sm text-primary">₹ {form.finalAmount || travelAmt.toFixed(0)}</p></div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Amount (₹)</Label>
-                <Input type="number" value={form.amount} onChange={e => set("amount", e.target.value)} placeholder="Manual amount" data-testid="input-new-amount" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Final Amount (₹)</Label>
-                <Input type="number" value={form.finalAmount} onChange={e => set("finalAmount", e.target.value)} placeholder="Auto-calculated" data-testid="input-new-final" />
+              <div className="space-y-1.5 flex items-end">
+                {totalDist > 0 && (
+                  <div className="p-2 bg-primary/5 rounded-lg w-full text-center">
+                    <p className="text-xs text-muted-foreground">Distance</p>
+                    <p className="font-bold text-sm">{totalDist} km</p>
+                    <p className="text-xs text-primary font-medium">₹ {travelAmt.toFixed(0)}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
+          {/* Other Expenses Breakdown */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="px-4 py-2.5 bg-muted/50 border-b flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Other Expenses Breakdown</h4>
+              {effectiveDaRate > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  D.A.: ₹{effectiveDaRate} {employeeDaRate > 0 ? "(employee-specific)" : "(global)"}
+                </span>
+              )}
+            </div>
+            <div className="p-4 space-y-3">
+              <FareInput label="Bus" value={form.busFare} onChange={v => set("busFare", v)} />
+              <FareInput label="Train / Air" value={form.trainAirFare} onChange={v => set("trainAirFare", v)} />
+              <FareInput label="Hotel" value={form.hotelFare} onChange={v => set("hotelFare", v)} />
+              <div className="flex items-center gap-3 border-t pt-3">
+                <span className="text-xs text-muted-foreground w-36 shrink-0">D.A.</span>
+                <span className={`text-sm font-bold ${effectiveDaRate > 0 ? "text-primary" : "text-muted-foreground"}`}>
+                  {effectiveDaRate > 0 ? `₹${effectiveDaRate}` : "Not configured"}
+                </span>
+                {effectiveDaRate > 0 && <span className="text-xs text-muted-foreground">(fixed)</span>}
+              </div>
+              <FareInput label="Conveyance on Tour" value={form.conveyanceFare} onChange={v => set("conveyanceFare", v)} />
+              <FareInput label="Postage" value={form.postageFare} onChange={v => set("postageFare", v)} />
+              <FareInput label="Other" value={form.otherFare} onChange={v => set("otherFare", v)}
+                remarks={form.otherRemarks} onRemarksChange={v => set("otherRemarks", v)} />
+
+              {otherTotal > 0 && (
+                <div className="flex items-center justify-between border-t pt-2">
+                  <span className="text-xs text-muted-foreground font-semibold">Other Sub-total</span>
+                  <span className="text-sm font-bold text-primary">₹{otherTotal.toFixed(0)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Grand Total */}
+          {grandTotal > 0 && (
+            <div className="border border-primary/20 rounded-lg px-4 py-3 bg-primary/5 flex items-center justify-between">
+              <span className="text-sm font-semibold text-primary">Grand Total</span>
+              <span className="text-lg font-bold text-primary">₹{grandTotal.toFixed(0)}</span>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t flex gap-3 justify-end">
@@ -838,63 +913,125 @@ const STATUS_SORT_ORDER: Record<string, number> = { approved: 0, pending: 1, rej
 // ===== DA Rate Settings Modal =====
 function DASettingsModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
+
   const { data: settings = {} } = useQuery<Record<string, string>>({
     queryKey: ["/api/company-settings"],
     queryFn: async () => {
-      const r = await fetch("/api/company-settings", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}` },
-      });
+      const r = await fetch("/api/company-settings", { headers: getAuthHeader() });
       if (!r.ok) return {};
       return r.json();
     },
   });
-  const [daRate, setDaRate] = useState("");
 
-  const saveMutation = useMutation({
+  const { data: employees = [] } = useQuery<any[]>({ queryKey: ["/api/employees"] });
+
+  const [globalDaRate, setGlobalDaRate] = useState("");
+  const [empDaRates, setEmpDaRates] = useState<Record<number, string>>({});
+  const [savingEmpId, setSavingEmpId] = useState<number | null>(null);
+
+  const currentRate = settings["da_rate_per_day"] || "0";
+
+  const saveGlobalMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/company-settings/da_rate_per_day", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}` },
-        body: JSON.stringify({ value: daRate }),
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ value: globalDaRate }),
       });
       if (!res.ok) throw new Error("Failed to save");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
-      toast({ title: "D.A. Rate saved" });
-      onClose();
+      toast({ title: "Global D.A. rate saved" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const currentRate = settings["da_rate_per_day"] || "0";
+  async function saveEmpDA(empId: number) {
+    setSavingEmpId(empId);
+    try {
+      const res = await fetch(`/api/employees/${empId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ daExpenseRate: empDaRates[empId] || null }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      toast({ title: "Employee D.A. rate saved" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSavingEmpId(null);
+    }
+  }
+
+  const activeEmployees = (employees as any[]).filter(e => e.status !== "inactive").sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <Settings className="h-4 w-4 text-primary" /> Expense Settings
           </h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">D.A. Rate Per Day (₹)</Label>
-          <p className="text-xs text-muted-foreground">Current: ₹{currentRate}/day — employees use this for Daily Allowance calculation.</p>
-          <Input
-            type="number"
-            min="0"
-            placeholder={`Current: ₹${currentRate}`}
-            value={daRate}
-            onChange={e => setDaRate(e.target.value)}
-          />
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Global DA Rate */}
+          <div className="space-y-3">
+            <div>
+              <Label className="text-sm font-semibold">Global D.A. Rate (₹/day)</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Applies to all employees unless overridden below. Current: ₹{currentRate}/day</p>
+            </div>
+            <div className="flex gap-2">
+              <Input type="number" min="0" placeholder={`Current: ₹${currentRate}`}
+                value={globalDaRate} onChange={e => setGlobalDaRate(e.target.value)} className="h-9" />
+              <Button size="sm" className="h-9 shrink-0" disabled={!globalDaRate || saveGlobalMutation.isPending} onClick={() => saveGlobalMutation.mutate()}>
+                {saveGlobalMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                Save
+              </Button>
+            </div>
+          </div>
+
+          {/* Per-employee DA rates */}
+          <div className="space-y-3">
+            <div>
+              <Label className="text-sm font-semibold">Employee-wise D.A. Rate</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Set a specific DA rate for individual employees. Leave blank to use the global rate.</p>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {activeEmployees.map((emp: any) => (
+                <div key={emp.id} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-800 truncate">{emp.fullName}</p>
+                    <p className="text-[10px] text-gray-400">{emp.employeeId} · {emp.department || emp.role}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Input
+                      type="number" min="0"
+                      placeholder={emp.daExpenseRate ? String(emp.daExpenseRate) : `₹${currentRate} (global)`}
+                      value={empDaRates[emp.id] ?? (emp.daExpenseRate ? String(emp.daExpenseRate) : "")}
+                      onChange={e => setEmpDaRates(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                      className="h-8 w-28 text-xs"
+                    />
+                    <Button size="sm" variant="outline" className="h-8 px-2 text-xs shrink-0"
+                      disabled={savingEmpId === emp.id} onClick={() => saveEmpDA(emp.id)}>
+                      {savingEmpId === emp.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                  {emp.daExpenseRate && Number(emp.daExpenseRate) > 0 && (
+                    <span className="text-[10px] text-primary font-medium shrink-0">₹{emp.daExpenseRate}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={!daRate || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-            {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />} Save
-          </Button>
+
+        <div className="px-6 py-4 border-t flex justify-end">
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

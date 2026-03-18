@@ -150,6 +150,7 @@ export const employees = pgTable("employees", {
   status: text("status").default("active"),
   joinDate: date("join_date"),
   password: text("password"), // For employee login
+  daExpenseRate: decimal("da_expense_rate"), // Per-employee daily expense DA rate (overrides global)
   createdAt: timestamp("created_at").defaultNow(),
 });
 

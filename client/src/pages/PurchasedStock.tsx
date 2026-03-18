@@ -709,7 +709,7 @@ export default function PurchasedStock() {
                 <FormField control={form.control} name="initialQuantity" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Quantity <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input data-testid="edit-input-quantity" type="number" min={0} step="0.01" {...field} onChange={e => field.onChange(Number(e.target.value))} /></FormControl>
+                    <FormControl><Input data-testid="edit-input-quantity" type="number" min={0} step="1" {...field} onChange={e => field.onChange(Math.round(Number(e.target.value)) || 0)} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
