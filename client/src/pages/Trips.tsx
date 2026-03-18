@@ -38,8 +38,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
 interface TripWithEmployee extends Trip {
   employeeName: string;
@@ -96,61 +94,109 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+
+let googleMapsLoaded = false;
+let googleMapsLoading = false;
+const googleMapsCallbacks: Array<() => void> = [];
+
+function loadGoogleMaps(callback: () => void) {
+  if (googleMapsLoaded) { callback(); return; }
+  googleMapsCallbacks.push(callback);
+  if (googleMapsLoading) return;
+  googleMapsLoading = true;
+  const script = document.createElement("script");
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+  script.async = true;
+  script.onload = () => {
+    googleMapsLoaded = true;
+    googleMapsLoading = false;
+    googleMapsCallbacks.forEach(cb => cb());
+    googleMapsCallbacks.length = 0;
+  };
+  document.head.appendChild(script);
+}
+
 function TripMap({ trip }: { trip: TripDetail }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const [ready, setReady] = useState(googleMapsLoaded);
 
   useEffect(() => {
-    if (!mapRef.current) return;
-    if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
-    const points: [number, number][] = [];
-    if (trip.startLatitude && trip.startLongitude)
-      points.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
-    (trip.visits || []).forEach((v) => {
-      if (v.punchInLatitude && v.punchInLongitude)
-        points.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
-      if (v.punchOutLatitude && v.punchOutLongitude)
-        points.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
-    });
-    if (trip.endLatitude && trip.endLongitude)
-      points.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
-    if (points.length === 0) return;
+    if (!ready) { loadGoogleMaps(() => setReady(true)); }
+  }, [ready]);
 
-    const map = L.map(mapRef.current).setView(points[0], 13);
-    mapInstanceRef.current = map;
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-    const mkIcon = (color: string, size: number) =>
-      L.divIcon({
-        className: "",
-        html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+
+    type LatLng = { lat: number; lng: number; label: string; color: string };
+    const points: LatLng[] = [];
+
     if (trip.startLatitude && trip.startLongitude)
-      L.marker([Number(trip.startLatitude), Number(trip.startLongitude)], { icon: mkIcon("#16a34a", 14) })
-        .addTo(map).bindPopup(`<b>Start</b><br/>${trip.startLocationName || "Start Point"}`);
+      points.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a" });
     (trip.visits || []).forEach((v, i) => {
       if (v.punchInLatitude && v.punchInLongitude)
-        L.marker([Number(v.punchInLatitude), Number(v.punchInLongitude)], { icon: mkIcon("#2563eb", 12) })
-          .addTo(map).bindPopup(`<b>Visit ${i + 1} In</b><br/>${v.punchInLocationName || ""}`);
+        points.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `Visit ${i + 1} In: ${v.punchInLocationName || ""}`, color: "#2563eb" });
       if (v.punchOutLatitude && v.punchOutLongitude)
-        L.marker([Number(v.punchOutLatitude), Number(v.punchOutLongitude)], { icon: mkIcon("#7c3aed", 12) })
-          .addTo(map).bindPopup(`<b>Visit ${i + 1} Out</b><br/>${v.punchOutLocationName || ""}`);
+        points.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `Visit ${i + 1} Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed" });
     });
     if (trip.endLatitude && trip.endLongitude)
-      L.marker([Number(trip.endLatitude), Number(trip.endLongitude)], { icon: mkIcon("#dc2626", 14) })
-        .addTo(map).bindPopup(`<b>End</b><br/>${trip.endLocationName || "End Point"}`);
-    if (points.length > 1) {
-      const pl = L.polyline(points, { color: "#6366f1", weight: 3, opacity: 0.7, dashArray: "8 4" });
-      pl.addTo(map);
-      map.fitBounds(pl.getBounds().pad(0.2));
-    }
-    setTimeout(() => map.invalidateSize(), 100);
-    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [trip]);
+      points.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `End: ${trip.endLocationName || "End Point"}`, color: "#dc2626" });
 
+    if (points.length === 0) return;
+
+    const map = new google.maps.Map(mapRef.current, {
+      center: { lat: points[0].lat, lng: points[0].lng },
+      zoom: 13,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+    });
+    mapInstanceRef.current = map;
+
+    const bounds = new google.maps.LatLngBounds();
+    const infoWindow = new google.maps.InfoWindow();
+
+    points.forEach((p) => {
+      const pos = { lat: p.lat, lng: p.lng };
+      bounds.extend(pos);
+      const marker = new google.maps.Marker({
+        position: pos,
+        map,
+        title: p.label,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: p.color,
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+      });
+      marker.addListener("click", () => {
+        infoWindow.setContent(`<div style="font-size:13px;padding:2px 4px">${p.label}</div>`);
+        infoWindow.open(map, marker);
+      });
+    });
+
+    if (points.length > 1) {
+      new google.maps.Polyline({
+        path: points.map(p => ({ lat: p.lat, lng: p.lng })),
+        geodesic: true,
+        strokeColor: "#6366f1",
+        strokeOpacity: 0.8,
+        strokeWeight: 3,
+        map,
+      });
+      map.fitBounds(bounds);
+    }
+  }, [ready, trip]);
+
+  if (!ready) return (
+    <div className="h-[260px] w-full rounded-md flex items-center justify-center bg-muted/30">
+      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
   return <div ref={mapRef} className="h-[260px] w-full rounded-md" />;
 }
 
