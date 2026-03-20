@@ -570,20 +570,29 @@ function PbBoundsFitter({ points }: { points: [number, number][] }) {
   return null;
 }
 
+// Captures Leaflet map ref so custom controls outside MapContainer can call map methods
+function MapRefCapture({ onReady }: { onReady?: (m: any) => void }) {
+  const map = useMap();
+  useEffect(() => { if (typeof onReady === "function") onReady(map); }, [map]);
+  return null;
+}
+
 // Inner layer content — must be inside MapContainer so hooks work
 function PlaybackMapInner({
   routePoints,
   chkStops,
   mapTypeId,
+  onMapReady,
 }: {
   routePoints: [number, number][];
   chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
   mapTypeId: string;
+  onMapReady: (m: any) => void;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
 
   const startIcon = L.divIcon({
-    html: `<div style="width:34px;height:34px;border-radius:50%;background:#e11d48;border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.35)">B</div>`,
+    html: `<div style="width:34px;height:34px;border-radius:50%;background:#e11d48;border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.4)">B</div>`,
     className: "",
     iconSize: [34, 34],
     iconAnchor: [17, 17],
@@ -592,7 +601,7 @@ function PlaybackMapInner({
   return (
     <>
       <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
-      <ZoomControl position="topright" />
+      <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={routePoints} />
       {routePoints.length > 1 && (
         <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
@@ -638,6 +647,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   onMapTypeChange: (t: string) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
+  const leafletMap = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
@@ -686,8 +697,27 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
 
   const defaultCenter: [number, number] = routePoints.length > 0 ? routePoints[0] : [22.8, 80.0];
 
+  // Fit map to route when locate/target button is pressed
+  const fitBounds = () => {
+    const m = leafletMap.current;
+    if (!m || routePoints.length < 2) return;
+    const bounds = L.latLngBounds(routePoints.map(p => L.latLng(p[0], p[1])));
+    m.fitBounds(bounds, { padding: [40, 40] });
+  };
+
+  // Toggle fullscreen on the wrapper div
+  const toggleFullscreen = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) el.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  };
+
+  // Shared button style matching Google Maps control look
+  const ctrlBtn = "w-[34px] h-[34px] bg-white flex items-center justify-center hover:bg-gray-50 cursor-pointer border-b border-gray-200 last:border-b-0";
+
   return (
-    <div className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <MapContainer
         key={date}
         center={defaultCenter}
@@ -699,44 +729,96 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           routePoints={routePoints}
           chkStops={chkStops}
           mapTypeId={mapTypeId}
-          onMapTypeChange={onMapTypeChange}
+          onMapReady={(m) => { leafletMap.current = m; }}
         />
       </MapContainer>
 
-      {/* Layers / map-type icon — sits above the Leaflet zoom control */}
-      <div className="absolute z-[1001] select-none" style={{ top: 10, right: 10 }}>
-        {/* Layers button */}
+      {/* ── Right-side control panel (matches image exactly) ── */}
+      <div className="absolute z-[1001] select-none flex flex-col items-center gap-[6px]" style={{ top: 10, right: 10 }}>
+
+        {/* 1. Layers / map-type selector */}
+        <div className="relative">
+          <button
+            onClick={() => setLayerOpen(o => !o)}
+            title="Map type"
+            className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 12 12 17 22 12"/>
+              <polyline points="2 17 12 22 22 17"/>
+            </svg>
+          </button>
+          {layerOpen && (
+            <div className="absolute right-0 top-[38px] bg-white rounded shadow-lg border border-gray-200 py-1 w-[150px] text-[12px] z-[1002]">
+              {MAP_TYPES.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => { onMapTypeChange(opt.id); setLayerOpen(false); }}
+                  className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ${mapTypeId === opt.id ? "font-semibold text-blue-600" : "text-gray-700"}`}
+                >
+                  {mapTypeId === opt.id ? <span className="text-blue-600">✓</span> : <span className="w-3"/>}
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 2. Blue locate/target button — fits map to route */}
         <button
-          onClick={() => setLayerOpen(o => !o)}
-          title="Map type"
-          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center mb-[2px] hover:bg-gray-50 border border-gray-300"
+          onClick={fitBounds}
+          title="Fit route"
+          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-            <polyline points="2 12 12 17 22 12"/>
-            <polyline points="2 17 12 22 22 17"/>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1a73e8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="7"/>
+            <line x1="12" y1="1" x2="12" y2="5"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="1" y1="12" x2="5" y2="12"/>
+            <line x1="19" y1="12" x2="23" y2="12"/>
           </svg>
         </button>
 
-        {/* Dropdown panel */}
-        {layerOpen && (
-          <div className="absolute right-0 top-[38px] bg-white rounded shadow-lg border border-gray-200 py-1 w-[150px] text-[12px] z-[1002]">
-            {MAP_TYPES.map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => { onMapTypeChange(opt.id); setLayerOpen(false); }}
-                className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ${mapTypeId === opt.id ? "font-semibold text-blue-600" : "text-gray-700"}`}
-              >
-                {mapTypeId === opt.id && <span className="text-blue-600">✓</span>}
-                {mapTypeId !== opt.id && <span className="w-3"/>}
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* 3+4. Zoom +/− group */}
+        <div className="bg-white rounded shadow-md border border-gray-300 overflow-hidden flex flex-col">
+          <button onClick={() => leafletMap.current?.zoomIn()} title="Zoom in" className={ctrlBtn}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+          <button onClick={() => leafletMap.current?.zoomOut()} title="Zoom out" className={ctrlBtn}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* 5. Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          title="Fullscreen"
+          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+
+        {/* 6. Blue location/pin button — navigate to route start */}
+        <button
+          onClick={() => { if (routePoints.length > 0 && leafletMap.current) leafletMap.current.setView(routePoints[0], 15); }}
+          title="Go to start"
+          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="#1a73e8" stroke="white" strokeWidth="0.5">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </button>
       </div>
 
-      {/* Legend */}
+      {/* Legend — bottom-left */}
       <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
