@@ -174,7 +174,7 @@ function drawRouteSegment(
   );
 }
 
-function TripMap({ trip, locationPoints = [] }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[] }) {
+function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[]; isActive?: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(googleMapsLoaded);
 
@@ -249,7 +249,27 @@ function TripMap({ trip, locationPoints = [] }: { trip: TripDetail; locationPoin
     // Always draw the waypoint markers on top
     waypoints.forEach(p => placeMarker(map, p, infoWindow));
 
-  }, [ready, trip, locationPoints]);
+    // Live current location: blue person icon at last GPS point (active trips only)
+    if (isActive && locationPoints.length > 0) {
+      const last = locationPoints[locationPoints.length - 1];
+      new google.maps.Marker({
+        position: last,
+        map,
+        zIndex: 1000,
+        icon: {
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">` +
+            `<circle cx="19" cy="19" r="18" fill="#1d4ed8" stroke="white" stroke-width="3"/>` +
+            `<path d="M19 10c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/>` +
+            `</svg>`
+          ),
+          scaledSize: new google.maps.Size(38, 38),
+          anchor: new google.maps.Point(19, 19),
+        },
+      });
+    }
+
+  }, [ready, trip, locationPoints, isActive]);
 
   if (!ready) return (
     <div className="h-[380px] w-full rounded-md flex items-center justify-center bg-muted/30">
@@ -265,6 +285,7 @@ function TripMap({ trip, locationPoints = [] }: { trip: TripDetail; locationPoin
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-600 inline-block" /> Check-Out</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> End</span>
         <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> GPS Trail</span>
+        {isActive && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-700 inline-block" /> Live Location</span>}
       </div>
     </div>
   );
@@ -288,6 +309,7 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
     },
   });
 
+  const isActiveTrip = trip?.status === "started" || trip?.status === "in_progress";
   const tripDate = trip?.startTime ? format(new Date(trip.startTime), "yyyy-MM-dd") : null;
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string }[] }>({
     queryKey: ["/api/employees", trip?.employeeId, "locations", tripDate],
@@ -299,6 +321,7 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
       return res.json();
     },
     enabled: !!trip?.employeeId && !!tripDate,
+    refetchInterval: isActiveTrip ? 30000 : false,
   });
 
   const gpsPoints = (locationData?.points ?? [])
@@ -590,17 +613,25 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
               </div>
             )}
 
-            {hasMapPoints && (
+            {(hasMapPoints || isActiveTrip) && (
               <div className="border rounded-lg p-4 space-y-3">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Route className="h-4 w-4 text-primary" /> Route Map
+                  <Route className="h-4 w-4 text-primary" />
+                  {isActiveTrip ? "Live Route Map" : "Route Map"}
+                  {isActiveTrip && (
+                    <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                      Live · refreshes every 30s
+                    </span>
+                  )}
                 </h3>
-                <TripMap trip={trip} locationPoints={gpsPoints} />
+                <TripMap trip={trip} locationPoints={gpsPoints} isActive={isActiveTrip} />
                 <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Start</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Check In</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-600 inline-block" /> Check Out</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" /> End</span>
+                  {isActiveTrip && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block" /> Live Location</span>}
                 </div>
               </div>
             )}

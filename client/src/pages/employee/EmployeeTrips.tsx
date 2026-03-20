@@ -543,7 +543,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
             </Button>
             <Button
               className="w-full bg-red-600 hover:bg-red-700 font-bold py-2.5"
-              onClick={() => { setPhotoFile(null); setPhotoPreview(null); setEndMeter(""); setView("end_trip"); }}
+              onClick={() => { setPhotoFile(null); setPhotoPreview(null); setView("end_trip"); }}
               data-testid="button-end-trip"
             >
               <Square className="h-4 w-4 mr-2" /> END TRIP
