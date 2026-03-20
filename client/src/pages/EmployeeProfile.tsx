@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
 import L from "leaflet";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -592,9 +592,10 @@ function PlaybackMapInner({
   return (
     <>
       <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+      <ZoomControl position="topright" />
       <PbBoundsFitter points={routePoints} />
       {routePoints.length > 1 && (
-        <Polyline positions={routePoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.9 }} />
+        <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
       )}
       {routePoints.length > 0 && (
         <Marker position={routePoints[0]} icon={startIcon}>
@@ -636,6 +637,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
 }) {
+  const [layerOpen, setLayerOpen] = useState(false);
+
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
     queryFn: async () => {
@@ -700,26 +703,42 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         />
       </MapContainer>
 
-      {/* Map type selector — top-right, same as Live map */}
-      <div className="absolute top-2 right-2 z-[1000] bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
-        {MAP_TYPES.map(opt => (
-          <label key={opt.id} className="flex items-center gap-1.5 cursor-pointer py-[2px]">
-            <input
-              type="radio"
-              name="pbMapType"
-              value={opt.id}
-              checked={mapTypeId === opt.id}
-              onChange={() => onMapTypeChange(opt.id)}
-              className="accent-blue-600 w-3 h-3"
-            />
-            <span className="text-gray-700 leading-none">{opt.label}</span>
-          </label>
-        ))}
+      {/* Layers / map-type icon — sits above the Leaflet zoom control */}
+      <div className="absolute z-[1001] select-none" style={{ top: 10, right: 10 }}>
+        {/* Layers button */}
+        <button
+          onClick={() => setLayerOpen(o => !o)}
+          title="Map type"
+          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center mb-[2px] hover:bg-gray-50 border border-gray-300"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 12 12 17 22 12"/>
+            <polyline points="2 17 12 22 22 17"/>
+          </svg>
+        </button>
+
+        {/* Dropdown panel */}
+        {layerOpen && (
+          <div className="absolute right-0 top-[38px] bg-white rounded shadow-lg border border-gray-200 py-1 w-[150px] text-[12px] z-[1002]">
+            {MAP_TYPES.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => { onMapTypeChange(opt.id); setLayerOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ${mapTypeId === opt.id ? "font-semibold text-blue-600" : "text-gray-700"}`}
+              >
+                {mapTypeId === opt.id && <span className="text-blue-600">✓</span>}
+                {mapTypeId !== opt.id && <span className="w-3"/>}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Legend */}
       <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Route</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
       </div>
