@@ -44,4 +44,4 @@ build = ["npm", "run", "build"]
 NEON_DATABASE_URL = "postgresql://neondb_owner:npg_W08UEVucqjfr@ep-royal-forest-ant41g59.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
 [userenv.shared]
-VITE_GOOGLE_MAPS_API_KEY = "AIzaSyDrWyrcAX2QKmYT4qxByPK7RhO8TC0eUwM"
+VITE_GOOGLE_MAPS_API_KEY = "AIzaSyBisYOprlGxH5dzeWXk0D4wi2BpuSFgWf4"
