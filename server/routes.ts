@@ -2663,7 +2663,7 @@ export async function registerRoutes(
         punchInTime: c.checkedInAt,
         punchOutTime: c.checkedOutAt,
         punchInPhoto: c.checkInPhoto || null,
-        punchOutPhoto: c.checkOutPhoto || null,
+        punchOutPhoto: c.checkOutPhoto || (c as any).warrantyCardPhoto || null,
         status: c.checkedOutAt ? "completed" : "punched_in",
         checkinId: c.id,
       }));
@@ -3481,13 +3481,14 @@ export async function registerRoutes(
   });
 
   // Employee portal customer check-in
-  app.post("/api/employee/customer-checkin", async (req: any, res) => {
+  app.post("/api/employee/customer-checkin", upload.single("checkInPhoto"), async (req: any, res) => {
     try {
       const empId = req.employeeId;
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(404).json({ message: "Employee not found" });
       const { customerId, customerName, customerMobile, isNew, companyName, mobile, email } = req.body;
+      const checkInPhoto = req.file ? `/uploads/${req.file.filename}` : null;
 
       let finalCustomerId = customerId ? Number(customerId) : null;
       let finalCustomerName = customerName || companyName || "";
@@ -3524,6 +3525,7 @@ export async function registerRoutes(
         customerName: finalCustomerName,
         customerMobile: finalMobile,
         tripId: activeTripId,
+        checkInPhoto,
       });
       res.status(201).json(checkin);
     } catch (e: any) {

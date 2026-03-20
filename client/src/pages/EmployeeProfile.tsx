@@ -111,38 +111,67 @@ function formatDuration(start: Date, end: Date): string {
 
 function StoppageAddress({ lat, lng }: { lat: number; lng: number }) {
   const [address, setAddress] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
-    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+    setLoading(true);
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } })
       .then(r => r.json())
-      .then(d => { if (!cancelled) setAddress(d.display_name || null); })
-      .catch(() => {});
+      .then(d => {
+        if (cancelled) return;
+        const addr = d.address || {};
+        const parts = [
+          addr.road || addr.hamlet || addr.neighbourhood || addr.pedestrian || "",
+          addr.suburb || addr.village || addr.town || addr.residential || "",
+          addr.city || addr.county || addr.state_district || "",
+          addr.state || "",
+        ].filter(Boolean);
+        setAddress(parts.length > 0 ? parts.join(", ") : (d.display_name || null));
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [lat, lng]);
+  if (loading) return <p className="text-[10px] text-muted-foreground italic">Fetching address…</p>;
   if (!address) return <p className="text-[10px] text-muted-foreground">{lat.toFixed(5)}, {lng.toFixed(5)}</p>;
   return <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>;
 }
 
 function LastGpsAddress({ point }: { point: { latitude: string; longitude: string; recordedAt: string } }) {
   const [address, setAddress] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const lat = Number(point.latitude);
   const lng = Number(point.longitude);
   useEffect(() => {
-    if (!lat || !lng) return;
+    if (!lat || !lng) { setLoading(false); return; }
     let cancelled = false;
-    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+    setLoading(true);
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } })
       .then(r => r.json())
-      .then(d => { if (!cancelled) setAddress(d.display_name || null); })
-      .catch(() => {});
+      .then(d => {
+        if (cancelled) return;
+        const addr = d.address || {};
+        const parts = [
+          addr.road || addr.hamlet || addr.neighbourhood || addr.pedestrian || "",
+          addr.suburb || addr.village || addr.town || addr.residential || "",
+          addr.city || addr.county || addr.state_district || "",
+          addr.state || "",
+        ].filter(Boolean);
+        setAddress(parts.length > 0 ? parts.join(", ") : (d.display_name || null));
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [lat, lng]);
   const t = new Date(point.recordedAt);
   const timeStr = `${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
   return (
     <div>
-      {address
-        ? <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>
-        : <p className="text-[10px] text-muted-foreground">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
+      {loading
+        ? <p className="text-[10px] text-muted-foreground italic">Fetching address…</p>
+        : address
+          ? <p className="text-[10px] text-muted-foreground leading-relaxed">{address}</p>
+          : <p className="text-[10px] text-muted-foreground">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
       }
       <p className="text-[10px] text-muted-foreground/60 mt-0.5">Last ping at {timeStr}</p>
     </div>
@@ -503,6 +532,8 @@ export default function EmployeeProfile() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("live");
   const [playbackDate, setPlaybackDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [speedLimitKm, setSpeedLimitKm] = useState(100);
+  const [stoppageMinutes, setStoppageMinutes] = useState(30);
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
@@ -541,6 +572,21 @@ export default function EmployeeProfile() {
     },
     enabled: !!empId && activeTab === "live",
     refetchInterval: 30000,
+  });
+
+  const { data: playbackLocationData } = useQuery<{
+    points: Array<{ latitude: string; longitude: string; speed: string | null; recordedAt: string }>;
+    totalKm: number;
+    stoppageCount: number;
+    segments: any[];
+  }>({
+    queryKey: ["/api/employees", empId, "locations", playbackDate, "playback-stats"],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${empId}/locations?date=${playbackDate}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId && activeTab === "playback",
   });
 
   const { data: liveCheckins = [], refetch: refetchCheckins } = useQuery<any[]>({
@@ -745,9 +791,11 @@ export default function EmployeeProfile() {
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
-  const playbackKm = playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
+  const playbackKm = playbackLocationData?.totalKm ?? playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
   const playbackCheckIns = playbackDateTrips.reduce((s, t) => s + (t.visits || []).filter(v => v.punchInTime).length, 0);
   const playbackCheckOuts = playbackDateTrips.reduce((s, t) => s + (t.visits || []).filter(v => v.punchOutTime).length, 0);
+  const speedViolations = (playbackLocationData?.points ?? []).filter(p => p.speed && Number(p.speed) * 3.6 > speedLimitKm).length;
+  const playbackStoppages = playbackLocationData?.stoppageCount ?? 0;
 
   const tabs: { key: ProfileTab; label: string; icon?: React.ReactNode }[] = [
     { key: "live", label: "Live" },
@@ -1113,12 +1161,12 @@ export default function EmployeeProfile() {
                 />
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="space-y-1">
-                    <label className="text-muted-foreground">Speed Limit (Km)</label>
-                    <Input type="number" defaultValue={100} className="h-7 text-xs" />
+                    <label className="text-muted-foreground">Speed Limit (Km/h)</label>
+                    <Input type="number" value={speedLimitKm} onChange={e => setSpeedLimitKm(Number(e.target.value))} className="h-7 text-xs" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-muted-foreground">Stoppage (Min)</label>
-                    <Input type="number" defaultValue={30} className="h-7 text-xs" />
+                    <Input type="number" value={stoppageMinutes} onChange={e => setStoppageMinutes(Number(e.target.value))} className="h-7 text-xs" />
                   </div>
                 </div>
               </div>
@@ -1129,15 +1177,15 @@ export default function EmployeeProfile() {
                 </p>
                 <div className="space-y-2">
                   {[
-                    { label: "Km", value: playbackKm.toFixed(1), icon: <Route className="h-4 w-4 text-blue-500" /> },
-                    { label: "Speed Violations", value: "0", icon: <Gauge className="h-4 w-4 text-red-500" /> },
-                    { label: "Stoppage", value: "0", icon: <Timer className="h-4 w-4 text-amber-500" /> },
+                    { label: "Km", value: playbackKm.toFixed(2), icon: <Route className="h-4 w-4 text-blue-500" /> },
+                    { label: "Speed Violations", value: String(speedViolations), icon: <Gauge className="h-4 w-4 text-red-500" />, highlight: speedViolations > 0 },
+                    { label: "Stoppage", value: String(playbackStoppages), icon: <Timer className="h-4 w-4 text-amber-500" /> },
                     { label: "Check In", value: String(playbackCheckIns), icon: <LogIn className="h-4 w-4 text-green-500" /> },
                     { label: "Check Outs", value: String(playbackCheckOuts), icon: <LogOut className="h-4 w-4 text-violet-500" /> },
-                  ].map(({ label, value, icon }) => (
+                  ].map(({ label, value, icon, highlight }) => (
                     <div key={label} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
                       <span className="flex items-center gap-2 text-muted-foreground text-xs">{icon}{label}</span>
-                      <span className="font-bold text-primary">{value}</span>
+                      <span className={`font-bold ${highlight ? "text-red-600" : "text-primary"}`}>{value}</span>
                     </div>
                   ))}
                 </div>

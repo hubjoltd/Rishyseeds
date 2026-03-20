@@ -45,16 +45,22 @@ async function captureLocation(): Promise<{ latitude: string; longitude: string;
     catch { position = await getPosition(false, 15000); }
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
-    let locationName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    let locationName = "";
     try {
       const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { "Accept-Language": "en" } });
       if (resp.ok) {
         const data = await resp.json();
         const addr = data.address || {};
-        const parts = [addr.road || addr.hamlet || addr.neighbourhood || "", addr.suburb || addr.village || addr.town || "", addr.city || addr.county || addr.state_district || "", addr.state || ""].filter(Boolean);
-        if (parts.length > 0) locationName = parts.join(", ");
+        const parts = [
+          addr.road || addr.hamlet || addr.neighbourhood || addr.pedestrian || "",
+          addr.suburb || addr.village || addr.town || addr.residential || "",
+          addr.city || addr.county || addr.state_district || "",
+          addr.state || "",
+        ].filter(Boolean);
+        locationName = parts.length > 0 ? parts.join(", ") : (data.display_name || "");
       }
     } catch {}
+    if (!locationName) locationName = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     return { latitude: lat.toString(), longitude: lng.toString(), locationName };
   } catch { return null; }
 }
@@ -116,9 +122,13 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   // Customer check-in state
   const [checkInDialogOpen, setCheckInDialogOpen] = useState(false);
-  const [checkInStep, setCheckInStep] = useState<"select" | "new">("select");
+  const [checkInStep, setCheckInStep] = useState<"select" | "new" | "photo">("select");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [newCustomerForm, setNewCustomerForm] = useState({ companyName: "", mobile: "", email: "", noOfEmployees: "" });
+  const [checkInPendingPayload, setCheckInPendingPayload] = useState<Record<string, unknown> | null>(null);
+  const [checkInPhotoFile, setCheckInPhotoFile] = useState<File | null>(null);
+  const [checkInPhotoPreview, setCheckInPhotoPreview] = useState<string | null>(null);
+  const checkInPhotoRef = useRef<HTMLInputElement>(null);
 
   // Check-out state
   const [checkOutDialogOpen, setCheckOutDialogOpen] = useState(false);
@@ -291,11 +301,19 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   }, [photoServerUrl, employee, shareType, punchTime, punchLocation, toast]);
 
   const customerCheckinMutation = useMutation({
-    mutationFn: async (payload: object) => {
+    mutationFn: async (data: Record<string, unknown> & { _photo?: File }) => {
+      const fd = new FormData();
+      if (data.customerId !== undefined) fd.append("customerId", String(data.customerId));
+      if (data.customerName) fd.append("customerName", String(data.customerName));
+      if (data.isNew) fd.append("isNew", "true");
+      if (data.companyName) fd.append("companyName", String(data.companyName));
+      if (data.mobile) fd.append("mobile", String(data.mobile));
+      if (data.email) fd.append("email", String(data.email));
+      if (data._photo) fd.append("checkInPhoto", data._photo as File);
       const res = await fetch("/api/employee/customer-checkin", {
         method: "POST",
-        headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: getEmployeeAuthHeaders(),
+        body: fd,
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Check-in failed"); }
       return res.json();
@@ -306,6 +324,9 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       setCheckInStep("select");
       setSelectedCustomerId("");
       setNewCustomerForm({ companyName: "", mobile: "", email: "", noOfEmployees: "" });
+      setCheckInPendingPayload(null);
+      setCheckInPhotoFile(null);
+      setCheckInPhotoPreview(null);
       queryClient.invalidateQueries({ queryKey: ["/api/employee/customer-checkin/active"] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -314,12 +335,16 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const handleExistingCheckIn = () => {
     if (!selectedCustomerId) return;
     const cust = (customersList || []).find((c: any) => c.id.toString() === selectedCustomerId);
-    customerCheckinMutation.mutate({ customerId: Number(selectedCustomerId), customerName: cust?.name || "" });
+    setCheckInPendingPayload({ customerId: Number(selectedCustomerId), customerName: cust?.name || "" });
+    setCheckInPhotoFile(null); setCheckInPhotoPreview(null);
+    setCheckInStep("photo");
   };
 
   const handleNewCustomerCheckIn = () => {
     if (!newCustomerForm.companyName.trim()) { toast({ title: "Company name required", variant: "destructive" }); return; }
-    customerCheckinMutation.mutate({ isNew: true, companyName: newCustomerForm.companyName, mobile: newCustomerForm.mobile, email: newCustomerForm.email });
+    setCheckInPendingPayload({ isNew: true, companyName: newCustomerForm.companyName, mobile: newCustomerForm.mobile, email: newCustomerForm.email });
+    setCheckInPhotoFile(null); setCheckInPhotoPreview(null);
+    setCheckInStep("photo");
   };
 
   const openCheckOut = async () => {
@@ -381,6 +406,16 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     <div className="min-h-screen bg-gray-100">
       <input type="file" accept="image/*" capture="user" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
       <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
+      <input type="file" accept="image/*" capture="environment" ref={checkInPhotoRef} className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          setCheckInPhotoFile(file);
+          const reader = new FileReader();
+          reader.onload = () => setCheckInPhotoPreview(reader.result as string);
+          reader.readAsDataURL(file);
+        }}
+      />
 
       {/* Blue Header Banner */}
       <div className="bg-green-700 px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
@@ -558,9 +593,55 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       </div>
 
       {/* ── Customer Check-In Dialog ── */}
-      <Dialog open={checkInDialogOpen} onOpenChange={(v) => { setCheckInDialogOpen(v); if (!v) { setCheckInStep("select"); setSelectedCustomerId(""); } }}>
+      <Dialog open={checkInDialogOpen} onOpenChange={(v) => { setCheckInDialogOpen(v); if (!v) { setCheckInStep("select"); setSelectedCustomerId(""); setCheckInPendingPayload(null); setCheckInPhotoFile(null); setCheckInPhotoPreview(null); } }}>
         <DialogContent className="max-w-sm mx-auto">
-          {checkInStep === "select" ? (
+          {checkInStep === "photo" ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-2 bg-green-700 -mx-6 -mt-6 px-4 pt-5 pb-4 rounded-t-lg">
+                  <button onClick={() => setCheckInStep(checkInPendingPayload?.isNew ? "new" : "select")} className="text-white text-lg font-bold">&#8592;</button>
+                  <DialogTitle className="text-base font-bold text-white">Take Check-In Photo</DialogTitle>
+                </div>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <p className="text-xs text-gray-500 text-center">A photo is required to confirm the visit.</p>
+                {checkInPhotoPreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-gray-200 aspect-video bg-black">
+                    <img src={checkInPhotoPreview} alt="Check-in photo" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => { setCheckInPhotoFile(null); setCheckInPhotoPreview(null); if (checkInPhotoRef.current) checkInPhotoRef.current.value = ""; }}
+                      className="absolute top-2 right-2 bg-black/60 rounded-full p-1.5 text-white text-xs font-bold px-2"
+                    >✕</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => checkInPhotoRef.current?.click()}
+                    className="w-full border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center py-12 gap-3 bg-gray-50 active:bg-gray-100"
+                  >
+                    <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                      <Camera className="w-8 h-8 text-green-700" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700">Tap to open camera</p>
+                    <p className="text-xs text-gray-400">Photo proof is mandatory</p>
+                  </button>
+                )}
+                {checkInPhotoPreview && (
+                  <button onClick={() => checkInPhotoRef.current?.click()} className="w-full text-xs text-gray-400 underline text-center">Retake Photo</button>
+                )}
+                <Button
+                  className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full font-bold py-3"
+                  disabled={!checkInPhotoFile || customerCheckinMutation.isPending}
+                  onClick={() => {
+                    if (!checkInPhotoFile || !checkInPendingPayload) return;
+                    customerCheckinMutation.mutate({ ...checkInPendingPayload, _photo: checkInPhotoFile });
+                  }}
+                >
+                  {customerCheckinMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  {checkInPhotoFile ? "CONFIRM CHECK IN" : "Take Photo First"}
+                </Button>
+              </div>
+            </>
+          ) : checkInStep === "select" ? (
             <>
               <DialogHeader>
                 <DialogTitle className="text-center text-base font-bold bg-green-700 -mx-6 -mt-6 px-6 pt-6 pb-4 rounded-t-lg text-white">Check In</DialogTitle>
