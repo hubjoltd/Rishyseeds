@@ -1170,95 +1170,135 @@ export default function EmployeeProfile() {
         )}
 
         {activeTab === "playback" && (
-          <div className="flex gap-4 flex-wrap md:flex-nowrap">
-            <div className="flex-1 bg-card border rounded-lg overflow-hidden" style={{ minHeight: "500px" }}>
+          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ minHeight: "620px" }}>
+
+            {/* ── LEFT: sidebar (same style as Live tab) ── */}
+            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ minHeight: "620px" }}>
+
+              {/* Header: date picker + stats */}
+              <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Input
+                    type="date"
+                    value={playbackDate}
+                    onChange={(e) => setPlaybackDate(e.target.value)}
+                    className="h-7 text-xs flex-1"
+                    data-testid="input-playback-date"
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="text-muted-foreground">Completed</span>
+                  <span className="font-bold text-foreground">{playbackCheckIns}</span>
+                  <span className="text-muted-foreground ml-auto">Distance</span>
+                  <span className="font-bold text-foreground">{playbackKm.toFixed(2)} Km</span>
+                </div>
+              </div>
+
+              {/* Timeline scroll area */}
+              <div className="flex-1 overflow-y-auto">
+                {(() => {
+                  const pbSegments = playbackLocationData?.segments ?? [];
+                  const pbVisits = playbackDateTrips.flatMap((trip, ti) =>
+                    (trip.visits || []).map((v, vi) => ({ v, idx: ti * 10 + vi + 1 }))
+                  );
+                  const hasPlaybackActivity = pbSegments.length > 0 || pbVisits.length > 0;
+
+                  if (!hasPlaybackActivity) return (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
+                      <Timer className="h-10 w-10 opacity-20" />
+                      <p className="font-medium">No activity recorded</p>
+                      <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds</p>
+                    </div>
+                  );
+
+                  const fmtT = (iso: string) => {
+                    try { const d = new Date(iso); return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false }); } catch { return "-"; }
+                  };
+                  const fmtDur = (secs: number) => `${String(Math.floor(secs / 60)).padStart(2, "0")}m ${String(Math.round(secs % 60)).padStart(2, "0")}s`;
+
+                  return (
+                    <div className="relative py-2">
+                      <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gray-200" />
+
+                      {pbSegments.map((seg: any, idx: number) => {
+                        if (seg.type === "stoppage") {
+                          return (
+                            <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50">
+                              <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                                <div className="w-7 h-7 rounded-full bg-red-100 border border-red-300 flex items-center justify-center">
+                                  <Timer className="w-3.5 h-3.5 text-red-500" />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0 pt-0.5">
+                                <p className="text-[11px] font-semibold text-red-700">Stoppage of {fmtDur(seg.durationSecs)}</p>
+                                <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
+                                <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-semibold text-orange-700">Travelled ({(seg.distanceKm ?? 0).toFixed(2)} km)</p>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {pbVisits.map(({ v, idx }) => (
+                        <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50/50">
+                          <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                            <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow flex items-center justify-center">
+                              <span className="text-white text-[9px] font-bold">{idx}</span>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <p className="text-[11px] font-bold text-blue-700">CHK {idx}</p>
+                            <p className="text-[10px] text-gray-500 font-mono">
+                              {fmtT(v.punchInTime as unknown as string)}
+                              {v.punchOutTime ? `–${fmtT(v.punchOutTime as unknown as string)}` : ""}
+                            </p>
+                            {(v.punchInLocationName || v.punchOutLocationName) && (
+                              <p className="text-[10px] text-blue-600 mt-0.5 line-clamp-1">{v.punchInLocationName || v.punchOutLocationName}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Stats footer */}
+                      <div className="mx-3 mt-3 rounded-lg border bg-gray-50 p-2.5 space-y-1.5">
+                        {[
+                          { label: "Speed Violations", value: speedViolations, color: speedViolations > 0 ? "text-red-600" : "text-foreground" },
+                          { label: "Stoppages", value: playbackStoppages, color: "text-foreground" },
+                        ].map(({ label, value, color }) => (
+                          <div key={label} className="flex justify-between text-[11px]">
+                            <span className="text-muted-foreground">{label}</span>
+                            <span className={`font-bold ${color}`}>{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* ── RIGHT: Full-height Playback Map ── */}
+            <div className="flex-1 relative" style={{ minHeight: "620px" }}>
               {tripsLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
               ) : (
                 <PlaybackMap trips={trips} date={playbackDate} employeeId={empId} />
-              )}
-            </div>
-
-            <div className="w-full md:w-64 shrink-0 space-y-3">
-              <div className="bg-card border rounded-lg p-4 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start-End Date</p>
-                <Input
-                  type="date"
-                  value={playbackDate}
-                  onChange={(e) => setPlaybackDate(e.target.value)}
-                  className="h-8 text-sm"
-                  data-testid="input-playback-date"
-                />
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground">Speed Limit (Km/h)</label>
-                    <Input type="number" value={speedLimitKm} onChange={e => setSpeedLimitKm(Number(e.target.value))} className="h-7 text-xs" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground">Stoppage (Min)</label>
-                    <Input type="number" value={stoppageMinutes} onChange={e => setStoppageMinutes(Number(e.target.value))} className="h-7 text-xs" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card border rounded-lg p-4 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                  <Activity className="h-3 w-3" /> Stats
-                </p>
-                <div className="space-y-2">
-                  {[
-                    { label: "Km", value: playbackKm.toFixed(2), icon: <Route className="h-4 w-4 text-blue-500" /> },
-                    { label: "Speed Violations", value: String(speedViolations), icon: <Gauge className="h-4 w-4 text-red-500" />, highlight: speedViolations > 0 },
-                    { label: "Stoppage", value: String(playbackStoppages), icon: <Timer className="h-4 w-4 text-amber-500" /> },
-                    { label: "Check In", value: String(playbackCheckIns), icon: <LogIn className="h-4 w-4 text-green-500" /> },
-                    { label: "Check Outs", value: String(playbackCheckOuts), icon: <LogOut className="h-4 w-4 text-violet-500" /> },
-                  ].map(({ label, value, icon, highlight }) => (
-                    <div key={label} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
-                      <span className="flex items-center gap-2 text-muted-foreground text-xs">{icon}{label}</span>
-                      <span className={`font-bold ${highlight ? "text-red-600" : "text-primary"}`}>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Check-in details cards */}
-              {playbackDateTrips.flatMap((trip, ti) =>
-                (trip.visits || []).map((v, vi) => ({ v, idx: ti * 10 + vi + 1 }))
-              ).length > 0 && (
-                <div className="bg-card border rounded-lg p-4 space-y-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> Check-ins
-                  </p>
-                  <div className="space-y-2">
-                    {playbackDateTrips.flatMap((trip, ti) =>
-                      (trip.visits || []).map((v, vi) => ({ v, idx: ti * 10 + vi + 1 }))
-                    ).map(({ v, idx }) => (
-                      <div key={idx} className="rounded-md border bg-muted/30 p-3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">{idx}</div>
-                          <span className="text-xs font-semibold text-foreground">Check-in {idx}</span>
-                        </div>
-                        {(v.punchInLocationName || v.punchOutLocationName) && (
-                          <p className="text-[11px] text-muted-foreground leading-tight pl-7">
-                            {v.punchInLocationName || v.punchOutLocationName}
-                          </p>
-                        )}
-                        <div className="grid grid-cols-2 gap-1 pl-7">
-                          <div className="space-y-0.5">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Punch In</p>
-                            <p className="text-xs font-bold text-green-600">{fmtPopupTime(v.punchInTime as unknown as string)}</p>
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Punch Out</p>
-                            <p className="text-xs font-bold text-red-500">{fmtPopupTime(v.punchOutTime as unknown as string)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
             </div>
           </div>
