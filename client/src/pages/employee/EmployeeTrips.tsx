@@ -113,7 +113,7 @@ function StoppageAddress({ lat, lng }: { lat: number; lng: number }) {
   return <p className="text-[10px] text-gray-400 leading-relaxed">{address}</p>;
 }
 
-type View = "list" | "detail" | "start_trip" | "end_trip";
+type View = "list" | "detail" | "start_trip";
 
 export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const { toast } = useToast();
@@ -183,70 +183,6 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const endTripMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedTrip) throw new Error("No active trip");
-      const loc = await captureGPS();
-      const fd = new FormData();
-      if (loc) {
-        fd.append("endLatitude", String(loc.lat));
-        fd.append("endLongitude", String(loc.lng));
-        if (loc.name) fd.append("endLocationName", loc.name);
-      }
-      const res = await fetch(`/api/employee/trips/${selectedTrip.id}/end`, { method: "PATCH", headers: getHeaders(), body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
-      qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      setView("detail");
-      toast({ title: "Trip Ended", description: "Trip submitted for approval" });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const addVisitMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedTrip) throw new Error("No active trip");
-      const loc = await captureGPS();
-      const fd = new FormData();
-      if (loc) {
-        fd.append("punchInLatitude", String(loc.lat));
-        fd.append("punchInLongitude", String(loc.lng));
-        if (loc.name) fd.append("punchInLocationName", loc.name);
-      }
-      const res = await fetch(`/api/employee/trips/${selectedTrip.id}/visits`, { method: "POST", headers: getHeaders(), body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      toast({ title: "Checked In", description: "GPS location captured" });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const punchOutMutation = useMutation({
-    mutationFn: async (visitId: number) => {
-      if (!selectedTrip) throw new Error("No trip");
-      const loc = await captureGPS();
-      const fd = new FormData();
-      if (loc) {
-        fd.append("punchOutLatitude", String(loc.lat));
-        fd.append("punchOutLongitude", String(loc.lng));
-        if (loc.name) fd.append("punchOutLocationName", loc.name);
-      }
-      const res = await fetch(`/api/employee/trips/${selectedTrip.id}/visits/${visitId}/punch-out`, { method: "PATCH", headers: getHeaders(), body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      toast({ title: "Checked Out" });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
 
   const activeTrip = trips.find(t => t.status === "started" || t.status === "in_progress");
   const trip = tripDetail || selectedTrip;
@@ -294,39 +230,6 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     );
   }
 
-  // ===== END TRIP FORM =====
-  if (view === "end_trip") {
-    return (
-      <div className="flex flex-col h-full animate-in fade-in">
-        <div className="bg-green-700 text-white px-4 pt-5 pb-4 flex items-center gap-3 -mx-4 -mt-4 mb-4">
-          <button onClick={() => setView("detail")} className="p-1"><ArrowLeft className="h-5 w-5" /></button>
-          <span className="font-semibold text-base">End Trip</span>
-        </div>
-
-        <div className="flex-1 space-y-4">
-          <div className="border border-red-100 rounded-md bg-red-50 px-3 py-3 flex items-start gap-3">
-            <MapPin className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-red-800 mb-0.5">End Trip?</p>
-              <p className="text-xs text-red-700">Your current GPS location will be captured and the trip will be submitted for approval.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="pt-3 border-t">
-          <Button
-            className="w-full bg-red-600 hover:bg-red-700 font-bold py-3"
-            disabled={endTripMutation.isPending || gpsLoading}
-            onClick={() => endTripMutation.mutate()}
-            data-testid="button-confirm-end-trip"
-          >
-            {endTripMutation.isPending || gpsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Square className="h-4 w-4 mr-2" />}
-            END TRIP
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   // ===== TRIP DETAIL =====
   if (view === "detail" && trip) {
@@ -596,39 +499,6 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
           )}
         </div>
 
-        {/* Actions */}
-        {isActive && (
-          <div className="pt-3 border-t space-y-2">
-            {activeVisit ? (
-              <Button
-                className="w-full bg-orange-500 hover:bg-orange-600 font-bold py-2.5"
-                disabled={punchOutMutation.isPending || gpsLoading}
-                onClick={() => punchOutMutation.mutate(activeVisit.id)}
-                data-testid="button-check-out"
-              >
-                {punchOutMutation.isPending || gpsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogOut className="h-4 w-4 mr-2" />}
-                CHECK OUT
-              </Button>
-            ) : (
-              <Button
-                className="w-full bg-green-700 hover:bg-green-800 font-bold py-2.5"
-                disabled={addVisitMutation.isPending || gpsLoading}
-                onClick={() => addVisitMutation.mutate()}
-                data-testid="button-check-in"
-              >
-                {addVisitMutation.isPending || gpsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
-                CHECK IN
-              </Button>
-            )}
-            <Button
-              className="w-full bg-red-600 hover:bg-red-700 font-bold py-2.5"
-              onClick={() => setView("end_trip")}
-              data-testid="button-end-trip"
-            >
-              <Square className="h-4 w-4 mr-2" /> END TRIP
-            </Button>
-          </div>
-        )}
       </div>
     );
   }
