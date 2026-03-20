@@ -578,7 +578,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
+  const { data: locationData, refetch: refetchPlayback, isFetching: pbFetching } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
     queryFn: async () => {
       const res = await fetch(`/api/employees/${employeeId}/locations?date=${date}`, {
@@ -828,9 +828,23 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
             </svg>
           </button>
         </div>
-        {/* Speed + Timestamp */}
-        <div className="flex items-center gap-6 text-[13px] font-mono text-gray-700 font-medium">
+        {/* Speed + Refresh + Timestamp */}
+        <div className="flex items-center gap-4 text-[13px] font-mono text-gray-700 font-medium">
           {playbackIdx > 0 && <span>{speedDisplay}</span>}
+          <button
+            onClick={() => { setPlaying(false); setPlaybackIdx(0); refetchPlayback(); }}
+            title="Refresh GPS data"
+            className="text-blue-500 hover:text-blue-700 transition-colors"
+          >
+            <svg
+              viewBox="0 0 24 24" width="18" height="18" fill="none"
+              stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+              className={pbFetching ? "animate-spin" : ""}
+            >
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
           <span>{tsDisplay}</span>
         </div>
       </div>
