@@ -2710,7 +2710,62 @@ export async function registerRoutes(
       // Merge: tripVisits + dashVisits sorted by punchInTime
       const allVisits = [...visits.map(v => ({ ...v, _source: "trip" as const })), ...dashVisits]
         .sort((a, b) => new Date(a.punchInTime || 0).getTime() - new Date(b.punchInTime || 0).getTime());
-      res.json({ ...trip, visits: allVisits });
+
+      // === GPS segment computation for the trip time window ===
+      const tripDate = trip.startTime ? new Date(trip.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const rawPoints = await storage.getEmployeeLocationsForDate(employeeId, tripDate);
+      const tripStart = trip.startTime ? new Date(trip.startTime).getTime() : 0;
+      const tripEnd = trip.endTime ? new Date(trip.endTime).getTime() : Date.now();
+      const points = rawPoints.filter((p: any) => {
+        const t = new Date(p.recordedAt).getTime();
+        return t >= tripStart && t <= tripEnd;
+      });
+
+      const STOPPAGE_RADIUS_M = 150;
+      const STOPPAGE_MIN_SECS = 2 * 60;
+      function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371000;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+      function totalDistKm(pts: typeof points): number {
+        let d = 0;
+        for (let k = 1; k < pts.length; k++) d += haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude)) / 1000;
+        return d;
+      }
+      type GpsSeg =
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+        | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
+      const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
+      let ci = 0;
+      while (ci < points.length) {
+        const anchor = points[ci];
+        let cj = ci + 1;
+        while (cj < points.length && haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) cj++;
+        const durSecs = cj > ci + 1 ? (new Date(points[cj-1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000 : 0;
+        if (cj > ci + 1 && durSecs >= STOPPAGE_MIN_SECS) {
+          clusters.push({ startIdx: ci, endIdx: cj - 1, lat: Number(anchor.latitude), lng: Number(anchor.longitude), durationSecs: durSecs });
+          ci = cj;
+        } else { ci++; }
+      }
+      const gpsSegments: GpsSeg[] = [];
+      let prevEnd = -1;
+      for (const cluster of clusters) {
+        if (cluster.startIdx > prevEnd + 1) {
+          const tPts = points.slice(prevEnd + 1, cluster.startIdx + 1);
+          if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+        }
+        gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
+        prevEnd = cluster.endIdx;
+      }
+      if (prevEnd < points.length - 1 && points.length > 0) {
+        const tPts = points.slice(prevEnd + 1);
+        if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+      }
+
+      res.json({ ...trip, visits: allVisits, gpsSegments });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
     }
