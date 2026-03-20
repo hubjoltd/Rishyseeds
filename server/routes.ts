@@ -2653,7 +2653,24 @@ export async function registerRoutes(
       const trip = await storage.getTrip(id);
       if (!trip || trip.employeeId !== employeeId) return res.status(404).json({ message: "Trip not found" });
       const visits = await storage.getTripVisits(id);
-      res.json({ ...trip, visits });
+      // Also include customer_checkins that were linked to this trip (from dashboard flow)
+      const dashCheckins = await storage.getCustomerCheckinsByTripId(id);
+      const dashVisits = dashCheckins.map(c => ({
+        id: `chk-${c.id}`,
+        _source: "checkin" as const,
+        customerName: c.customerName,
+        customerAddress: c.locationName || null,
+        punchInTime: c.checkedInAt,
+        punchOutTime: c.checkedOutAt,
+        punchInPhoto: c.checkInPhoto || null,
+        punchOutPhoto: c.checkOutPhoto || null,
+        status: c.checkedOutAt ? "completed" : "punched_in",
+        checkinId: c.id,
+      }));
+      // Merge: tripVisits + dashVisits sorted by punchInTime
+      const allVisits = [...visits.map(v => ({ ...v, _source: "trip" as const })), ...dashVisits]
+        .sort((a, b) => new Date(a.punchInTime || 0).getTime() - new Date(b.punchInTime || 0).getTime());
+      res.json({ ...trip, visits: allVisits });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
     }
@@ -3493,11 +3510,20 @@ export async function registerRoutes(
 
       if (!finalCustomerName) return res.status(400).json({ message: "Customer name is required" });
 
+      // Link to active trip if employee has one
+      let activeTripId: number | null = null;
+      try {
+        const empTrips = await storage.getEmployeeTrips(empId);
+        const activeTrip = empTrips.find(t => t.status === "started" || t.status === "in_progress");
+        if (activeTrip) activeTripId = activeTrip.id;
+      } catch (_) {}
+
       const checkin = await storage.createCustomerCheckin({
         employeeDbId: empId,
         customerId: finalCustomerId,
         customerName: finalCustomerName,
         customerMobile: finalMobile,
+        tripId: activeTripId,
       });
       res.status(201).json(checkin);
     } catch (e: any) {

@@ -39,7 +39,7 @@ import {
   type ExpenseAudit, type InsertExpenseAudit,
   type EmployeeLocation, type InsertEmployeeLocation,
 } from "@shared/schema";
-import { eq, desc, sql, and, or, gte, lte } from "drizzle-orm";
+import { eq, desc, asc, sql, and, or, gte, lte } from "drizzle-orm";
 
 export interface IStorage {
   // User
@@ -216,6 +216,7 @@ export interface IStorage {
   upsertCustomerFromVisit(name: string, address: string | null, ownerEmployeeId: number, ownerName: string, reportingManagerName?: string): Promise<Customer>;
   createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin>;
   getActiveCustomerCheckin(employeeDbId: number): Promise<CustomerCheckin | undefined>;
+  getCustomerCheckinsByTripId(tripId: number): Promise<CustomerCheckin[]>;
   checkoutCustomerCheckin(id: number, data: Partial<InsertCustomerCheckin>): Promise<CustomerCheckin | undefined>;
 
   // Tasks
@@ -1068,6 +1069,12 @@ export class DatabaseStorage implements IStorage {
   async createCustomerCheckin(data: InsertCustomerCheckin): Promise<CustomerCheckin> {
     const [created] = await db.insert(customerCheckins).values(data).returning();
     return created;
+  }
+
+  async getCustomerCheckinsByTripId(tripId: number): Promise<CustomerCheckin[]> {
+    return db.select().from(customerCheckins)
+      .where(eq(customerCheckins.tripId, tripId))
+      .orderBy(asc(customerCheckins.checkedInAt));
   }
 
   async getActiveCustomerCheckin(employeeDbId: number): Promise<CustomerCheckin | undefined> {

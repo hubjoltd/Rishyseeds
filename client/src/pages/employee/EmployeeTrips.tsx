@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, MapPin, Clock, Gauge,
   Navigation, Play, Square, Building2,
-  ChevronRight, LogIn, LogOut,
+  ChevronRight, LogIn, LogOut, Camera, X, Check,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -87,6 +87,13 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const [view, setView] = useState<View>("list");
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+
+  // Photo capture state for CHECK IN / CHECK OUT
+  const [captureMode, setCaptureMode] = useState<"in" | "out" | null>(null);
+  const [captureFile, setCaptureFile] = useState<File | null>(null);
+  const [capturePreview, setCapturePreview] = useState<string | null>(null);
+  const [captureActiveVisitId, setCaptureActiveVisitId] = useState<number | null>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const captureGPS = useCallback(async (): Promise<{ lat: number; lng: number; name?: string } | null> => {
     setGpsLoading(true);
@@ -170,10 +177,11 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   });
 
   const addVisitMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (photo: File) => {
       if (!selectedTrip) throw new Error("No active trip");
       const loc = await captureGPS();
       const fd = new FormData();
+      fd.append("punchInPhoto", photo);
       if (loc) {
         fd.append("punchInLatitude", String(loc.lat));
         fd.append("punchInLongitude", String(loc.lng));
@@ -185,16 +193,18 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      toast({ title: "Checked In", description: "Location captured — tap Check Out when done" });
+      resetCapture();
+      toast({ title: "Checked In", description: "Location & photo captured" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const punchOutMutation = useMutation({
-    mutationFn: async (visitId: number) => {
+    mutationFn: async ({ visitId, photo }: { visitId: number; photo: File }) => {
       if (!selectedTrip) throw new Error("No trip");
       const loc = await captureGPS();
       const fd = new FormData();
+      fd.append("punchOutPhoto", photo);
       if (loc) {
         fd.append("punchOutLatitude", String(loc.lat));
         fd.append("punchOutLongitude", String(loc.lng));
@@ -206,13 +216,118 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
-      toast({ title: "Punched Out" });
+      resetCapture();
+      toast({ title: "Checked Out" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const resetCapture = () => {
+    setCaptureMode(null);
+    setCaptureFile(null);
+    setCapturePreview(null);
+    setCaptureActiveVisitId(null);
+    if (cameraRef.current) cameraRef.current.value = "";
+  };
+
+  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCaptureFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setCapturePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const confirmCapture = () => {
+    if (!captureFile) return;
+    if (captureMode === "in") {
+      addVisitMutation.mutate(captureFile);
+    } else if (captureMode === "out" && captureActiveVisitId !== null) {
+      punchOutMutation.mutate({ visitId: captureActiveVisitId, photo: captureFile });
+    }
+  };
+
   const activeTrip = trips.find(t => t.status === "started" || t.status === "in_progress");
   const trip = tripDetail || selectedTrip;
+
+  // ===== PHOTO CAPTURE SCREEN =====
+  if (captureMode !== null) {
+    const isIn = captureMode === "in";
+    const isPending = addVisitMutation.isPending || punchOutMutation.isPending || gpsLoading;
+    return (
+      <div className="flex flex-col h-full animate-in fade-in">
+        {/* Hidden camera input */}
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleCameraChange}
+        />
+        <div className={`text-white px-4 pt-5 pb-4 flex items-center gap-3 -mx-4 -mt-4 mb-4 ${isIn ? "bg-green-700" : "bg-orange-500"}`}>
+          <button onClick={resetCapture} className="p-1"><ArrowLeft className="h-5 w-5" /></button>
+          <span className="font-semibold text-base">{isIn ? "CHECK IN — Take Photo" : "CHECK OUT — Take Photo"}</span>
+        </div>
+
+        <div className="flex-1 space-y-4">
+          <p className="text-xs text-gray-500 text-center">
+            A photo is required to {isIn ? "check in" : "check out"} at a client location.
+          </p>
+
+          {/* Photo preview / capture area */}
+          {capturePreview ? (
+            <div className="relative rounded-xl overflow-hidden border border-gray-200 aspect-video bg-black">
+              <img src={capturePreview} alt="Captured" className="w-full h-full object-cover" />
+              <button
+                onClick={() => { setCaptureFile(null); setCapturePreview(null); if (cameraRef.current) cameraRef.current.value = ""; }}
+                className="absolute top-2 right-2 bg-black/60 rounded-full p-1.5"
+              >
+                <X className="h-4 w-4 text-white" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => cameraRef.current?.click()}
+              className="w-full border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center py-14 gap-3 bg-gray-50 active:bg-gray-100"
+            >
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isIn ? "bg-green-100" : "bg-orange-100"}`}>
+                <Camera className={`h-8 w-8 ${isIn ? "text-green-700" : "text-orange-600"}`} />
+              </div>
+              <p className="text-sm font-semibold text-gray-700">Tap to open camera</p>
+              <p className="text-xs text-gray-400">Photo proof is mandatory</p>
+            </button>
+          )}
+
+          {capturePreview && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => cameraRef.current?.click()}
+            >
+              <Camera className="h-4 w-4 mr-2" /> Retake Photo
+            </Button>
+          )}
+        </div>
+
+        <div className="pt-3 border-t">
+          <Button
+            className={`w-full font-bold py-3 ${isIn ? "bg-green-700 hover:bg-green-800" : "bg-orange-500 hover:bg-orange-600"}`}
+            disabled={!captureFile || isPending}
+            onClick={confirmCapture}
+          >
+            {isPending
+              ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Processing…</>
+              : captureFile
+                ? <><Check className="h-4 w-4 mr-2" /> CONFIRM {isIn ? "CHECK IN" : "CHECK OUT"}</>
+                : <><Camera className="h-4 w-4 mr-2" /> Take Photo First</>
+            }
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // ===== START TRIP FORM =====
   if (view === "start_trip") {
@@ -367,13 +482,19 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
               <div className="divide-y divide-gray-100">
                 {visits.map((v: any, i: number) => {
                   const isVisitActive = !v.punchOutTime;
+                  const isDash = v._source === "checkin";
                   return (
                     <div key={v.id} className={`px-3 py-3 ${isVisitActive ? "bg-green-50" : ""}`}>
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div className="flex-1">
-                          <p className="text-xs font-bold text-gray-800">
-                            {v.customerName || `Visit ${i + 1}`}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-bold text-gray-800">
+                              {v.customerName || `Visit ${i + 1}`}
+                            </p>
+                            {isDash && (
+                              <span className="text-[9px] font-semibold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Dashboard</span>
+                            )}
+                          </div>
                           {v.customerAddress && (
                             <p className="text-[10px] text-gray-500 leading-relaxed mt-0.5">{v.customerAddress}</p>
                           )}
@@ -399,8 +520,25 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                           <span className="text-gray-400">{fmtDur(v.punchInTime, v.punchOutTime)}</span>
                         )}
                       </div>
+                      {/* Photo thumbnails */}
+                      {(v.punchInPhoto || v.punchOutPhoto) && (
+                        <div className="flex gap-2 mt-2">
+                          {v.punchInPhoto && (
+                            <a href={v.punchInPhoto} target="_blank" rel="noopener noreferrer" className="relative">
+                              <img src={v.punchInPhoto} alt="Check-in" className="h-14 w-14 object-cover rounded-md border border-green-200" />
+                              <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center bg-green-600/80 text-white rounded-b-md">IN</span>
+                            </a>
+                          )}
+                          {v.punchOutPhoto && (
+                            <a href={v.punchOutPhoto} target="_blank" rel="noopener noreferrer" className="relative">
+                              <img src={v.punchOutPhoto} alt="Check-out" className="h-14 w-14 object-cover rounded-md border border-orange-200" />
+                              <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center bg-orange-500/80 text-white rounded-b-md">OUT</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
                       {v.remarks && <p className="text-[11px] text-gray-500 mt-1 italic">{v.remarks}</p>}
-                      {isVisitActive && isActive && (
+                      {isVisitActive && isActive && !isDash && (
                         <p className="text-[10px] text-green-600 mt-1 font-medium flex items-center gap-1">
                           <Navigation className="h-3 w-3" /> GPS tracking active · tap CHECK OUT below to close
                         </p>
@@ -427,22 +565,18 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
             {activeVisit ? (
               <Button
                 className="w-full bg-orange-500 hover:bg-orange-600 font-bold py-2.5"
-                disabled={punchOutMutation.isPending || gpsLoading}
-                onClick={() => punchOutMutation.mutate(activeVisit.id)}
+                onClick={() => { setCaptureActiveVisitId(activeVisit.id); setCaptureMode("out"); }}
                 data-testid="button-check-out"
               >
-                {punchOutMutation.isPending || gpsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogOut className="h-4 w-4 mr-2" />}
-                CHECK OUT
+                <Camera className="h-4 w-4 mr-2" /> CHECK OUT — Take Photo
               </Button>
             ) : (
               <Button
                 className="w-full bg-green-700 hover:bg-green-800 font-bold py-2.5"
-                disabled={addVisitMutation.isPending || gpsLoading}
-                onClick={() => addVisitMutation.mutate()}
+                onClick={() => { resetCapture(); setCaptureMode("in"); }}
                 data-testid="button-check-in"
               >
-                {addVisitMutation.isPending || gpsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
-                CHECK IN
+                <Camera className="h-4 w-4 mr-2" /> CHECK IN — Take Photo
               </Button>
             )}
             <Button
