@@ -591,53 +591,66 @@ function makePinIcon(fill: string, innerSvg: string, size = 32) {
   });
 }
 
+// Haversine distance in km
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Circle icon helper — used for all markers in both modes
+function makeCircleIcon(bg: string, label: string, size = 34) {
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:${Math.round(size * 0.41)}px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${label}</div>`,
+    className: "",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Person avatar circle icon
+function makePersonIcon() {
+  return L.divIcon({
+    html: `<div style="width:36px;height:36px;border-radius:50%;background:#2563eb;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8V21.6h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></div>`,
+    className: "",
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
+// Animated playback dot — blue pulsing circle
+function makePlaybackDotIcon() {
+  return L.divIcon({
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,0.25)"></div>`,
+    className: "",
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
 // Inner layer content — must be inside MapContainer so hooks work
 function PlaybackMapInner({
   routePoints,
   chkStops,
   mapTypeId,
-  altMode,
+  routeColor,
+  playbackPos,
   onMapReady,
 }: {
   routePoints: [number, number][];
   chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
   mapTypeId: string;
-  altMode: boolean;
+  routeColor: string;
+  playbackPos: [number, number] | null;
   onMapReady: (m: any) => void;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
 
-  // ── Circle mode markers ──
-  const startCircleIcon = L.divIcon({
-    html: `<div style="width:34px;height:34px;border-radius:50%;background:#e11d48;border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.4)">B</div>`,
-    className: "",
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-  });
-
-  // ── Pin mode markers ──
-  // Red drop-pin for start — white inner circle (bullseye style)
-  const startPinIcon = makePinIcon("#e11d48",
-    `<circle cx="16" cy="16" r="8" fill="none" stroke="white" stroke-width="2.5"/><circle cx="16" cy="16" r="3.5" fill="white"/>`,
-    34
-  );
-  // Green drop-pin for last CHK stop — shows CHK number inside
-  const makeEndPinIcon = (num: number) => makePinIcon("#16a34a",
-    `<text x="16" y="21" text-anchor="middle" font-size="12" font-weight="bold" font-family="Arial,sans-serif" fill="white">${num}</text>`,
-    34
-  );
-  // Blue drop-pin with person silhouette for last known position
-  const personPinIcon = makePinIcon("#1a73e8",
-    `<path d="M16 9a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zm0 11c5 0 9 2 9 4.5v.5H7v-.5c0-2.5 4-4.5 9-4.5z" fill="white"/>`,
-    36
-  );
-  // Orange hollow circle with minus dash for intermediate CHK stops
-  const makeOrangeCircleIcon = () => L.divIcon({
-    html: `<div style="width:24px;height:24px;border-radius:50%;background:white;border:3px solid #f97316;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:3px;border-radius:2px;background:#f97316"></div></div>`,
-    className: "",
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
+  const startIcon = makeCircleIcon("#e11d48", "B", 34);
+  const personIcon = makePersonIcon();
+  const playbackDot = makePlaybackDotIcon();
 
   const lastPt = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
 
@@ -646,33 +659,27 @@ function PlaybackMapInner({
       <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
       <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={routePoints} />
+
+      {/* Route line — orange default, blue in playback mode */}
       {routePoints.length > 1 && (
-        <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
+        <Polyline positions={routePoints} pathOptions={{ color: routeColor, weight: 4, opacity: 0.9 }} />
       )}
 
-      {/* Start marker */}
+      {/* Start marker — red B circle */}
       {routePoints.length > 0 && (
-        <Marker position={routePoints[0]} icon={altMode ? startPinIcon : startCircleIcon}>
+        <Marker position={routePoints[0]} icon={startIcon}>
           <Popup><b>Trip Start</b></Popup>
         </Marker>
       )}
 
-      {/* CHK stop markers */}
-      {chkStops.map((stop, idx) => {
-        const isLast = idx === chkStops.length - 1;
-        const icon = altMode
-          ? (isLast ? makeEndPinIcon(stop.num) : makeOrangeCircleIcon())
-          : L.divIcon({
-              html: `<div style="width:30px;height:30px;border-radius:50%;background:#2563eb;border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;color:white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${stop.num}</div>`,
-              className: "",
-              iconSize: [30, 30],
-              iconAnchor: [15, 15],
-            });
+      {/* CHK stop markers — numbered blue circles */}
+      {chkStops.map((stop) => {
+        const icon = makeCircleIcon("#2563eb", String(stop.num), 30);
         return (
           <Marker key={stop.num} position={stop.pos} icon={icon}>
             <Popup>
               <div style={{ minWidth: 150, fontSize: 13 }}>
-                <b style={{ color: altMode ? "#f97316" : "#2563eb" }}>CHK {stop.num}</b>
+                <b style={{ color: "#2563eb" }}>CHK {stop.num}</b>
                 {stop.loc && <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{stop.loc}</div>}
                 <table style={{ marginTop: 6, width: "100%" }}>
                   <tbody>
@@ -686,11 +693,16 @@ function PlaybackMapInner({
         );
       })}
 
-      {/* Alt mode: blue person pin at last known GPS position */}
-      {altMode && lastPt && (
-        <Marker position={lastPt} icon={personPinIcon}>
+      {/* Person avatar at last known GPS position — always shown */}
+      {lastPt && (
+        <Marker position={lastPt} icon={personIcon}>
           <Popup><b>Last Known Position</b></Popup>
         </Marker>
+      )}
+
+      {/* Playback mode: moving dot along the route */}
+      {playbackPos && (
+        <Marker position={playbackPos} icon={playbackDot} zIndexOffset={1000} />
       )}
     </>
   );
@@ -704,7 +716,12 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   onMapTypeChange: (t: string) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
-  const [altMode, setAltMode] = useState(true); // default: pin-style markers (matches reference image)
+  // altMode=false → default view (orange route, Image 1)
+  // altMode=true  → playback animation view (blue route + bar, Image 2)
+  const [altMode, setAltMode] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [playbackIdx, setPlaybackIdx] = useState(0);
+  const playTimerRef = useRef<any>(null);
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -722,22 +739,27 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
 
   const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
 
-  // Build route points from GPS track, fallback to trip waypoints
-  const routePoints: [number, number][] = useMemo(() => {
+  // Build route with timestamps for playback
+  const routeWithTime = useMemo(() => {
     const gpsPts = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
-      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+      .map(p => ({ pos: [Number(p.latitude), Number(p.longitude)] as [number, number], ts: p.recordedAt }));
     if (gpsPts.length > 0) return gpsPts;
-    const waypoints: [number, number][] = [];
+    const waypoints: { pos: [number, number]; ts: string }[] = [];
     filtered.forEach(trip => {
-      if (trip.startLatitude && trip.startLongitude) waypoints.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
+      if (trip.startLatitude && trip.startLongitude)
+        waypoints.push({ pos: [Number(trip.startLatitude), Number(trip.startLongitude)], ts: trip.startTime as string });
       (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) waypoints.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
+        if (v.punchInLatitude && v.punchInLongitude)
+          waypoints.push({ pos: [Number(v.punchInLatitude), Number(v.punchInLongitude)], ts: v.punchInTime as unknown as string });
       });
-      if (trip.endLatitude && trip.endLongitude) waypoints.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
+      if (trip.endLatitude && trip.endLongitude)
+        waypoints.push({ pos: [Number(trip.endLatitude), Number(trip.endLongitude)], ts: trip.endTime as string });
     });
     return waypoints;
   }, [locationData, filtered]);
+
+  const routePoints = useMemo(() => routeWithTime.map(r => r.pos), [routeWithTime]);
 
   // Build CHK stop list
   const chkStops = useMemo(() => {
@@ -753,9 +775,46 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     );
   }, [filtered]);
 
+  // Playback timer — advances index when playing
+  useEffect(() => {
+    if (playing) {
+      playTimerRef.current = setInterval(() => {
+        setPlaybackIdx(prev => {
+          if (prev >= routeWithTime.length - 1) { setPlaying(false); return prev; }
+          return prev + 1;
+        });
+      }, 180);
+    } else {
+      clearInterval(playTimerRef.current);
+    }
+    return () => clearInterval(playTimerRef.current);
+  }, [playing, routeWithTime.length]);
+
+  // Reset playback when date or altMode changes
+  useEffect(() => { setPlaybackIdx(0); setPlaying(false); }, [date, altMode]);
+
+  // Speed between consecutive points (km/h)
+  const currentSpeedKmh = useMemo(() => {
+    if (routeWithTime.length < 2 || playbackIdx === 0) return 0;
+    const p1 = routeWithTime[playbackIdx - 1];
+    const p2 = routeWithTime[playbackIdx];
+    const distKm = haversineKm(p1.pos[0], p1.pos[1], p2.pos[0], p2.pos[1]);
+    const timeSec = (new Date(p2.ts).getTime() - new Date(p1.ts).getTime()) / 1000;
+    if (timeSec <= 0) return 0;
+    return (distKm / timeSec) * 3600;
+  }, [routeWithTime, playbackIdx]);
+
+  const currentTs = routeWithTime[playbackIdx]?.ts;
+  const tsDisplay = currentTs ? format(new Date(currentTs), "yyyy-MM-dd HH:mm") : "--";
+  const speedDisplay = `${currentSpeedKmh.toFixed(2)} KM/H`;
+
+  // Moving dot position during playback
+  const playbackPos: [number, number] | null = altMode && routeWithTime.length > 0
+    ? routeWithTime[Math.min(playbackIdx, routeWithTime.length - 1)].pos
+    : null;
+
   const defaultCenter: [number, number] = routePoints.length > 0 ? routePoints[0] : [22.8, 80.0];
 
-  // Fit map to route bounds
   const fitBounds = () => {
     const m = leafletMap.current;
     if (!m || routePoints.length < 2) return;
@@ -763,13 +822,12 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     m.fitBounds(bounds, { padding: [40, 40] });
   };
 
-  // Toggle between circle-style and pin-style markers, and fit bounds each time
+  // 2nd icon: toggle playback mode + fit bounds
   const handleLocateToggle = () => {
     setAltMode(prev => !prev);
     fitBounds();
   };
 
-  // Toggle fullscreen on the wrapper div
   const toggleFullscreen = () => {
     const el = containerRef.current;
     if (!el) return;
@@ -777,7 +835,6 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     else document.exitFullscreen?.();
   };
 
-  // Shared button style matching Google Maps control look
   const ctrlBtn = "w-[34px] h-[34px] bg-white flex items-center justify-center hover:bg-gray-50 cursor-pointer border-b border-gray-200 last:border-b-0";
 
   return (
@@ -793,12 +850,13 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           routePoints={routePoints}
           chkStops={chkStops}
           mapTypeId={mapTypeId}
-          altMode={altMode}
+          routeColor={altMode ? "#2563eb" : "#f97316"}
+          playbackPos={playbackPos}
           onMapReady={(m) => { leafletMap.current = m; }}
         />
       </MapContainer>
 
-      {/* ── Right-side control panel (matches image exactly) ── */}
+      {/* ── Right-side control panel ── */}
       <div className="absolute z-[1001] select-none flex flex-col items-center gap-[6px]" style={{ top: 10, right: 10 }}>
 
         {/* 1. Layers / map-type selector */}
@@ -830,12 +888,12 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           )}
         </div>
 
-        {/* 2. Blue locate/target button — toggles pin/circle marker style + fits bounds */}
+        {/* 2. Blue target button — toggles playback mode */}
         <button
           onClick={handleLocateToggle}
-          title={altMode ? "Switch to circle markers" : "Switch to pin markers"}
+          title={altMode ? "Back to standard view" : "Playback animation mode"}
           style={{ background: altMode ? "#e8f0fe" : "white" }}
-          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
+          className="w-[34px] h-[34px] rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1a73e8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="7"/>
@@ -872,7 +930,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           </svg>
         </button>
 
-        {/* 6. Blue location/pin button — navigate to route start */}
+        {/* 6. Blue location pin — go to route start */}
         <button
           onClick={() => { if (routePoints.length > 0 && leafletMap.current) leafletMap.current.setView(routePoints[0], 15); }}
           title="Go to start"
@@ -884,35 +942,57 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         </button>
       </div>
 
-      {/* Legend — bottom-left, adapts to altMode */}
-      <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
-        {altMode ? (
-          <>
-            <div className="flex items-center gap-1.5">
-              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48" stroke="white" strokeWidth="2"/><circle cx="16" cy="16" r="7" fill="white"/></svg>
-              <span>Start</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 rounded-full bg-white border-2 border-orange-500"/>
-              <span>CHK Stop</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#16a34a" stroke="white" strokeWidth="2"/><circle cx="16" cy="16" r="7" fill="white"/></svg>
-              <span>End Stop</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#1a73e8" stroke="white" strokeWidth="2"/></svg>
-              <span>Last Position</span>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
-            <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
-          </>
-        )}
-      </div>
+      {/* Legend — bottom-left, hidden in playback mode */}
+      {!altMode && (
+        <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
+          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
+          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
+          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500"/><span>Last Position</span></div>
+        </div>
+      )}
+
+      {/* ── Playback animation bar (Image 2) — shown only in altMode ── */}
+      {altMode && (
+        <div className="absolute bottom-0 left-0 right-0 z-[1001] bg-white border-t border-gray-200 px-4 py-2.5 flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-5">
+            {/* Play / Pause */}
+            <button
+              onClick={() => {
+                if (playbackIdx >= routeWithTime.length - 1) setPlaybackIdx(0);
+                setPlaying(p => !p);
+              }}
+              title={playing ? "Pause" : "Play"}
+              className="text-gray-700 hover:text-blue-600 transition-colors"
+            >
+              {playing ? (
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              )}
+            </button>
+            {/* Stop / Reset */}
+            <button
+              onClick={() => { setPlaying(false); setPlaybackIdx(0); }}
+              title="Stop & Reset"
+              className="text-gray-700 hover:text-blue-600 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9"/>
+              </svg>
+            </button>
+          </div>
+          {/* Speed + Timestamp */}
+          <div className="flex items-center gap-6 text-[13px] font-mono text-gray-700 font-medium">
+            <span>{speedDisplay}</span>
+            <span>{tsDisplay}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
