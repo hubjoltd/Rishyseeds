@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import type { Employee, Trip, TripVisit } from "@shared/schema";
@@ -548,6 +550,85 @@ function fmtPopupTime(iso: string | null | undefined): string {
   } catch { return "-"; }
 }
 
+// ── Leaflet tile sources (matching TrackClap reference) ──
+const LEAFLET_TILES: Record<string, { url: string; subdomains: string; attr: string }> = {
+  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
+  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",        subdomains: "abc",  attr: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>" },
+  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
+  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
+};
+
+// Fits map bounds whenever routePoints change — must be inside MapContainer
+function PbBoundsFitter({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length > 1) {
+      const bounds = L.latLngBounds(points.map(p => L.latLng(p[0], p[1])));
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }, [points, map]);
+  return null;
+}
+
+// Inner layer content — must be inside MapContainer so hooks work
+function PlaybackMapInner({
+  routePoints,
+  chkStops,
+  mapTypeId,
+}: {
+  routePoints: [number, number][];
+  chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
+  mapTypeId: string;
+}) {
+  const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
+
+  const startIcon = L.divIcon({
+    html: `<div style="width:34px;height:34px;border-radius:50%;background:#e11d48;border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.35)">B</div>`,
+    className: "",
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+  });
+
+  return (
+    <>
+      <TileLayer url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+      <PbBoundsFitter points={routePoints} />
+      {routePoints.length > 1 && (
+        <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
+      )}
+      {routePoints.length > 0 && (
+        <Marker position={routePoints[0]} icon={startIcon}>
+          <Popup><b>Trip Start</b></Popup>
+        </Marker>
+      )}
+      {chkStops.map(stop => {
+        const chkIcon = L.divIcon({
+          html: `<div style="width:30px;height:30px;border-radius:50%;background:#2563eb;border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;color:white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${stop.num}</div>`,
+          className: "",
+          iconSize: [30, 30],
+          iconAnchor: [15, 15],
+        });
+        return (
+          <Marker key={stop.num} position={stop.pos} icon={chkIcon}>
+            <Popup>
+              <div style={{ minWidth: 150, fontSize: 13 }}>
+                <b style={{ color: "#2563eb" }}>CHK {stop.num}</b>
+                {stop.loc && <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{stop.loc}</div>}
+                <table style={{ marginTop: 6, width: "100%" }}>
+                  <tbody>
+                    <tr><td style={{ color: "#16a34a", fontWeight: 600, paddingRight: 8 }}>Punch In</td><td style={{ fontWeight: 600 }}>{stop.inTime}</td></tr>
+                    <tr><td style={{ color: "#dc2626", fontWeight: 600, paddingRight: 8 }}>Punch Out</td><td style={{ fontWeight: 600 }}>{stop.outTime}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
+    </>
+  );
+}
+
 function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   trips: TripWithVisits[];
   date: string;
@@ -555,12 +636,6 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
 }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(_gmLoaded);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-  const overlaysRef = useRef<any[]>([]);
-
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
     queryFn: async () => {
@@ -573,212 +648,60 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     enabled: !!employeeId && !!date,
   });
 
-  useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
+  const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
 
-  // Initialize map ONCE
-  useEffect(() => {
-    if (!ready || !mapRef.current || mapInstanceRef.current) return;
-    const map = new google.maps.Map(mapRef.current, {
-      center: { lat: 22.8, lng: 80.0 },
-      zoom: 12,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-    const osmType = new google.maps.ImageMapType({
-      getTileUrl: (coord: google.maps.Point, zoom: number) =>
-        `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
-      tileSize: new google.maps.Size(256, 256),
-      name: "OpenStreetMap",
-      maxZoom: 19,
-    });
-    map.mapTypes.set("openstreetmap", osmType);
-    mapInstanceRef.current = map;
-    infoWindowRef.current = new google.maps.InfoWindow();
-  }, [ready]);
-
-  // Switch map type
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.setMapTypeId(mapTypeId as google.maps.MapTypeId);
-  }, [mapTypeId]);
-
-  // Redraw overlays when data changes
-  useEffect(() => {
-    if (!ready || !mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
-    const infoWindow = infoWindowRef.current!;
-
-    // Clear previous overlays
-    overlaysRef.current.forEach(o => { try { if (o.setMap) o.setMap(null); } catch { /* ignore */ } });
-    overlaysRef.current = [];
-
-    const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
-
-    type LatLng = { lat: number; lng: number };
-    const routePoints: LatLng[] = [];
-
-    // Use actual GPS track as the primary source for the route
-    const locationPts = (locationData?.points ?? [])
+  // Build route points from GPS track, fallback to trip waypoints
+  const routePoints: [number, number][] = useMemo(() => {
+    const gpsPts = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
-      .map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-    routePoints.push(...locationPts);
-
-    // Supplement with trip waypoints if no GPS data
-    if (routePoints.length === 0) {
-      filtered.forEach(trip => {
-        if (trip.startLatitude && trip.startLongitude)
-          routePoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
-        (trip.visits || []).forEach(v => {
-          if (v.punchInLatitude && v.punchInLongitude) routePoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
-        });
-        if (trip.endLatitude && trip.endLongitude)
-          routePoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
-      });
-    }
-
-    const allCoords: LatLng[] = [...routePoints];
+      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+    if (gpsPts.length > 0) return gpsPts;
+    const waypoints: [number, number][] = [];
     filtered.forEach(trip => {
+      if (trip.startLatitude && trip.startLongitude) waypoints.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
       (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) {
-          const pt = { lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) };
-          if (!allCoords.some(c => c.lat === pt.lat && c.lng === pt.lng)) allCoords.push(pt);
-        }
+        if (v.punchInLatitude && v.punchInLongitude) waypoints.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
       });
+      if (trip.endLatitude && trip.endLongitude) waypoints.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
     });
+    return waypoints;
+  }, [locationData, filtered]);
 
-    const bounds = new google.maps.LatLngBounds();
-    allCoords.forEach(p => bounds.extend(p));
+  // Build CHK stop list
+  const chkStops = useMemo(() => {
+    let num = 1;
+    return filtered.flatMap(trip =>
+      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).map(v => ({
+        pos: [Number(v.punchInLatitude!), Number(v.punchInLongitude!)] as [number, number],
+        num: num++,
+        inTime: fmtPopupTime(v.punchInTime as unknown as string),
+        outTime: fmtPopupTime(v.punchOutTime as unknown as string),
+        loc: v.punchInLocationName || v.punchOutLocationName || "",
+      }))
+    );
+  }, [filtered]);
 
-    // ── Draw route — blue polyline (same as Live map) ──
-    if (routePoints.length > 1) {
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 23;
-      const anchor = routePoints[0];
-      const maxSpreadM = routePoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
+  const defaultCenter: [number, number] = routePoints.length > 0 ? routePoints[0] : [22.8, 80.0];
 
-      const drawPolyline = (pts: LatLng[]) => {
-        if (pts.length < 2) return;
-        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4, map });
-        overlaysRef.current.push(pl);
-      };
-
-      if (maxSpreadM < 350) {
-        drawPolyline(routePoints);
-      } else {
-        const step = Math.max(1, Math.ceil(routePoints.length / CHUNK));
-        const sampled: LatLng[] = [];
-        for (let i = 0; i < routePoints.length; i += step) sampled.push(routePoints[i]);
-        if (sampled[sampled.length - 1] !== routePoints[routePoints.length - 1]) sampled.push(routePoints[routePoints.length - 1]);
-
-        const drawChunk = (pts: LatLng[]) => {
-          if (pts.length < 2) return;
-          ds.route(
-            {
-              origin: pts[0], destination: pts[pts.length - 1],
-              waypoints: pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const })),
-              travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
-            },
-            (result, status) => {
-              if (status === google.maps.DirectionsStatus.OK && result) {
-                const dr = new google.maps.DirectionsRenderer({
-                  map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4 },
-                });
-                overlaysRef.current.push(dr);
-              } else {
-                drawPolyline(pts);
-              }
-            }
-          );
-        };
-        for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-          drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
-        }
-      }
-    }
-
-    // ── Start marker ──
-    const startPt = routePoints.length > 0 ? routePoints[0] : null;
-    if (startPt) {
-      const startSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="14" r="9" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: startPt, map, zIndex: 200,
-        icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(startSvg), scaledSize: new google.maps.Size(36, 52), anchor: new google.maps.Point(18, 52) },
-      });
-      overlaysRef.current.push(m);
-    }
-
-    // ── End marker ──
-    const endPt = routePoints.length > 1 ? routePoints[routePoints.length - 1] : null;
-    if (endPt) {
-      const endSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="14" r="9" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: endPt, map, zIndex: 200,
-        icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(endSvg), scaledSize: new google.maps.Size(36, 52), anchor: new google.maps.Point(18, 52) },
-      });
-      overlaysRef.current.push(m);
-    }
-
-    // ── CHK visit markers — numbered green pins (same style as Live map CHK) ──
-    let chkNum = 1;
-    filtered.forEach(trip => {
-      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).forEach(v => {
-        const num = chkNum++;
-        const chkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
-          <ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/>
-          <path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/>
-          <circle cx="17" cy="13" r="8" fill="white"/>
-          <text x="17" y="17" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="bold" font-family="sans-serif">${num}</text>
-        </svg>`;
-        const m = new google.maps.Marker({
-          position: { lat: Number(v.punchInLatitude!), lng: Number(v.punchInLongitude!) },
-          map, zIndex: 80,
-          icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(chkSvg), scaledSize: new google.maps.Size(34, 42), anchor: new google.maps.Point(17, 42) },
-        });
-        const inTime = fmtPopupTime(v.punchInTime as unknown as string);
-        const outTime = fmtPopupTime(v.punchOutTime as unknown as string);
-        const loc = v.punchInLocationName || v.punchOutLocationName || "";
-        m.addListener("click", () => {
-          infoWindow.setContent(
-            `<div style="min-width:160px;font-size:13px">` +
-            `<b style="color:#16a34a">✓ CHK ${num}</b>` +
-            (loc ? `<div style="color:#555;font-size:11px;margin-top:2px">${loc}</div>` : "") +
-            `<table style="margin-top:6px;width:100%">` +
-            `<tr><td style="color:#16a34a;font-weight:600;padding-right:8px">Punch In</td><td style="font-weight:600">${inTime}</td></tr>` +
-            `<tr><td style="color:#dc2626;font-weight:600;padding-right:8px">Punch Out</td><td style="font-weight:600">${outTime}</td></tr>` +
-            `</table></div>`
-          );
-          infoWindow.open(map, m);
-        });
-        overlaysRef.current.push(m);
-      });
-    });
-
-    if (allCoords.length > 1) map.fitBounds(bounds, 40);
-  }, [ready, trips, date, locationData]);
-
-  if (!ready) return (
-    <div className="h-full w-full flex items-center justify-center bg-muted/30 rounded">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
-  );
   return (
     <div className="relative h-full w-full">
-      <div ref={mapRef} className="h-full w-full" />
+      <MapContainer
+        key={date}
+        center={defaultCenter}
+        zoom={12}
+        style={{ height: "100%", width: "100%" }}
+        zoomControl={true}
+      >
+        <PlaybackMapInner
+          routePoints={routePoints}
+          chkStops={chkStops}
+          mapTypeId={mapTypeId}
+          onMapTypeChange={onMapTypeChange}
+        />
+      </MapContainer>
 
       {/* Map type selector — top-right, same as Live map */}
-      <div className="absolute top-2 right-2 z-10 bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
+      <div className="absolute top-2 right-2 z-[1000] bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
         {MAP_TYPES.map(opt => (
           <label key={opt.id} className="flex items-center gap-1.5 cursor-pointer py-[2px]">
             <input
@@ -794,10 +717,11 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         ))}
       </div>
 
-      {/* Legend — bottom-left */}
-      <div className="absolute bottom-6 left-2 z-10 bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Travelled</span></div>
-        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
+      {/* Legend */}
+      <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
       </div>
     </div>
   );
