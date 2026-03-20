@@ -1149,7 +1149,7 @@ export default function EmployeeProfile() {
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline">
-                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel})</p>
+                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel} Km)</p>
                               {dur(formatDuration(startT, endT))}
                             </div>
                             {timeRow(startT, endT)}
