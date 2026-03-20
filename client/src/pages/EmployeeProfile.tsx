@@ -272,21 +272,31 @@ function LiveMap({
       const anchor = gpsPoints[0];
       const maxSpreadM = gpsPoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
 
-      if (maxSpreadM < 300) {
-        // Employee is stationary — just draw a small dotted circle on the map, no route
+      // Helper: draw bold orange route + dark shadow underneath for visibility
+      const drawPolyline = (pts: { lat: number; lng: number }[]) => {
+        if (pts.length < 2) return;
+        // Shadow line (dark, wider, below the orange)
+        const shadow = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#92400e", strokeOpacity: 0.35, strokeWeight: 9, map, zIndex: 1 });
+        // Orange route line on top
+        const route = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#f97316", strokeOpacity: 1, strokeWeight: 5, map, zIndex: 2 });
+        overlaysRef.current.push(shadow, route);
+      };
+
+      if (maxSpreadM < 80) {
+        // Truly stationary (< 80 m) — draw accent circle + raw path
         const circle = new google.maps.Circle({
-          center: anchor,
-          radius: Math.max(maxSpreadM / 2, 30),
-          strokeColor: "#e67c22",
-          strokeOpacity: 0.6,
-          strokeWeight: 2,
-          fillColor: "#e67c22",
-          fillOpacity: 0.08,
-          map,
+          center: anchor, radius: Math.max(maxSpreadM / 2, 20),
+          strokeColor: "#f97316", strokeOpacity: 0.7, strokeWeight: 2,
+          fillColor: "#f97316", fillOpacity: 0.08, map,
         });
         overlaysRef.current.push(circle);
+        // Still draw actual GPS track so admin can zoom in and see micro-movements
+        drawPolyline(gpsPoints);
+      } else if (maxSpreadM < 350) {
+        // Short movement — draw raw GPS polyline (no Directions API needed)
+        drawPolyline(gpsPoints);
       } else {
-        // Employee moved — snap to roads using Directions API
+        // Significant travel — snap route to roads using Directions API
         const MAX_PTS = 23;
         const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
         const sampled: { lat: number; lng: number }[] = [];
@@ -309,14 +319,20 @@ function LiveMap({
             { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
             (result, status) => {
               if (status === "OK" && result) {
+                // Shadow layer
+                const shadowDr = new google.maps.DirectionsRenderer({
+                  map, directions: result, suppressMarkers: true,
+                  polylineOptions: { strokeColor: "#92400e", strokeOpacity: 0.35, strokeWeight: 9, zIndex: 1 },
+                });
+                // Orange route on top
                 const dr = new google.maps.DirectionsRenderer({
                   map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 },
+                  polylineOptions: { strokeColor: "#f97316", strokeOpacity: 1, strokeWeight: 5, zIndex: 2 },
                 });
-                overlaysRef.current.push(dr);
+                overlaysRef.current.push(shadowDr, dr);
               } else {
-                const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
-                overlaysRef.current.push(pl);
+                // Fallback: raw polyline if Directions API fails
+                drawPolyline(pts);
               }
             },
           );
@@ -1018,32 +1034,43 @@ export default function EmployeeProfile() {
                     <p className="text-[10px] opacity-70">GPS pings are sent every 30 seconds</p>
                   </div>
                 ) : (
-                  <div className="relative py-2">
-                    {/* vertical connector line — centred on the icons (px-3=12px + half w-8=16px = 28px) */}
-                    <div className="absolute left-[28px] top-0 bottom-0 w-0.5 bg-gray-200" />
+                  /* ── TrackClap-style timeline: icon circles ON the vertical line ── */
+                  <div className="relative">
+                    {/* Continuous vertical connector line, centred on icons at left=[19px] */}
+                    <div className="absolute left-[19px] top-0 bottom-0 w-[2px] bg-gray-200 z-0" />
 
                     {allTimelineEvents.map((seg, idx) => {
                       const startT = new Date(seg.startTime);
-                      const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-                      const fmtTimeShort = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+                      const fmt  = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+                      const fmtS = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                      // Icon bubble sitting on the connector line
+                      const dot = (bgCls: string, children: React.ReactNode) => (
+                        <div className={`absolute left-[8px] top-[8px] z-10 w-[22px] h-[22px] rounded-full ${bgCls} border-[2.5px] border-white shadow-md flex items-center justify-center`}>
+                          {children}
+                        </div>
+                      );
+                      // Right-label span
+                      const dur = (label: string) => (
+                        <span className="text-[10px] text-gray-400 shrink-0 font-mono ml-auto pl-1">({label})</span>
+                      );
+                      // Time-range row
+                      const timeRow = (a: Date, b?: Date | null) => (
+                        <p className="text-[10px] text-gray-400 font-mono leading-none mt-0.5">{fmtS(a)}{b ? `–${fmtS(b)}` : ""}</p>
+                      );
 
                       /* ── GAP TRAVEL ── */
                       if (seg.type === "gap_travel") {
                         const gapEndT = new Date((seg as any).endTime);
-                        const gapDur = formatDuration(startT, gapEndT);
                         return (
-                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50 transition-colors">
-                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
-                                <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-orange-50/50 transition-colors">
+                            {dot("bg-orange-400", <Navigation className="w-2.5 h-2.5 text-white" />)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline">
+                                <p className="text-[11px] font-bold text-orange-700 leading-tight">Travelled</p>
+                                {dur(formatDuration(startT, gapEndT))}
                               </div>
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-semibold text-orange-700">Travelled</p>
-                                <span className="text-[10px] text-muted-foreground shrink-0">({gapDur})</span>
-                              </div>
-                              <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(startT)}–{fmtTimeShort(gapEndT)}</p>
+                              {timeRow(startT, gapEndT)}
                             </div>
                           </div>
                         );
@@ -1052,20 +1079,16 @@ export default function EmployeeProfile() {
                       /* ── PUNCH IN ── */
                       if (seg.type === "punch_in") {
                         return (
-                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-green-50/50 transition-colors">
-                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-green-600 border-2 border-white shadow flex items-center justify-center">
-                                <span className="text-[8px] font-black text-white leading-none">IN</span>
-                              </div>
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-bold text-green-700">Punch In</p>
-                                <span className="text-[10px] text-gray-500 font-mono shrink-0">{fmtTime(startT)}</span>
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-green-50/50 transition-colors">
+                            {dot("bg-green-600", <span className="text-[7px] font-black text-white leading-none">IN</span>)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline">
+                                <p className="text-[11px] font-bold text-green-700 leading-tight">Punch In</p>
+                                {dur(fmt(startT))}
                               </div>
                               {seg.location
-                                ? <p className="text-[10px] text-gray-500 leading-relaxed mt-0.5 line-clamp-2">{seg.location}</p>
-                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
+                                ? <p className="text-[10px] text-gray-500 leading-snug mt-0.5 line-clamp-2">{seg.location}</p>
+                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat!} lng={seg.lng!} /> : null)
                               }
                             </div>
                           </div>
@@ -1075,20 +1098,16 @@ export default function EmployeeProfile() {
                       /* ── PUNCH OUT ── */
                       if (seg.type === "punch_out") {
                         return (
-                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-red-50/50 transition-colors">
-                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow flex items-center justify-center">
-                                <span className="text-[7px] font-black text-white leading-none">OUT</span>
-                              </div>
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-bold text-red-700">Punch Out</p>
-                                <span className="text-[10px] text-gray-500 font-mono shrink-0">{fmtTime(startT)}</span>
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-red-50/50 transition-colors">
+                            {dot("bg-red-600", <span className="text-[6px] font-black text-white leading-none">OUT</span>)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline">
+                                <p className="text-[11px] font-bold text-red-700 leading-tight">Punch Out</p>
+                                {dur(fmt(startT))}
                               </div>
                               {seg.location
-                                ? <p className="text-[10px] text-gray-500 leading-relaxed mt-0.5 line-clamp-2">{seg.location}</p>
-                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
+                                ? <p className="text-[10px] text-gray-500 leading-snug mt-0.5 line-clamp-2">{seg.location}</p>
+                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat!} lng={seg.lng!} /> : null)
                               }
                             </div>
                           </div>
@@ -1097,21 +1116,16 @@ export default function EmployeeProfile() {
 
                       /* ── STOPPAGE ── */
                       if (seg.type === "stoppage") {
-                        const mins = Math.floor(seg.durationSecs / 60);
-                        const secs = Math.round(seg.durationSecs % 60);
-                        const durStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                        const mm = Math.floor(seg.durationSecs / 60);
+                        const ss = Math.round(seg.durationSecs % 60);
                         return (
-                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50 transition-colors">
-                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center">
-                                <Timer className="w-3.5 h-3.5 text-gray-500" />
-                              </div>
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-semibold text-gray-700">Stoppage of {durStr}</p>
-                              </div>
-                              <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(new Date(seg.startTime))}–{fmtTimeShort(new Date(seg.endTime))}</p>
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-gray-50 transition-colors">
+                            {dot("bg-gray-400", <Timer className="w-2.5 h-2.5 text-white" />)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-bold text-gray-700 leading-tight">
+                                Stoppage of {String(mm).padStart(2,"0")}:{String(ss).padStart(2,"0")}
+                              </p>
+                              {timeRow(new Date(seg.startTime), new Date(seg.endTime))}
                               <StoppageAddress lat={seg.lat} lng={seg.lng} />
                             </div>
                           </div>
@@ -1126,23 +1140,17 @@ export default function EmployeeProfile() {
                           ? (durSecs < 60 ? `${durSecs} Sec` : `${Math.floor(durSecs / 60)}m ${durSecs % 60}s`)
                           : "ongoing";
                         return (
-                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50/50 transition-colors">
-                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow flex items-center justify-center">
-                                <MapPin className="w-3 h-3 text-white" />
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-blue-50/40 transition-colors">
+                            {dot("bg-blue-600", <MapPin className="w-2.5 h-2.5 text-white" />)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline">
+                                <p className="text-[11px] font-bold text-blue-700 leading-tight">CHK {seg.checkinId}</p>
+                                {dur(durShort)}
                               </div>
-                            </div>
-                            <div className="flex-1 min-w-0 pt-0.5">
-                              <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-bold text-blue-700">CHK {seg.checkinId}</p>
-                                <span className="text-[10px] text-muted-foreground shrink-0">({durShort})</span>
-                              </div>
-                              <p className="text-[10px] text-gray-500 font-mono leading-tight">
-                                {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}
-                              </p>
-                              <p className="text-[10px] text-blue-800 font-semibold mt-0.5 leading-tight line-clamp-1">● {seg.customerName}</p>
+                              <p className="text-[10px] text-gray-400 font-mono leading-none mt-0.5">{fmt(startT)}{outT ? `–${fmt(outT)}` : ""}</p>
+                              <p className="text-[10px] text-blue-800 font-semibold leading-snug mt-0.5 line-clamp-1">● {seg.customerName}</p>
                               {seg.locationName
-                                ? <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{seg.locationName}</p>
+                                ? <p className="text-[10px] text-gray-500 leading-none mt-0.5 line-clamp-1">{seg.locationName}</p>
                                 : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
                               }
                             </div>
@@ -1150,40 +1158,33 @@ export default function EmployeeProfile() {
                         );
                       }
 
-                      /* ── TRAVELLED (from segments) ── */
+                      /* ── TRAVELLED (from GPS segments) ── */
                       const endT = new Date((seg as any).endTime);
                       const distKm = (seg as any).distanceKm ?? 0;
-                      const durTravelled = formatDuration(startT, endT);
                       return (
-                        <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50 transition-colors">
-                          <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                            <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
-                              <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                        <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-orange-50/40 transition-colors">
+                          {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline">
+                              <p className="text-[11px] font-bold text-orange-700 leading-tight">Travelled ({distKm.toFixed(2)} km)</p>
+                              {dur(formatDuration(startT, endT))}
                             </div>
-                          </div>
-                          <div className="flex-1 min-w-0 pt-0.5">
-                            <div className="flex items-baseline justify-between gap-1">
-                              <p className="text-[11px] font-semibold text-orange-700">Travelled ({distKm.toFixed(2)} km)</p>
-                              <span className="text-[10px] text-muted-foreground shrink-0">({durTravelled})</span>
-                            </div>
-                            <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(startT)}–{fmtTimeShort(endT)}</p>
+                            {timeRow(startT, endT)}
                           </div>
                         </div>
                       );
                     })}
 
-                    {/* ── Nearest Location ── */}
+                    {/* ── Nearest Location footer ── */}
                     {(locationData?.points?.length ?? 0) > 0 && (() => {
                       const lastPt = locationData!.points[locationData!.points.length - 1];
                       return (
-                        <div className="flex items-start gap-2 px-3 py-2 mt-1 border-t bg-green-50/40">
-                          <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                            <div className="w-7 h-7 rounded-full bg-green-100 border border-green-300 flex items-center justify-center">
-                              <MapPin className="w-3.5 h-3.5 text-green-700" />
-                            </div>
+                        <div className="relative flex items-start pl-[40px] pr-3 py-[7px] border-t border-gray-100 bg-green-50/50">
+                          <div className="absolute left-[8px] top-[7px] z-10 w-[22px] h-[22px] rounded-full bg-green-500 border-[2.5px] border-white shadow-md flex items-center justify-center">
+                            <MapPin className="w-2.5 h-2.5 text-white" />
                           </div>
-                          <div className="flex-1 min-w-0 pt-0.5">
-                            <p className="text-[11px] font-bold text-green-700 mb-0.5">Nearest Location</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold text-green-700 leading-tight">Nearest Location</p>
                             <LastGpsAddress point={lastPt} />
                           </div>
                         </div>
