@@ -94,27 +94,38 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
-
 let googleMapsLoaded = false;
 let googleMapsLoading = false;
 const googleMapsCallbacks: Array<() => void> = [];
+let _cachedMapsKey: string | null = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || null;
+
+async function getMapsKey(): Promise<string> {
+  if (_cachedMapsKey) return _cachedMapsKey;
+  try {
+    const res = await fetch("/api/config");
+    const data = await res.json();
+    _cachedMapsKey = data.googleMapsApiKey || "";
+  } catch { _cachedMapsKey = ""; }
+  return _cachedMapsKey!;
+}
 
 function loadGoogleMaps(callback: () => void) {
   if (googleMapsLoaded) { callback(); return; }
   googleMapsCallbacks.push(callback);
   if (googleMapsLoading) return;
   googleMapsLoading = true;
-  const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
-  script.async = true;
-  script.onload = () => {
-    googleMapsLoaded = true;
-    googleMapsLoading = false;
-    googleMapsCallbacks.forEach(cb => cb());
-    googleMapsCallbacks.length = 0;
-  };
-  document.head.appendChild(script);
+  getMapsKey().then(key => {
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    script.async = true;
+    script.onload = () => {
+      googleMapsLoaded = true;
+      googleMapsLoading = false;
+      googleMapsCallbacks.forEach(cb => cb());
+      googleMapsCallbacks.length = 0;
+    };
+    document.head.appendChild(script);
+  });
 }
 
 function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[]; isActive?: boolean }) {

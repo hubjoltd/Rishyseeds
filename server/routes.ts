@@ -228,7 +228,12 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
+  // Public config — serves runtime env vars to the client (no auth needed)
+  app.get("/api/config", (_req, res) => {
+    res.json({ googleMapsApiKey: process.env.VITE_GOOGLE_MAPS_API_KEY || "" });
+  });
+
   app.use("/uploads", express.static("uploads"));
 
   app.post("/api/employee/upload-punch-photo", upload.single("photo"), (req: any, res) => {
