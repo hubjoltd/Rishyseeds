@@ -186,10 +186,10 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 }
 
 const MAP_TYPES = [
-  { id: "openstreetmap",  label: "OpenStreetMap"  },
   { id: "roadmap",        label: "Google Streets" },
   { id: "terrain",        label: "Google Terrain" },
   { id: "hybrid",         label: "Google Hybrid"  },
+  { id: "openstreetmap",  label: "OpenStreetMap"  },
 ];
 
 const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
@@ -860,7 +860,7 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
-  const [sharedMapTypeId, setSharedMapTypeId] = useState("openstreetmap");
+  const [sharedMapTypeId, setSharedMapTypeId] = useState("roadmap");
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
