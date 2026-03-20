@@ -697,7 +697,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   onMapTypeChange: (t: string) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
-  const [altMode, setAltMode] = useState(false); // toggles pin-style vs circle-style markers
+  const [altMode, setAltMode] = useState(true); // default: pin-style markers (matches reference image)
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
