@@ -661,8 +661,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   const tsDisplay = currentTs ? format(new Date(currentTs), "yyyy-MM-dd HH:mm") : "--";
   const speedDisplay = `${currentSpeedKmh.toFixed(2)} KM/H`;
 
-  // Moving dot position during playback
-  const playbackPos: [number, number] | null = altMode && routeWithTime.length > 0
+  // Moving dot position during playback — visible whenever animation has started
+  const playbackPos: [number, number] | null = routeWithTime.length > 0 && playbackIdx > 0
     ? routeWithTime[Math.min(playbackIdx, routeWithTime.length - 1)].pos
     : null;
 
@@ -795,57 +795,45 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         </button>
       </div>
 
-      {/* Legend — bottom-left, hidden in playback mode */}
-      {!altMode && (
-        <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
-          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
-          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
-          <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500"/><span>Last Position</span></div>
-        </div>
-      )}
-
-      {/* ── Playback animation bar (Image 2) — shown only in altMode ── */}
-      {altMode && (
-        <div className="absolute bottom-0 left-0 right-0 z-[1001] bg-white border-t border-gray-200 px-4 py-2.5 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-5">
-            {/* Play / Pause */}
-            <button
-              onClick={() => {
-                if (playbackIdx >= routeWithTime.length - 1) setPlaybackIdx(0);
-                setPlaying(p => !p);
-              }}
-              title={playing ? "Pause" : "Play"}
-              className="text-gray-700 hover:text-blue-600 transition-colors"
-            >
-              {playing ? (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-              )}
-            </button>
-            {/* Stop / Reset */}
-            <button
-              onClick={() => { setPlaying(false); setPlaybackIdx(0); }}
-              title="Stop & Reset"
-              className="text-gray-700 hover:text-blue-600 transition-colors"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="9"/>
+      {/* ── Playback bar — always visible at the bottom ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-[1001] bg-white border-t border-gray-200 px-4 py-2.5 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-5">
+          {/* Play / Pause */}
+          <button
+            onClick={() => {
+              if (playbackIdx >= routeWithTime.length - 1) setPlaybackIdx(0);
+              setPlaying(p => !p);
+            }}
+            title={playing ? "Pause" : "Play"}
+            className="text-gray-700 hover:text-blue-600 transition-colors"
+          >
+            {playing ? (
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
               </svg>
-            </button>
-          </div>
-          {/* Speed + Timestamp */}
-          <div className="flex items-center gap-6 text-[13px] font-mono text-gray-700 font-medium">
-            <span>{speedDisplay}</span>
-            <span>{tsDisplay}</span>
-          </div>
+            ) : (
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+            )}
+          </button>
+          {/* Stop / Reset */}
+          <button
+            onClick={() => { setPlaying(false); setPlaybackIdx(0); }}
+            title="Stop & Reset"
+            className="text-gray-700 hover:text-blue-600 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="9"/>
+            </svg>
+          </button>
         </div>
-      )}
+        {/* Speed + Timestamp */}
+        <div className="flex items-center gap-6 text-[13px] font-mono text-gray-700 font-medium">
+          {playbackIdx > 0 && <span>{speedDisplay}</span>}
+          <span>{tsDisplay}</span>
+        </div>
+      </div>
     </div>
   );
 }
