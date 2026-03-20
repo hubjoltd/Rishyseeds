@@ -237,64 +237,47 @@ function LiveMap({
 
     const infoWindow = new google.maps.InfoWindow();
 
-    // GPS tracking — snap to roads using Directions API
+    // GPS tracking — draw real GPS path as polyline (all points, no road-snapping)
     if (gpsPoints.length > 1) {
-      // Downsample: keep at most ~20 evenly-spaced points to stay within API limits
-      const MAX_PTS = 20;
-      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
-      const sampled: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
-      // Always include the last point
-      const lastPt = gpsPoints[gpsPoints.length - 1];
-      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
-
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 23; // max intermediate waypoints per request
-
-      const drawChunk = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        const origin = pts[0];
-        const destination = pts[pts.length - 1];
-        const waypoints = pts.slice(1, -1).map(p => ({
-          location: new google.maps.LatLng(p.lat, p.lng),
-          stopover: false as const,
-        }));
-        ds.route(
-          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-          (result, status) => {
-            if (status === "OK" && result) {
-              new google.maps.DirectionsRenderer({
-                map,
-                directions: result,
-                suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
-              });
-            } else {
-              // Fallback to raw polyline if Directions API fails
-              new google.maps.Polyline({ path: pts, geodesic: false, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
-            }
-          },
-        );
-      };
-
-      // Process in chunks of CHUNK+1 points (overlap at boundaries)
-      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
-      }
+      new google.maps.Polyline({
+        path: gpsPoints,
+        geodesic: true,
+        strokeColor: "#e67c22",
+        strokeOpacity: 0.95,
+        strokeWeight: 4,
+        map,
+      });
     }
 
-    // Stoppage markers
+    // Stoppage markers — prominent red pins with duration label
     segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
       const mins = Math.floor((s.durationSecs || 0) / 60);
       const secs = Math.round((s.durationSecs || 0) % 60);
-      const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      const dur = `${String(mins).padStart(2, "0")}m ${String(secs).padStart(2, "0")}s`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+        <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="14" r="7" fill="white"/>
+        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="9" font-weight="bold" font-family="sans-serif">S</text>
+      </svg>`;
       const m = new google.maps.Marker({
         position: { lat: s.lat!, lng: s.lng! },
         map,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#e11d48", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
+        zIndex: 50,
+        icon: {
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(svg),
+          scaledSize: new google.maps.Size(36, 44),
+          anchor: new google.maps.Point(18, 44),
+        },
       });
       m.addListener("click", () => {
-        infoWindow.setContent(`<div style="font-size:12px"><b>Stoppage</b><br/>${dur}</div>`);
+        infoWindow.setContent(
+          `<div style="font-size:13px;min-width:120px">` +
+          `<b style="color:#dc2626">⏱ Stoppage</b><br/>` +
+          `<span style="font-size:12px">${dur}</span><br/>` +
+          `<span style="font-size:11px;color:#666">${new Date(s.startTime).toLocaleTimeString()} – ${new Date(s.endTime).toLocaleTimeString()}</span>` +
+          `</div>`
+        );
         infoWindow.open(map, m);
       });
     });
@@ -458,28 +441,15 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
     allPoints.forEach(p => bounds.extend(p));
 
     if (allPoints.length > 1) {
-      // Draw road route using Directions API
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 10;
-      for (let i = 0; i < allPoints.length - 1; i += CHUNK) {
-        const chunk = allPoints.slice(i, Math.min(i + CHUNK + 1, allPoints.length));
-        if (chunk.length < 2) break;
-        ds.route(
-          {
-            origin: chunk[0], destination: chunk[chunk.length - 1],
-            waypoints: chunk.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false })),
-            travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
-          },
-          (result, status) => {
-            if (status === google.maps.DirectionsStatus.OK && result) {
-              new google.maps.DirectionsRenderer({
-                map, directions: result, suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
-              });
-            }
-          }
-        );
-      }
+      // Draw real GPS path as polyline (no road-snapping needed)
+      new google.maps.Polyline({
+        path: allPoints,
+        geodesic: true,
+        strokeColor: "#e67c22",
+        strokeOpacity: 0.95,
+        strokeWeight: 4,
+        map,
+      });
       map.fitBounds(bounds, 40);
     }
 
