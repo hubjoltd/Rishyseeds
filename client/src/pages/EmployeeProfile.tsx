@@ -577,26 +577,62 @@ function MapRefCapture({ onReady }: { onReady?: (m: any) => void }) {
   return null;
 }
 
+// SVG drop-pin icon maker (Google Maps style teardrop pointing down)
+function makePinIcon(fill: string, innerSvg: string, size = 32) {
+  return L.divIcon({
+    html: `<svg viewBox="0 0 32 44" width="${size}" height="${Math.round(size * 1.375)}" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="${fill}" stroke="white" stroke-width="2"/>
+      ${innerSvg}
+    </svg>`,
+    className: "",
+    iconSize: [size, Math.round(size * 1.375)],
+    iconAnchor: [size / 2, Math.round(size * 1.375)],
+    popupAnchor: [0, -Math.round(size * 1.375)],
+  });
+}
+
 // Inner layer content — must be inside MapContainer so hooks work
 function PlaybackMapInner({
   routePoints,
   chkStops,
   mapTypeId,
+  altMode,
   onMapReady,
 }: {
   routePoints: [number, number][];
   chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
   mapTypeId: string;
+  altMode: boolean;
   onMapReady: (m: any) => void;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
 
-  const startIcon = L.divIcon({
+  // ── Circle mode markers ──
+  const startCircleIcon = L.divIcon({
     html: `<div style="width:34px;height:34px;border-radius:50%;background:#e11d48;border:3px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:white;box-shadow:0 2px 6px rgba(0,0,0,0.4)">B</div>`,
     className: "",
     iconSize: [34, 34],
     iconAnchor: [17, 17],
   });
+
+  // ── Pin mode markers ──
+  // Red drop-pin for start (B)
+  const startPinIcon = makePinIcon("#e11d48", `<circle cx="16" cy="16" r="7" fill="white"/>`);
+  // Green drop-pin for last CHK stop / destination
+  const endPinIcon = makePinIcon("#16a34a", `<circle cx="16" cy="16" r="7" fill="white"/>`);
+  // Blue drop-pin with person silhouette for last known position
+  const personPinIcon = makePinIcon("#1a73e8",
+    `<path d="M16 10a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 10c4.42 0 8 1.79 8 4v1H8v-1c0-2.21 3.58-4 8-4z" fill="white"/>`
+  );
+  // Orange hollow circle for CHK stops in alt mode
+  const makeOrangeCircleIcon = () => L.divIcon({
+    html: `<div style="width:22px;height:22px;border-radius:50%;background:white;border:3px solid #f97316;box-shadow:0 2px 4px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center"><div style="width:7px;height:7px;border-radius:50%;background:#f97316"></div></div>`,
+    className: "",
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+
+  const lastPt = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
 
   return (
     <>
@@ -606,23 +642,30 @@ function PlaybackMapInner({
       {routePoints.length > 1 && (
         <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
       )}
+
+      {/* Start marker */}
       {routePoints.length > 0 && (
-        <Marker position={routePoints[0]} icon={startIcon}>
+        <Marker position={routePoints[0]} icon={altMode ? startPinIcon : startCircleIcon}>
           <Popup><b>Trip Start</b></Popup>
         </Marker>
       )}
-      {chkStops.map(stop => {
-        const chkIcon = L.divIcon({
-          html: `<div style="width:30px;height:30px;border-radius:50%;background:#2563eb;border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;color:white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${stop.num}</div>`,
-          className: "",
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
-        });
+
+      {/* CHK stop markers */}
+      {chkStops.map((stop, idx) => {
+        const isLast = idx === chkStops.length - 1;
+        const icon = altMode
+          ? (isLast ? endPinIcon : makeOrangeCircleIcon())
+          : L.divIcon({
+              html: `<div style="width:30px;height:30px;border-radius:50%;background:#2563eb;border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;color:white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${stop.num}</div>`,
+              className: "",
+              iconSize: [30, 30],
+              iconAnchor: [15, 15],
+            });
         return (
-          <Marker key={stop.num} position={stop.pos} icon={chkIcon}>
+          <Marker key={stop.num} position={stop.pos} icon={icon}>
             <Popup>
               <div style={{ minWidth: 150, fontSize: 13 }}>
-                <b style={{ color: "#2563eb" }}>CHK {stop.num}</b>
+                <b style={{ color: altMode ? "#f97316" : "#2563eb" }}>CHK {stop.num}</b>
                 {stop.loc && <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{stop.loc}</div>}
                 <table style={{ marginTop: 6, width: "100%" }}>
                   <tbody>
@@ -635,6 +678,13 @@ function PlaybackMapInner({
           </Marker>
         );
       })}
+
+      {/* Alt mode: blue person pin at last known GPS position */}
+      {altMode && lastPt && (
+        <Marker position={lastPt} icon={personPinIcon}>
+          <Popup><b>Last Known Position</b></Popup>
+        </Marker>
+      )}
     </>
   );
 }
@@ -647,6 +697,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   onMapTypeChange: (t: string) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
+  const [altMode, setAltMode] = useState(false); // toggles pin-style vs circle-style markers
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -697,12 +748,18 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
 
   const defaultCenter: [number, number] = routePoints.length > 0 ? routePoints[0] : [22.8, 80.0];
 
-  // Fit map to route when locate/target button is pressed
+  // Fit map to route bounds
   const fitBounds = () => {
     const m = leafletMap.current;
     if (!m || routePoints.length < 2) return;
     const bounds = L.latLngBounds(routePoints.map(p => L.latLng(p[0], p[1])));
     m.fitBounds(bounds, { padding: [40, 40] });
+  };
+
+  // Toggle between circle-style and pin-style markers, and fit bounds each time
+  const handleLocateToggle = () => {
+    setAltMode(prev => !prev);
+    fitBounds();
   };
 
   // Toggle fullscreen on the wrapper div
@@ -729,6 +786,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           routePoints={routePoints}
           chkStops={chkStops}
           mapTypeId={mapTypeId}
+          altMode={altMode}
           onMapReady={(m) => { leafletMap.current = m; }}
         />
       </MapContainer>
@@ -765,10 +823,11 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           )}
         </div>
 
-        {/* 2. Blue locate/target button — fits map to route */}
+        {/* 2. Blue locate/target button — toggles pin/circle marker style + fits bounds */}
         <button
-          onClick={fitBounds}
-          title="Fit route"
+          onClick={handleLocateToggle}
+          title={altMode ? "Switch to circle markers" : "Switch to pin markers"}
+          style={{ background: altMode ? "#e8f0fe" : "white" }}
           className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1a73e8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -818,11 +877,34 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         </button>
       </div>
 
-      {/* Legend — bottom-left */}
+      {/* Legend — bottom-left, adapts to altMode */}
       <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
-        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
-        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
+        {altMode ? (
+          <>
+            <div className="flex items-center gap-1.5">
+              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48" stroke="white" strokeWidth="2"/><circle cx="16" cy="16" r="7" fill="white"/></svg>
+              <span>Start</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-full bg-white border-2 border-orange-500"/>
+              <span>CHK Stop</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#16a34a" stroke="white" strokeWidth="2"/><circle cx="16" cy="16" r="7" fill="white"/></svg>
+              <span>End Stop</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg width="12" height="16" viewBox="0 0 32 44"><path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#1a73e8" stroke="white" strokeWidth="2"/></svg>
+              <span>Last Position</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
+            <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
+          </>
+        )}
       </div>
     </div>
   );
