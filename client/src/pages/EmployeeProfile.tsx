@@ -186,8 +186,8 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 }
 
 const MAP_TYPES = [
-  { id: "roadmap",        label: "Google Streets" },
   { id: "openstreetmap",  label: "OpenStreetMap"  },
+  { id: "roadmap",        label: "Google Streets" },
   { id: "terrain",        label: "Google Terrain" },
   { id: "hybrid",         label: "Google Hybrid"  },
 ];
@@ -275,9 +275,9 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
 
-      {/* GPS route polyline — blue */}
+      {/* GPS route polyline — orange */}
       {gpsPoints.length > 1 && (
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.9 }} />
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#f97316", weight: 5, opacity: 0.9 }} />
       )}
 
       {/* Stoppage markers */}
@@ -860,7 +860,7 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
-  const [sharedMapTypeId, setSharedMapTypeId] = useState("roadmap");
+  const [sharedMapTypeId, setSharedMapTypeId] = useState("openstreetmap");
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
