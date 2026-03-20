@@ -115,6 +115,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [isUploading, setIsUploading] = useState(false);
   const [punchLocation, setPunchLocation] = useState<string | null>(null);
   const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'active' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pendingPunchType = useRef<"in" | "out" | null>(null);
@@ -191,27 +192,57 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
-  // GPS pinging: send location every 60 seconds while punched in
+  // GPS pinging: send location every 30 seconds while punched in
   useEffect(() => {
-    if (!isPunchedIn) return;
+    if (!isPunchedIn) {
+      setGpsStatus('idle');
+      return;
+    }
+    if (!navigator.geolocation) {
+      setGpsStatus('error');
+      return;
+    }
     const sendLocation = () => {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition((pos) => {
-        fetch("/api/employee/location", {
-          method: "POST",
-          headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            speed: pos.coords.speed,
-          }),
-        }).catch(() => {});
-      }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          fetch("/api/employee/location", {
+            method: "POST",
+            headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              speed: pos.coords.speed,
+            }),
+          })
+            .then((res) => {
+              if (res.ok) setGpsStatus('active');
+              else setGpsStatus('error');
+            })
+            .catch(() => setGpsStatus('error'));
+        },
+        (err) => {
+          setGpsStatus('error');
+          if (err.code === 1) {
+            toast({
+              title: "Location Permission Denied",
+              description: "Enable location access in your browser settings to allow GPS tracking.",
+              variant: "destructive",
+            });
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+      );
     };
     sendLocation();
     const intervalId = setInterval(sendLocation, 30000);
-    return () => clearInterval(intervalId);
+    // When tab becomes visible again after being backgrounded, fire a ping immediately
+    const onVisible = () => { if (document.visibilityState === 'visible') sendLocation(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isPunchedIn]);
 
   useEffect(() => {
@@ -426,7 +457,20 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
             <p className="text-yellow-300 text-sm font-medium mt-0.5">
               {isPunchedIn ? "You are punched in !" : "You are punched out !"}
             </p>
-            {locationGranted === false && (
+            {isPunchedIn && (
+              <div className="flex items-center gap-1 mt-1">
+                <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                  gpsStatus === 'active' ? 'bg-green-400 animate-pulse' :
+                  gpsStatus === 'error' ? 'bg-red-400' : 'bg-yellow-300 animate-pulse'
+                }`} />
+                <span className="text-white/80 text-xs">
+                  {gpsStatus === 'active' ? 'GPS Live' :
+                   gpsStatus === 'error' ? 'GPS Error – open settings' :
+                   'GPS Starting…'}
+                </span>
+              </div>
+            )}
+            {locationGranted === false && !isPunchedIn && (
               <p className="text-red-200 text-xs mt-1 flex items-center gap-1">
                 <MapPin className="w-3 h-3" /> Location not enabled
               </p>

@@ -3692,23 +3692,33 @@ export async function registerRoutes(
       let points = rawPoints;
       if (
         attRecord &&
-        attRecord.punchInLatitude != null &&
-        attRecord.punchInLongitude != null &&
-        attRecord.punchInTime
+        attRecord.checkInLatitude != null &&
+        attRecord.checkInLongitude != null &&
+        attRecord.checkIn
       ) {
+        // checkIn is stored as "HH:MM" (IST) — reconstruct a full timestamp using the date + IST offset
+        let punchInTimestamp: Date;
+        try {
+          const [hh, mm] = String(attRecord.checkIn).split(":").map(Number);
+          // Parse the attendance date in IST: YYYY-MM-DD at HH:MM IST
+          const punchInISO = `${attRecord.date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+05:30`;
+          punchInTimestamp = new Date(punchInISO);
+        } catch {
+          punchInTimestamp = new Date(`${attRecord.date}T00:00:00+05:30`);
+        }
         const punchInPoint = {
           id: -1,
           employeeId: empId,
-          latitude: attRecord.punchInLatitude,
-          longitude: attRecord.punchInLongitude,
+          latitude: attRecord.checkInLatitude,
+          longitude: attRecord.checkInLongitude,
           accuracy: null,
-          recordedAt: attRecord.punchInTime,
+          recordedAt: punchInTimestamp,
         } as any;
-        // Only prepend if the punch-in is not already the first recorded point
+        // Only prepend if the punch-in is before or at the first recorded GPS point
         const firstPt = rawPoints[0];
-        const punchTime = new Date(attRecord.punchInTime).getTime();
+        const punchTime = punchInTimestamp.getTime();
         const firstTime = firstPt ? new Date(firstPt.recordedAt).getTime() : Infinity;
-        if (punchTime < firstTime) {
+        if (punchTime <= firstTime) {
           points = [punchInPoint, ...rawPoints];
         }
       }
