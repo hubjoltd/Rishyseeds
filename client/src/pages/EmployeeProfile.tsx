@@ -198,6 +198,13 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+const MAP_TYPES = [
+  { id: "roadmap",        label: "Google Streets" },
+  { id: "openstreetmap",  label: "OpenStreetMap"  },
+  { id: "terrain",        label: "Google Terrain" },
+  { id: "hybrid",         label: "Google Hybrid"  },
+];
+
 function LiveMap({
   locationPoints = [],
   segments = [],
@@ -217,6 +224,7 @@ function LiveMap({
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
+  const [mapTypeId, setMapTypeId] = useState("roadmap");
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const overlaysRef = useRef<any[]>([]);
@@ -227,15 +235,31 @@ function LiveMap({
   // Initialize map instance ONCE when Google Maps is ready
   useEffect(() => {
     if (!ready || !mapRef.current || mapInstanceRef.current) return;
-    mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+    const map = new google.maps.Map(mapRef.current, {
       center: { lat: 17.4, lng: 78.5 },
       zoom: 14,
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: true,
     });
+    // Register OpenStreetMap as a custom tile layer
+    const osmType = new google.maps.ImageMapType({
+      getTileUrl: (coord: google.maps.Point, zoom: number) =>
+        `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
+      tileSize: new google.maps.Size(256, 256),
+      name: "OpenStreetMap",
+      maxZoom: 19,
+    });
+    map.mapTypes.set("openstreetmap", osmType);
+    mapInstanceRef.current = map;
     infoWindowRef.current = new google.maps.InfoWindow();
   }, [ready]);
+
+  // Switch map type whenever the selector changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.setMapTypeId(mapTypeId as google.maps.MapTypeId);
+  }, [mapTypeId]);
 
   // Redraw overlays only when data actually changes (prevents 30-second flicker from polling)
   useEffect(() => {
@@ -272,10 +296,10 @@ function LiveMap({
       const anchor = gpsPoints[0];
       const maxSpreadM = gpsPoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
 
-      // Draw orange GPS route polyline (exact TrackClap style)
+      // Draw blue GPS route polyline for travelled segments (TrackClap style)
       const drawPolyline = (pts: { lat: number; lng: number }[]) => {
         if (pts.length < 2) return;
-        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
+        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4, map });
         overlaysRef.current.push(pl);
       };
 
@@ -311,7 +335,7 @@ function LiveMap({
               if (status === "OK" && result) {
                 const dr = new google.maps.DirectionsRenderer({
                   map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
+                  polylineOptions: { strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4 },
                 });
                 overlaysRef.current.push(dr);
               } else {
@@ -327,16 +351,16 @@ function LiveMap({
       }
     }
 
-    // Stoppage markers — prominent red pins with duration label
+    // Stoppage markers — orange circle pins (TrackClap style)
     segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
       const mins = Math.floor((s.durationSecs || 0) / 60);
       const secs = Math.round((s.durationSecs || 0) % 60);
-      const dur = `${String(mins).padStart(2, "0")}m ${String(secs).padStart(2, "0")}s`;
+      const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
         <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
         <circle cx="18" cy="14" r="7" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="9" font-weight="bold" font-family="sans-serif">S</text>
+        <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="9" font-weight="bold" font-family="sans-serif">S</text>
       </svg>`;
       const m = new google.maps.Marker({
         position: { lat: s.lat!, lng: s.lng! },
@@ -350,9 +374,9 @@ function LiveMap({
       });
       m.addListener("click", () => {
         infoWindow.setContent(
-          `<div style="font-size:13px;min-width:120px">` +
-          `<b style="color:#dc2626">⏱ Stoppage</b><br/>` +
-          `<span style="font-size:12px">${dur}</span><br/>` +
+          `<div style="font-size:13px;min-width:130px">` +
+          `<b style="color:#f97316">⏸ Stoppage</b><br/>` +
+          `<span style="font-size:12px;font-weight:bold">${dur}</span><br/>` +
           `<span style="font-size:11px;color:#666">${new Date(s.startTime).toLocaleTimeString()} – ${new Date(s.endTime).toLocaleTimeString()}</span>` +
           `</div>`
         );
@@ -361,19 +385,31 @@ function LiveMap({
       overlaysRef.current.push(m);
     });
 
-    // Customer visit markers
+    // CHK — customer visit markers (green pin with "CHK" label)
     visitStops.filter(v => v.lat && v.lng).forEach(v => {
+      const chkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
+        <ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/>
+        <path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/>
+        <circle cx="17" cy="13" r="7" fill="white"/>
+        <text x="17" y="10" text-anchor="middle" fill="#16a34a" font-size="5.5" font-weight="bold" font-family="sans-serif">CHK</text>
+        <text x="17" y="18" text-anchor="middle" fill="#16a34a" font-size="5" font-family="sans-serif">✓</text>
+      </svg>`;
       const m = new google.maps.Marker({
         position: { lat: v.lat, lng: v.lng },
         map,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#e11d48", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
+        zIndex: 80,
+        icon: {
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(chkSvg),
+          scaledSize: new google.maps.Size(34, 42),
+          anchor: new google.maps.Point(17, 42),
+        },
       });
       const loc = v.locationName || "";
       m.addListener("click", () => {
         infoWindow.setContent(
           `<div style="min-width:150px;font-size:13px">` +
-          `<b>${v.customerName}</b>` +
-          `<div style="color:#e11d48;font-size:11px">⏱ ${v.durationStr}</div>` +
+          `<b style="color:#16a34a">✓ CHK — ${v.customerName}</b>` +
+          `<div style="color:#555;font-size:11px;margin-top:2px">⏱ ${v.durationStr}</div>` +
           (loc ? `<div style="color:#555;font-size:11px">${loc}</div>` : "") +
           `</div>`
         );
@@ -470,6 +506,30 @@ function LiveMap({
   return (
     <div className="relative h-full w-full">
       <div ref={mapRef} className="h-full w-full" />
+
+      {/* Map type selector — top-right overlay exactly like TrackClap */}
+      <div className="absolute top-2 right-2 z-10 bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
+        {MAP_TYPES.map(opt => (
+          <label key={opt.id} className="flex items-center gap-1.5 cursor-pointer py-[2px]">
+            <input
+              type="radio"
+              name="liveMapType"
+              value={opt.id}
+              checked={mapTypeId === opt.id}
+              onChange={() => setMapTypeId(opt.id)}
+              className="accent-blue-600 w-3 h-3"
+            />
+            <span className="text-gray-700 leading-none">{opt.label}</span>
+          </label>
+        ))}
+      </div>
+
+      {/* Legend — bottom-left */}
+      <div className="absolute bottom-6 left-2 z-10 bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Travelled</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500"/><span>Stoppage</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
+      </div>
     </div>
   );
 }
