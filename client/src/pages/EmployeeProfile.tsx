@@ -977,13 +977,13 @@ export default function EmployeeProfile() {
 
       <div className="p-4 md:p-6">
         {activeTab === "live" && (
-          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ minHeight: "620px" }}>
+          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ height: "calc(100vh - 210px)", minHeight: "600px" }}>
 
             {/* ── LEFT: TrackClap-style activity panel ── */}
-            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ minHeight: "620px" }}>
+            <div className="w-72 shrink-0 flex flex-col border-r bg-white" style={{ height: "100%" }}>
 
               {/* Panel header: date picker + stats */}
-              <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0">
+              <div className="px-3 pt-2.5 pb-2 border-b bg-gray-50 shrink-0">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Input
                     type="date"
@@ -996,12 +996,14 @@ export default function EmployeeProfile() {
                     <RefreshCw className="h-3 w-3" />
                   </Button>
                 </div>
-                <div className="flex items-center gap-3 text-[11px]">
+                {/* Stats bar: "Completed N | Distance X Km" — mirrors TrackClap header */}
+                <div className="flex items-center text-[11px] bg-white rounded border px-2 py-1 gap-0">
                   <span className="text-muted-foreground">Completed</span>
-                  <span className="font-bold text-foreground">{liveCheckins.length}</span>
-                  <span className="text-muted-foreground ml-auto">Distance</span>
-                  <span className="font-bold text-foreground">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
-                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-1" />}
+                  <span className="font-bold text-foreground ml-1">{liveCheckins.length}</span>
+                  <span className="mx-2 text-gray-300">|</span>
+                  <span className="text-muted-foreground">Distance</span>
+                  <span className="font-bold text-foreground ml-1">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-auto" />}
                 </div>
               </div>
 
@@ -1013,12 +1015,12 @@ export default function EmployeeProfile() {
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
                     <Timer className="h-10 w-10 opacity-20" />
                     <p className="font-medium">No activity recorded</p>
-                    <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds</p>
+                    <p className="text-[10px] opacity-70">GPS pings are sent every 30 seconds</p>
                   </div>
                 ) : (
                   <div className="relative py-2">
-                    {/* vertical connector line */}
-                    <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gray-200" />
+                    {/* vertical connector line — centred on the icons (px-3=12px + half w-8=16px = 28px) */}
+                    <div className="absolute left-[28px] top-0 bottom-0 w-0.5 bg-gray-200" />
 
                     {allTimelineEvents.map((seg, idx) => {
                       const startT = new Date(seg.startTime);
@@ -1119,31 +1121,30 @@ export default function EmployeeProfile() {
                       /* ── VISIT / CHECK-IN (CHK) ── */
                       if (seg.type === "visit") {
                         const outT = seg.endTime ? new Date(seg.endTime) : null;
-                        const durStr = outT ? formatDuration(startT, outT) : "ongoing";
                         const durSecs = outT ? Math.round((outT.getTime() - startT.getTime()) / 1000) : null;
                         const durShort = durSecs !== null
-                          ? (durSecs < 60 ? `${durSecs} Seconds` : `${Math.floor(durSecs / 60)}m ${durSecs % 60}s`)
+                          ? (durSecs < 60 ? `${durSecs} Sec` : `${Math.floor(durSecs / 60)}m ${durSecs % 60}s`)
                           : "ongoing";
                         return (
                           <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50/50 transition-colors">
                             <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
                               <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow flex items-center justify-center">
-                                <MapPin className="w-3.5 h-3.5 text-white" />
+                                <MapPin className="w-3 h-3 text-white" />
                               </div>
                             </div>
                             <div className="flex-1 min-w-0 pt-0.5">
                               <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-bold text-blue-700">Stoppage {seg.checkinId}</p>
+                                <p className="text-[11px] font-bold text-blue-700">CHK {seg.checkinId}</p>
                                 <span className="text-[10px] text-muted-foreground shrink-0">({durShort})</span>
                               </div>
-                              <p className="text-[10px] text-gray-500 font-mono">
+                              <p className="text-[10px] text-gray-500 font-mono leading-tight">
                                 {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}
                               </p>
+                              <p className="text-[10px] text-blue-800 font-semibold mt-0.5 leading-tight line-clamp-1">● {seg.customerName}</p>
                               {seg.locationName
-                                ? <p className="text-[10px] text-blue-600 font-medium mt-0.5 line-clamp-1">{seg.locationName}</p>
+                                ? <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{seg.locationName}</p>
                                 : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
                               }
-                              <p className="text-[10px] text-gray-600 font-medium">{seg.customerName}</p>
                             </div>
                           </div>
                         );
@@ -1194,7 +1195,7 @@ export default function EmployeeProfile() {
             </div>
 
             {/* ── RIGHT: Full-height Map ── */}
-            <div className="flex-1 relative" style={{ minHeight: "620px" }}>
+            <div className="flex-1 relative" style={{ height: "100%" }}>
                 {tripsLoading ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="h-6 w-6 animate-spin" />
