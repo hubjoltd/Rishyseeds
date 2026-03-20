@@ -2671,7 +2671,15 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       const employeeTrips = await storage.getTripsByEmployee(employeeId);
-      res.json(employeeTrips);
+      // Attach visit count to each trip for the list view
+      const tripsWithCounts = await Promise.all(
+        employeeTrips.map(async (t) => {
+          const visits = await storage.getTripVisits(t.id);
+          const dashCheckins = await storage.getCustomerCheckinsByTripId(t.id);
+          return { ...t, visitsCount: visits.length + dashCheckins.length };
+        })
+      );
+      res.json(tripsWithCounts);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trips" });
     }

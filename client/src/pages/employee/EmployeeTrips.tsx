@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -87,6 +87,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const [view, setView] = useState<View>("list");
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const autoNavigatedRef = useRef(false);
 
   const captureGPS = useCallback(async (): Promise<{ lat: number; lng: number; name?: string } | null> => {
     setGpsLoading(true);
@@ -214,13 +215,14 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const activeTrip = trips.find(t => t.status === "started" || t.status === "in_progress");
   const trip = tripDetail || selectedTrip;
 
-  // Auto-navigate to active trip when page loads and no trip is selected
+  // Auto-navigate to active trip on first load only (not when user explicitly goes back)
   useEffect(() => {
-    if (!isLoading && activeTrip && !selectedTrip && view === "list") {
+    if (!isLoading && activeTrip && !autoNavigatedRef.current && view === "list") {
+      autoNavigatedRef.current = true;
       setSelectedTrip(activeTrip);
       setView("detail");
     }
-  }, [isLoading, activeTrip, selectedTrip, view]);
+  }, [isLoading, activeTrip, view]);
 
   // ===== START TRIP FORM =====
   if (view === "start_trip") {
@@ -503,7 +505,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
             <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
             <div>
               <p className="text-xs font-bold">Trip #{activeTrip.id} — Active</p>
-              <p className="text-[11px] text-green-200">{fmtTime(activeTrip.startTime)} · {activeTrip.startMeterReading || "?"} km start</p>
+              <p className="text-[11px] text-green-200">{fmtTime(activeTrip.startTime)}{activeTrip.startMeterReading ? ` · ${activeTrip.startMeterReading} km start` : ""}</p>
             </div>
           </div>
           <ChevronRight className="h-5 w-5 text-green-200" />
@@ -524,7 +526,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
           </div>
         ) : (
           trips.map(t => {
-            const visitsCount = t.visits?.length || 0;
+            const visitsCount = t.visitsCount ?? t.visits?.length ?? 0;
             return (
               <div
                 key={t.id}
