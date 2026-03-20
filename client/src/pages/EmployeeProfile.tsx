@@ -213,6 +213,8 @@ function LiveMap({
   punchInLng,
   punchOutLat,
   punchOutLng,
+  mapTypeId,
+  onMapTypeChange,
 }: {
   locationPoints?: any[];
   segments?: LiveMapSegment[];
@@ -221,10 +223,11 @@ function LiveMap({
   punchInLng?: number | null;
   punchOutLat?: number | null;
   punchOutLng?: number | null;
+  mapTypeId: string;
+  onMapTypeChange: (t: string) => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
-  const [mapTypeId, setMapTypeId] = useState("roadmap");
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const overlaysRef = useRef<any[]>([]);
@@ -516,7 +519,7 @@ function LiveMap({
               name="liveMapType"
               value={opt.id}
               checked={mapTypeId === opt.id}
-              onChange={() => setMapTypeId(opt.id)}
+              onChange={() => onMapTypeChange(opt.id)}
               className="accent-blue-600 w-3 h-3"
             />
             <span className="text-gray-700 leading-none">{opt.label}</span>
@@ -545,10 +548,15 @@ function fmtPopupTime(iso: string | null | undefined): string {
   } catch { return "-"; }
 }
 
-function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; date: string; employeeId: number }) {
+function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
+  trips: TripWithVisits[];
+  date: string;
+  employeeId: number;
+  mapTypeId: string;
+  onMapTypeChange: (t: string) => void;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
-  const [mapTypeId, setMapTypeId] = useState("roadmap");
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const overlaysRef = useRef<any[]>([]);
@@ -778,7 +786,7 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
               name="pbMapType"
               value={opt.id}
               checked={mapTypeId === opt.id}
-              onChange={() => setMapTypeId(opt.id)}
+              onChange={() => onMapTypeChange(opt.id)}
               className="accent-blue-600 w-3 h-3"
             />
             <span className="text-gray-700 leading-none">{opt.label}</span>
@@ -804,6 +812,7 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
+  const [sharedMapTypeId, setSharedMapTypeId] = useState("roadmap");
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
@@ -1387,6 +1396,8 @@ export default function EmployeeProfile() {
                     punchInLng={punchInEvent?.lng ?? null}
                     punchOutLat={punchOutEvent?.lat ?? null}
                     punchOutLng={punchOutEvent?.lng ?? null}
+                    mapTypeId={sharedMapTypeId}
+                    onMapTypeChange={setSharedMapTypeId}
                   />
                 )}
               </div>
@@ -1536,7 +1547,13 @@ export default function EmployeeProfile() {
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
               ) : (
-                <PlaybackMap trips={trips} date={playbackDate} employeeId={empId} />
+                <PlaybackMap
+                  trips={trips}
+                  date={playbackDate}
+                  employeeId={empId}
+                  mapTypeId={sharedMapTypeId}
+                  onMapTypeChange={setSharedMapTypeId}
+                />
               )}
             </div>
           </div>
