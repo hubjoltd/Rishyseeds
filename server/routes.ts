@@ -231,6 +231,33 @@ export async function registerRoutes(
   
   app.use("/uploads", express.static("uploads"));
 
+  app.get("/api/tiles/:type/:z/:x/:y.png", async (req, res) => {
+    const { type, z, x, y } = req.params;
+    const validTypes = ["m", "s", "y", "p", "h"];
+    const safeType = validTypes.includes(type) ? type : "m";
+    const s = ["0", "1", "2", "3"][Math.floor(Math.random() * 4)];
+    const url = `https://mt${s}.google.com/vt/lyrs=${safeType}&x=${x}&y=${y}&z=${z}`;
+    try {
+      const upstream = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://www.google.com/maps",
+          "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+      });
+      if (!upstream.ok) {
+        return res.status(upstream.status).end();
+      }
+      const contentType = upstream.headers.get("content-type") || "image/png";
+      res.set("Content-Type", contentType);
+      res.set("Cache-Control", "public, max-age=86400");
+      const buf = await upstream.arrayBuffer();
+      res.send(Buffer.from(buf));
+    } catch {
+      res.status(502).end();
+    }
+  });
+
   app.post("/api/employee/upload-punch-photo", upload.single("photo"), (req: any, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "No photo uploaded" });

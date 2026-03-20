@@ -186,17 +186,19 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 }
 
 const MAP_TYPES = [
-  { id: "roadmap",        label: "Google Streets" },
-  { id: "terrain",        label: "Google Terrain" },
-  { id: "hybrid",         label: "Google Hybrid"  },
-  { id: "openstreetmap",  label: "OpenStreetMap"  },
+  { id: "hybrid",       label: "Google Satellite" },
+  { id: "satellite",    label: "Google Satellite (No Labels)" },
+  { id: "roadmap",      label: "Google Roads"     },
+  { id: "terrain",      label: "Google Terrain"   },
+  { id: "openstreetmap",label: "OpenStreetMap"    },
 ];
 
 const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
-  openstreetmap: { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: ["a","b","c","d"], attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' },
-  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
-  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
-  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
+  roadmap:      { url: "/api/tiles/m/{z}/{x}/{y}.png",  attr: '© <a href="https://maps.google.com">Google Maps</a>' },
+  terrain:      { url: "/api/tiles/p/{z}/{x}/{y}.png",  attr: '© <a href="https://maps.google.com">Google Maps</a>' },
+  hybrid:       { url: "/api/tiles/y/{z}/{x}/{y}.png",  attr: '© <a href="https://maps.google.com">Google Maps</a>' },
+  satellite:    { url: "/api/tiles/s/{z}/{x}/{y}.png",  attr: '© <a href="https://maps.google.com">Google Maps</a>' },
+  openstreetmap:{ url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: ["a","b","c","d"], attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' },
 };
 
 // ── LiveMapInner — inside MapContainer so Leaflet hooks work ──
@@ -273,7 +275,7 @@ function LiveMapInner({
 
   return (
     <>
-      <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+      <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* GPS route polyline — orange */}
       {gpsPoints.length > 1 && (
@@ -509,7 +511,7 @@ function PlaybackMapInner({
 
   return (
     <>
-      <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+      <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
       <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={routePoints} />
 
@@ -860,7 +862,7 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
-  const [sharedMapTypeId, setSharedMapTypeId] = useState("roadmap");
+  const [sharedMapTypeId, setSharedMapTypeId] = useState("hybrid");
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
