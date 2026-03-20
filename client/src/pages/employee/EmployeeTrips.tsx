@@ -635,7 +635,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-green-700 hover:bg-green-800 font-bold py-3"
-            onClick={() => { setPhotoFile(null); setPhotoPreview(null); setStartMeter(""); setView("start_trip"); }}
+            onClick={() => { setPhotoFile(null); setPhotoPreview(null); setView("start_trip"); }}
             data-testid="button-start-trip"
           >
             <Play className="h-4 w-4 mr-2" /> START NEW TRIP
