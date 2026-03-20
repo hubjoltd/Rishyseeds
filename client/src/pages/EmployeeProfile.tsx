@@ -1176,21 +1176,47 @@ export default function EmployeeProfile() {
             <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ minHeight: "620px" }}>
 
               {/* Header: date picker + stats */}
-              <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Input
-                    type="date"
-                    value={playbackDate}
-                    onChange={(e) => setPlaybackDate(e.target.value)}
-                    className="h-7 text-xs flex-1"
-                    data-testid="input-playback-date"
-                  />
+              <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0 space-y-2">
+                <Input
+                  type="date"
+                  value={playbackDate}
+                  onChange={(e) => setPlaybackDate(e.target.value)}
+                  className="h-7 text-xs w-full"
+                  data-testid="input-playback-date"
+                />
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <p className="text-[9px] text-muted-foreground uppercase tracking-wide">Speed Limit (km/h)</p>
+                    <Input type="number" value={speedLimitKm} onChange={e => setSpeedLimitKm(Number(e.target.value))} className="h-6 text-xs" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-muted-foreground uppercase tracking-wide">Stoppage (min)</p>
+                    <Input type="number" value={stoppageMinutes} onChange={e => setStoppageMinutes(Number(e.target.value))} className="h-6 text-xs" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-[11px]">
-                  <span className="text-muted-foreground">Completed</span>
-                  <span className="font-bold text-foreground">{playbackCheckIns}</span>
-                  <span className="text-muted-foreground ml-auto">Distance</span>
-                  <span className="font-bold text-foreground">{playbackKm.toFixed(2)} Km</span>
+                <div className="grid grid-cols-2 gap-1 text-[11px]">
+                  <div className="flex flex-col items-center bg-white rounded border py-1">
+                    <span className="text-muted-foreground text-[9px]">Distance</span>
+                    <span className="font-bold text-foreground">{playbackKm.toFixed(2)} km</span>
+                  </div>
+                  <div className="flex flex-col items-center bg-white rounded border py-1">
+                    <span className="text-muted-foreground text-[9px]">Stoppages</span>
+                    <span className="font-bold text-foreground">{playbackStoppages}</span>
+                  </div>
+                  <div className="flex flex-col items-center bg-white rounded border py-1">
+                    <span className="text-muted-foreground text-[9px]">Check In</span>
+                    <span className="font-bold text-green-600">{playbackCheckIns}</span>
+                  </div>
+                  <div className="flex flex-col items-center bg-white rounded border py-1">
+                    <span className="text-muted-foreground text-[9px]">Check Out</span>
+                    <span className="font-bold text-red-500">{playbackCheckOuts}</span>
+                  </div>
+                  {speedViolations > 0 && (
+                    <div className="col-span-2 flex flex-col items-center bg-red-50 rounded border border-red-200 py-1">
+                      <span className="text-muted-foreground text-[9px]">Speed Violations</span>
+                      <span className="font-bold text-red-600">{speedViolations}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1273,18 +1299,6 @@ export default function EmployeeProfile() {
                         </div>
                       ))}
 
-                      {/* Stats footer */}
-                      <div className="mx-3 mt-3 rounded-lg border bg-gray-50 p-2.5 space-y-1.5">
-                        {[
-                          { label: "Speed Violations", value: speedViolations, color: speedViolations > 0 ? "text-red-600" : "text-foreground" },
-                          { label: "Stoppages", value: playbackStoppages, color: "text-foreground" },
-                        ].map(({ label, value, color }) => (
-                          <div key={label} className="flex justify-between text-[11px]">
-                            <span className="text-muted-foreground">{label}</span>
-                            <span className={`font-bold ${color}`}>{value}</span>
-                          </div>
-                        ))}
-                      </div>
                     </div>
                   );
                 })()}
