@@ -616,20 +616,27 @@ function PlaybackMapInner({
   });
 
   // ── Pin mode markers ──
-  // Red drop-pin for start (B)
-  const startPinIcon = makePinIcon("#e11d48", `<circle cx="16" cy="16" r="7" fill="white"/>`);
-  // Green drop-pin for last CHK stop / destination
-  const endPinIcon = makePinIcon("#16a34a", `<circle cx="16" cy="16" r="7" fill="white"/>`);
+  // Red drop-pin for start — white inner circle (bullseye style)
+  const startPinIcon = makePinIcon("#e11d48",
+    `<circle cx="16" cy="16" r="8" fill="none" stroke="white" stroke-width="2.5"/><circle cx="16" cy="16" r="3.5" fill="white"/>`,
+    34
+  );
+  // Green drop-pin for last CHK stop — shows CHK number inside
+  const makeEndPinIcon = (num: number) => makePinIcon("#16a34a",
+    `<text x="16" y="21" text-anchor="middle" font-size="12" font-weight="bold" font-family="Arial,sans-serif" fill="white">${num}</text>`,
+    34
+  );
   // Blue drop-pin with person silhouette for last known position
   const personPinIcon = makePinIcon("#1a73e8",
-    `<path d="M16 10a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 10c4.42 0 8 1.79 8 4v1H8v-1c0-2.21 3.58-4 8-4z" fill="white"/>`
+    `<path d="M16 9a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zm0 11c5 0 9 2 9 4.5v.5H7v-.5c0-2.5 4-4.5 9-4.5z" fill="white"/>`,
+    36
   );
-  // Orange hollow circle for CHK stops in alt mode
+  // Orange hollow circle with minus dash for intermediate CHK stops
   const makeOrangeCircleIcon = () => L.divIcon({
-    html: `<div style="width:22px;height:22px;border-radius:50%;background:white;border:3px solid #f97316;box-shadow:0 2px 4px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center"><div style="width:7px;height:7px;border-radius:50%;background:#f97316"></div></div>`,
+    html: `<div style="width:24px;height:24px;border-radius:50%;background:white;border:3px solid #f97316;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:3px;border-radius:2px;background:#f97316"></div></div>`,
     className: "",
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 
   const lastPt = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
@@ -654,7 +661,7 @@ function PlaybackMapInner({
       {chkStops.map((stop, idx) => {
         const isLast = idx === chkStops.length - 1;
         const icon = altMode
-          ? (isLast ? endPinIcon : makeOrangeCircleIcon())
+          ? (isLast ? makeEndPinIcon(stop.num) : makeOrangeCircleIcon())
           : L.divIcon({
               html: `<div style="width:30px;height:30px;border-radius:50%;background:#2563eb;border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;color:white;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${stop.num}</div>`,
               className: "",
