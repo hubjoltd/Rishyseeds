@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, MapPin, Gauge,
   Navigation, Play, Square,
   ChevronRight, LogIn, LogOut, Timer, Car,
+  UserCheck, UserX, Building2, X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -124,6 +126,11 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   const [gpsLoading, setGpsLoading] = useState(false);
   const autoNavigatedRef = useRef(false);
 
+  // Check-in dialog state
+  const [showCheckinForm, setShowCheckinForm] = useState(false);
+  const [checkinName, setCheckinName] = useState("");
+  const [checkinAddress, setCheckinAddress] = useState("");
+
   const captureGPS = useCallback(async (): Promise<{ lat: number; lng: number; name?: string } | null> => {
     setGpsLoading(true);
     try {
@@ -162,6 +169,25 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     refetchInterval: 15000,
   });
 
+  const { data: todayAttendance } = useQuery({
+    queryKey: ["/api/employee/attendance/today"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/attendance/today", { headers: getHeaders() });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const { data: customersList = [] } = useQuery<any[]>({
+    queryKey: ["/api/employee/customers"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/customers", { headers: getHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const startTripMutation = useMutation({
     mutationFn: async () => {
       const loc = await captureGPS();
@@ -183,6 +209,75 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const punchMutation = useMutation({
+    mutationFn: async (type: "in" | "out") => {
+      const res = await fetch(`/api/employee/punch-${type}`, {
+        method: "POST",
+        headers: { ...getHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: null, longitude: null, locationName: null }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed"); }
+      return res.json();
+    },
+    onSuccess: (_, type) => {
+      qc.invalidateQueries({ queryKey: ["/api/employee/attendance/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
+      toast({ title: type === "in" ? "Punched In" : "Punched Out", description: `Attendance recorded at ${format(new Date(), "hh:mm a")}` });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addVisitMutation = useMutation({
+    mutationFn: async ({ name, address }: { name: string; address: string }) => {
+      if (!selectedTrip) throw new Error("No active trip");
+      const loc = await captureGPS();
+      const fd = new FormData();
+      if (loc) {
+        fd.append("punchInLatitude", String(loc.lat));
+        fd.append("punchInLongitude", String(loc.lng));
+        if (loc.name) fd.append("punchInLocationName", loc.name);
+      }
+      if (name.trim()) fd.append("customerName", name.trim());
+      if (address.trim()) fd.append("customerAddress", address.trim());
+      const res = await fetch(`/api/employee/trips/${selectedTrip.id}/visits`, { method: "POST", headers: getHeaders(), body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
+      qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
+      setShowCheckinForm(false);
+      setCheckinName("");
+      setCheckinAddress("");
+      toast({ title: "Checked In", description: "GPS location captured" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const punchOutVisitMutation = useMutation({
+    mutationFn: async (visitId: number) => {
+      if (!selectedTrip) throw new Error("No trip");
+      const loc = await captureGPS();
+      const fd = new FormData();
+      if (loc) {
+        fd.append("punchOutLatitude", String(loc.lat));
+        fd.append("punchOutLongitude", String(loc.lng));
+        if (loc.name) fd.append("punchOutLocationName", loc.name);
+      }
+      const res = await fetch(`/api/employee/trips/${selectedTrip.id}/visits/${visitId}/punch-out`, { method: "PATCH", headers: getHeaders(), body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employee/trips", selectedTrip?.id] });
+      qc.invalidateQueries({ queryKey: ["/api/employee/trips"] });
+      toast({ title: "Checked Out", description: "Visit completed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
+  const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
   const activeTrip = trips.find(t => t.status === "started" || t.status === "in_progress");
   const trip = tripDetail || selectedTrip;
@@ -235,7 +330,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   if (view === "detail" && trip) {
     const visits: any[] = trip.visits || [];
     const isActive = trip.status === "started" || trip.status === "in_progress";
-    const activeVisit = visits.find((v: any) => v.status === "active" || !v.punchOutTime);
+    const activeVisit = visits.find((v: any) => v._source !== "checkin" && !v.punchOutTime);
 
     return (
       <div className="flex flex-col h-full animate-in fade-in">
@@ -245,6 +340,26 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
             <span className="font-semibold text-base">Trip #{trip.id}</span>
           </div>
           <StatusBadge status={trip.status} />
+        </div>
+
+        {/* Attendance punch bar in detail view */}
+        <div className={`rounded-md px-3 py-2 mb-1 flex items-center justify-between gap-3 ${isPunchedIn ? "bg-green-50 border border-green-200" : isPunchedOut ? "bg-gray-50 border border-gray-200" : "bg-amber-50 border border-amber-200"}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            {isPunchedIn ? <UserCheck className="h-3.5 w-3.5 text-green-600 shrink-0" /> : <UserCheck className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+            <p className="text-[11px] font-semibold text-gray-700 truncate">
+              {isPunchedIn ? "Punched In" : isPunchedOut ? "Punched Out" : "Not Punched In"}
+            </p>
+          </div>
+          {!isPunchedIn && !isPunchedOut && (
+            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 h-7 shrink-0" disabled={punchMutation.isPending} onClick={() => punchMutation.mutate("in")}>
+              {punchMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Punch In"}
+            </Button>
+          )}
+          {isPunchedIn && (
+            <Button size="sm" variant="outline" className="border-red-200 text-red-600 text-xs px-3 py-1 h-7 shrink-0" disabled={punchMutation.isPending} onClick={() => punchMutation.mutate("out")}>
+              {punchMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Punch Out"}
+            </Button>
+          )}
         </div>
 
         {detailLoading && !tripDetail && (
@@ -499,6 +614,95 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
           )}
         </div>
 
+        {/* Action buttons for active trip */}
+        {isActive && (
+          <div className="pt-3 border-t flex gap-2">
+            {activeVisit ? (
+              <Button
+                className="flex-1 bg-orange-500 hover:bg-orange-600 font-bold py-3"
+                disabled={punchOutVisitMutation.isPending || gpsLoading}
+                onClick={() => punchOutVisitMutation.mutate(activeVisit.id)}
+              >
+                {punchOutVisitMutation.isPending || gpsLoading
+                  ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  : <LogOut className="h-4 w-4 mr-2" />}
+                CHECK OUT
+              </Button>
+            ) : (
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700 font-bold py-3"
+                disabled={addVisitMutation.isPending || gpsLoading}
+                onClick={() => setShowCheckinForm(true)}
+              >
+                {addVisitMutation.isPending || gpsLoading
+                  ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  : <LogIn className="h-4 w-4 mr-2" />}
+                CHECK IN
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Check-in customer form overlay */}
+        {showCheckinForm && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+            <div className="bg-white w-full rounded-t-2xl p-5 space-y-4 animate-in slide-in-from-bottom">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-gray-800">Client Check-In</p>
+                <button onClick={() => { setShowCheckinForm(false); setCheckinName(""); setCheckinAddress(""); }} className="p-1 rounded-full hover:bg-gray-100">
+                  <X className="h-5 w-5 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">Client Name <span className="text-red-500">*</span></label>
+                  <Input
+                    placeholder="Enter client / party name"
+                    value={checkinName}
+                    onChange={e => setCheckinName(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+
+                {/* Quick-pick from known customers */}
+                {customersList.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {customersList.slice(0, 6).map((c: any) => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setCheckinName(c.customerName || c.name || ""); setCheckinAddress(c.address || c.customerAddress || ""); }}
+                        className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${checkinName === (c.customerName || c.name) ? "bg-blue-600 text-white border-blue-600" : "border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50"}`}
+                      >
+                        <Building2 className="h-2.5 w-2.5 inline mr-1" />{c.customerName || c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">Address / Location <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <Input
+                    placeholder="Enter client address"
+                    value={checkinAddress}
+                    onChange={e => setCheckinAddress(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <Button
+                className="w-full bg-blue-600 hover:bg-blue-700 font-bold py-3"
+                disabled={!checkinName.trim() || addVisitMutation.isPending || gpsLoading}
+                onClick={() => addVisitMutation.mutate({ name: checkinName, address: checkinAddress })}
+              >
+                {addVisitMutation.isPending || gpsLoading
+                  ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  : <MapPin className="h-4 w-4 mr-2" />}
+                CONFIRM CHECK IN
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -506,6 +710,35 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
   // ===== TRIP LIST =====
   return (
     <div className="flex flex-col h-full animate-in fade-in">
+      {/* Attendance punch-in/out bar */}
+      <div className={`rounded-md px-3 py-2.5 mb-3 flex items-center justify-between gap-3 ${isPunchedIn ? "bg-green-50 border border-green-200" : isPunchedOut ? "bg-gray-50 border border-gray-200" : "bg-amber-50 border border-amber-200"}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          {isPunchedIn ? (
+            <UserCheck className="h-4 w-4 text-green-600 shrink-0" />
+          ) : isPunchedOut ? (
+            <UserX className="h-4 w-4 text-gray-400 shrink-0" />
+          ) : (
+            <UserCheck className="h-4 w-4 text-amber-500 shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-gray-700 truncate">
+              {isPunchedIn ? `Punched In · ${todayAttendance?.checkIn ? format(new Date(todayAttendance.checkIn.includes("T") ? todayAttendance.checkIn : `${new Date().toISOString().slice(0,10)}T${todayAttendance.checkIn}`), "hh:mm a") : ""}` : isPunchedOut ? "Punched Out" : "Not Punched In"}
+            </p>
+            <p className="text-[10px] text-gray-400">{format(new Date(), "dd MMM yyyy, EEEE")}</p>
+          </div>
+        </div>
+        {!isPunchedIn && !isPunchedOut && (
+          <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 h-8 shrink-0" disabled={punchMutation.isPending} onClick={() => punchMutation.mutate("in")}>
+            {punchMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Punch In"}
+          </Button>
+        )}
+        {isPunchedIn && (
+          <Button size="sm" variant="outline" className="border-red-200 text-red-600 text-xs px-3 py-1 h-8 shrink-0" disabled={punchMutation.isPending} onClick={() => punchMutation.mutate("out")}>
+            {punchMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Punch Out"}
+          </Button>
+        )}
+      </div>
+
       {/* Active trip banner */}
       {activeTrip && (
         <div
