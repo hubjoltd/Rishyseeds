@@ -548,6 +548,10 @@ function fmtPopupTime(iso: string | null | undefined): string {
 function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; date: string; employeeId: number }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
+  const [mapTypeId, setMapTypeId] = useState("roadmap");
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const overlaysRef = useRef<any[]>([]);
 
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
@@ -563,86 +567,176 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
 
   useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
 
+  // Initialize map ONCE
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!ready || !mapRef.current || mapInstanceRef.current) return;
+    const map = new google.maps.Map(mapRef.current, {
+      center: { lat: 22.8, lng: 80.0 },
+      zoom: 12,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true,
+    });
+    const osmType = new google.maps.ImageMapType({
+      getTileUrl: (coord: google.maps.Point, zoom: number) =>
+        `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
+      tileSize: new google.maps.Size(256, 256),
+      name: "OpenStreetMap",
+      maxZoom: 19,
+    });
+    map.mapTypes.set("openstreetmap", osmType);
+    mapInstanceRef.current = map;
+    infoWindowRef.current = new google.maps.InfoWindow();
+  }, [ready]);
+
+  // Switch map type
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.setMapTypeId(mapTypeId as google.maps.MapTypeId);
+  }, [mapTypeId]);
+
+  // Redraw overlays when data changes
+  useEffect(() => {
+    if (!ready || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    const infoWindow = infoWindowRef.current!;
+
+    // Clear previous overlays
+    overlaysRef.current.forEach(o => { try { if (o.setMap) o.setMap(null); } catch { /* ignore */ } });
+    overlaysRef.current = [];
 
     const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
 
     type LatLng = { lat: number; lng: number };
-    const allPoints: LatLng[] = [];
+    const routePoints: LatLng[] = [];
 
-    // Prepend punch-in / first GPS point as the journey start
+    // Use actual GPS track as the primary source for the route
     const locationPts = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
       .map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-    if (locationPts.length > 0) allPoints.push(locationPts[0]);
+    routePoints.push(...locationPts);
 
-    filtered.forEach(trip => {
-      if (trip.startLatitude && trip.startLongitude)
-        allPoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
-      (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) allPoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
-        if (v.punchOutLatitude && v.punchOutLongitude) allPoints.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) });
+    // Supplement with trip waypoints if no GPS data
+    if (routePoints.length === 0) {
+      filtered.forEach(trip => {
+        if (trip.startLatitude && trip.startLongitude)
+          routePoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
+        (trip.visits || []).forEach(v => {
+          if (v.punchInLatitude && v.punchInLongitude) routePoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
+        });
+        if (trip.endLatitude && trip.endLongitude)
+          routePoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
       });
-      if (trip.endLatitude && trip.endLongitude)
-        allPoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
-    });
-
-    const defaultCenter = { lat: 22.8, lng: 80.0 };
-    const center = allPoints.length > 0 ? allPoints[0] : defaultCenter;
-    const map = new google.maps.Map(mapRef.current, {
-      center, zoom: 12,
-      mapTypeControl: false, streetViewControl: false, fullscreenControl: true,
-    });
-
-    const infoWindow = new google.maps.InfoWindow();
-    const bounds = new google.maps.LatLngBounds();
-    allPoints.forEach(p => bounds.extend(p));
-
-    if (allPoints.length > 1) {
-      // Snap to roads using Directions API
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 10;
-      const drawChunk = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        ds.route(
-          {
-            origin: pts[0], destination: pts[pts.length - 1],
-            waypoints: pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const })),
-            travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
-          },
-          (result, status) => {
-            if (status === google.maps.DirectionsStatus.OK && result) {
-              new google.maps.DirectionsRenderer({
-                map, directions: result, suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 },
-              });
-            } else {
-              new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
-            }
-          }
-        );
-      };
-      for (let i = 0; i < allPoints.length - 1; i += CHUNK) {
-        drawChunk(allPoints.slice(i, Math.min(i + CHUNK + 1, allPoints.length)));
-      }
-      map.fitBounds(bounds, 40);
     }
 
-    // Visit check-in numbered markers
-    filtered.forEach((trip, ti) => {
-      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).forEach((v, vi) => {
-        const num = ti * 10 + vi + 1;
+    const allCoords: LatLng[] = [...routePoints];
+    filtered.forEach(trip => {
+      (trip.visits || []).forEach(v => {
+        if (v.punchInLatitude && v.punchInLongitude) {
+          const pt = { lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) };
+          if (!allCoords.some(c => c.lat === pt.lat && c.lng === pt.lng)) allCoords.push(pt);
+        }
+      });
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    allCoords.forEach(p => bounds.extend(p));
+
+    // ── Draw route — blue polyline (same as Live map) ──
+    if (routePoints.length > 1) {
+      const ds = new google.maps.DirectionsService();
+      const CHUNK = 23;
+      const anchor = routePoints[0];
+      const maxSpreadM = routePoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
+
+      const drawPolyline = (pts: LatLng[]) => {
+        if (pts.length < 2) return;
+        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4, map });
+        overlaysRef.current.push(pl);
+      };
+
+      if (maxSpreadM < 350) {
+        drawPolyline(routePoints);
+      } else {
+        const step = Math.max(1, Math.ceil(routePoints.length / CHUNK));
+        const sampled: LatLng[] = [];
+        for (let i = 0; i < routePoints.length; i += step) sampled.push(routePoints[i]);
+        if (sampled[sampled.length - 1] !== routePoints[routePoints.length - 1]) sampled.push(routePoints[routePoints.length - 1]);
+
+        const drawChunk = (pts: LatLng[]) => {
+          if (pts.length < 2) return;
+          ds.route(
+            {
+              origin: pts[0], destination: pts[pts.length - 1],
+              waypoints: pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const })),
+              travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
+            },
+            (result, status) => {
+              if (status === google.maps.DirectionsStatus.OK && result) {
+                const dr = new google.maps.DirectionsRenderer({
+                  map, directions: result, suppressMarkers: true,
+                  polylineOptions: { strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4 },
+                });
+                overlaysRef.current.push(dr);
+              } else {
+                drawPolyline(pts);
+              }
+            }
+          );
+        };
+        for (let i = 0; i < sampled.length - 1; i += CHUNK) {
+          drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
+        }
+      }
+    }
+
+    // ── Start marker ──
+    const startPt = routePoints.length > 0 ? routePoints[0] : null;
+    if (startPt) {
+      const startSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="14" r="9" fill="white"/>
+        <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
+      </svg>`;
+      const m = new google.maps.Marker({
+        position: startPt, map, zIndex: 200,
+        icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(startSvg), scaledSize: new google.maps.Size(36, 52), anchor: new google.maps.Point(18, 52) },
+      });
+      overlaysRef.current.push(m);
+    }
+
+    // ── End marker ──
+    const endPt = routePoints.length > 1 ? routePoints[routePoints.length - 1] : null;
+    if (endPt) {
+      const endSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="14" r="9" fill="white"/>
+        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
+      </svg>`;
+      const m = new google.maps.Marker({
+        position: endPt, map, zIndex: 200,
+        icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(endSvg), scaledSize: new google.maps.Size(36, 52), anchor: new google.maps.Point(18, 52) },
+      });
+      overlaysRef.current.push(m);
+    }
+
+    // ── CHK visit markers — numbered green pins (same style as Live map CHK) ──
+    let chkNum = 1;
+    filtered.forEach(trip => {
+      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).forEach(v => {
+        const num = chkNum++;
+        const chkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
+          <ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/>
+          <path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/>
+          <circle cx="17" cy="13" r="8" fill="white"/>
+          <text x="17" y="17" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="bold" font-family="sans-serif">${num}</text>
+        </svg>`;
         const m = new google.maps.Marker({
           position: { lat: Number(v.punchInLatitude!), lng: Number(v.punchInLongitude!) },
-          map,
-          icon: {
-            url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-              `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="11" fill="#2563eb" stroke="white" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="white" font-size="10" font-weight="bold" font-family="sans-serif">${num}</text></svg>`
-            ),
-            scaledSize: new google.maps.Size(24, 24),
-            anchor: new google.maps.Point(12, 12),
-          },
+          map, zIndex: 80,
+          icon: { url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(chkSvg), scaledSize: new google.maps.Size(34, 42), anchor: new google.maps.Point(17, 42) },
         });
         const inTime = fmtPopupTime(v.punchInTime as unknown as string);
         const outTime = fmtPopupTime(v.punchOutTime as unknown as string);
@@ -650,7 +744,7 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
         m.addListener("click", () => {
           infoWindow.setContent(
             `<div style="min-width:160px;font-size:13px">` +
-            `<b>Check-in ${num}</b>` +
+            `<b style="color:#16a34a">✓ CHK ${num}</b>` +
             (loc ? `<div style="color:#555;font-size:11px;margin-top:2px">${loc}</div>` : "") +
             `<table style="margin-top:6px;width:100%">` +
             `<tr><td style="color:#16a34a;font-weight:600;padding-right:8px">Punch In</td><td style="font-weight:600">${inTime}</td></tr>` +
@@ -659,8 +753,11 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
           );
           infoWindow.open(map, m);
         });
+        overlaysRef.current.push(m);
       });
     });
+
+    if (allCoords.length > 1) map.fitBounds(bounds, 40);
   }, [ready, trips, date, locationData]);
 
   if (!ready) return (
@@ -668,7 +765,34 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
     </div>
   );
-  return <div ref={mapRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={mapRef} className="h-full w-full" />
+
+      {/* Map type selector — top-right, same as Live map */}
+      <div className="absolute top-2 right-2 z-10 bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
+        {MAP_TYPES.map(opt => (
+          <label key={opt.id} className="flex items-center gap-1.5 cursor-pointer py-[2px]">
+            <input
+              type="radio"
+              name="pbMapType"
+              value={opt.id}
+              checked={mapTypeId === opt.id}
+              onChange={() => setMapTypeId(opt.id)}
+              className="accent-blue-600 w-3 h-3"
+            />
+            <span className="text-gray-700 leading-none">{opt.label}</span>
+          </label>
+        ))}
+      </div>
+
+      {/* Legend — bottom-left */}
+      <div className="absolute bottom-6 left-2 z-10 bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Travelled</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
+      </div>
+    </div>
+  );
 }
 
 export default function EmployeeProfile() {
