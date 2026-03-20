@@ -190,6 +190,14 @@ interface LiveMapSegment {
 
 interface VisitStop { lat: number; lng: number; customerName: string; locationName: string | null; durationStr: string }
 
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function LiveMap({
   locationPoints = [],
   segments = [],
@@ -209,11 +217,41 @@ function LiveMap({
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const overlaysRef = useRef<any[]>([]);
+  const lastKeyRef = useRef<string>("");
 
   useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
 
+  // Initialize map instance ONCE when Google Maps is ready
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!ready || !mapRef.current || mapInstanceRef.current) return;
+    mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+      center: { lat: 17.4, lng: 78.5 },
+      zoom: 14,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true,
+    });
+    infoWindowRef.current = new google.maps.InfoWindow();
+  }, [ready]);
+
+  // Redraw overlays only when data actually changes (prevents 30-second flicker from polling)
+  useEffect(() => {
+    if (!ready || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    const infoWindow = infoWindowRef.current!;
+
+    const lastPt = locationPoints.length > 0 ? locationPoints[locationPoints.length - 1] : null;
+    const lastPtKey = lastPt ? `${lastPt.id ?? locationPoints.length}_${lastPt.recordedAt}` : "none";
+    const newKey = `${lastPtKey}|${locationPoints.length}|${punchInLat}|${punchInLng}|${punchOutLat}|${punchOutLng}|${segments.length}|${visitStops.length}`;
+    if (newKey === lastKeyRef.current) return;
+    lastKeyRef.current = newKey;
+
+    // Clear previous overlays
+    overlaysRef.current.forEach(o => { try { if (o.setMap) o.setMap(null); } catch { /* ignore */ } });
+    overlaysRef.current = [];
 
     const gpsPoints = locationPoints
       .filter(lp => lp.latitude && lp.longitude)
@@ -224,57 +262,69 @@ function LiveMap({
     if (punchInLat && punchInLng) allCoords.push({ lat: punchInLat, lng: punchInLng });
     if (punchOutLat && punchOutLng) allCoords.push({ lat: punchOutLat, lng: punchOutLng });
 
-    const defaultCenter = { lat: 17.4, lng: 78.5 };
-    const center = allCoords.length > 0 ? allCoords[allCoords.length - 1] : defaultCenter;
+    // Center on latest known position
+    if (allCoords.length > 0) {
+      map.setCenter(allCoords[allCoords.length - 1]);
+    }
 
-    const map = new google.maps.Map(mapRef.current, {
-      center,
-      zoom: 14,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-
-    const infoWindow = new google.maps.InfoWindow();
-
-    // GPS tracking — snap to roads using Directions API
+    // GPS tracking — check spread first; skip Directions API if all points are within 300m (stationary)
     if (gpsPoints.length > 1) {
-      const MAX_PTS = 23;
-      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
-      const sampled: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
-      const lastPt = gpsPoints[gpsPoints.length - 1];
-      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
+      const anchor = gpsPoints[0];
+      const maxSpreadM = gpsPoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
 
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 23;
+      if (maxSpreadM < 300) {
+        // Employee is stationary — just draw a small dotted circle on the map, no route
+        const circle = new google.maps.Circle({
+          center: anchor,
+          radius: Math.max(maxSpreadM / 2, 30),
+          strokeColor: "#e67c22",
+          strokeOpacity: 0.6,
+          strokeWeight: 2,
+          fillColor: "#e67c22",
+          fillOpacity: 0.08,
+          map,
+        });
+        overlaysRef.current.push(circle);
+      } else {
+        // Employee moved — snap to roads using Directions API
+        const MAX_PTS = 23;
+        const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
+        const sampled: { lat: number; lng: number }[] = [];
+        for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
+        const lastGpsPt = gpsPoints[gpsPoints.length - 1];
+        if (sampled[sampled.length - 1] !== lastGpsPt) sampled.push(lastGpsPt);
 
-      const drawChunk = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        const origin = pts[0];
-        const destination = pts[pts.length - 1];
-        const waypoints = pts.slice(1, -1).map(p => ({
-          location: new google.maps.LatLng(p.lat, p.lng),
-          stopover: false as const,
-        }));
-        ds.route(
-          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-          (result, status) => {
-            if (status === "OK" && result) {
-              new google.maps.DirectionsRenderer({
-                map, directions: result, suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 },
-              });
-            } else {
-              // Fallback: raw polyline if Directions API fails
-              new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
-            }
-          },
-        );
-      };
+        const ds = new google.maps.DirectionsService();
+        const CHUNK = 23;
 
-      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
+        const drawChunk = (pts: { lat: number; lng: number }[]) => {
+          if (pts.length < 2) return;
+          const origin = pts[0];
+          const destination = pts[pts.length - 1];
+          const waypoints = pts.slice(1, -1).map(p => ({
+            location: new google.maps.LatLng(p.lat, p.lng),
+            stopover: false as const,
+          }));
+          ds.route(
+            { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
+            (result, status) => {
+              if (status === "OK" && result) {
+                const dr = new google.maps.DirectionsRenderer({
+                  map, directions: result, suppressMarkers: true,
+                  polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 },
+                });
+                overlaysRef.current.push(dr);
+              } else {
+                const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
+                overlaysRef.current.push(pl);
+              }
+            },
+          );
+        };
+
+        for (let i = 0; i < sampled.length - 1; i += CHUNK) {
+          drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
+        }
       }
     }
 
@@ -309,6 +359,7 @@ function LiveMap({
         );
         infoWindow.open(map, m);
       });
+      overlaysRef.current.push(m);
     });
 
     // Customer visit markers
@@ -329,6 +380,7 @@ function LiveMap({
         );
         infoWindow.open(map, m);
       });
+      overlaysRef.current.push(m);
     });
 
     // ── START marker: prefer punch-in coords, fallback to first GPS point ──
@@ -353,6 +405,7 @@ function LiveMap({
         },
       });
       m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#15803d">▶ Trip Start</b>${punchInLat ? "<br/><span style='font-size:11px;color:#555'>Punch In location</span>" : ""}</div>`); infoWindow.open(map, m); });
+      overlaysRef.current.push(m);
     }
 
     // ── END marker: prefer punch-out coords, fallback to last GPS point ──
@@ -377,9 +430,10 @@ function LiveMap({
         },
       });
       m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#dc2626">⬛ Trip End</b>${punchOutLat ? "<br/><span style='font-size:11px;color:#555'>Punch Out location</span>" : "<br/><span style='font-size:11px;color:#555'>Last recorded location</span>"}</div>`); infoWindow.open(map, m); });
+      overlaysRef.current.push(m);
     }
 
-    // ── Current live position: blue person icon (only if trip is ongoing = no end pos from punch-out) ──
+    // ── Current live position: blue person icon (only if trip is ongoing = no punch-out yet) ──
     if (!punchOutLat && gpsPoints.length > 0) {
       const last = gpsPoints[gpsPoints.length - 1];
       const m = new google.maps.Marker({
@@ -398,9 +452,10 @@ function LiveMap({
         },
       });
       m.addListener("click", () => { infoWindow.setContent("<div style='font-size:13px'><b>📍 Current Location</b><br/><span style='font-size:11px;color:#555'>Live tracking</span></div>"); infoWindow.open(map, m); });
+      overlaysRef.current.push(m);
     }
 
-    // Auto-fit
+    // Auto-fit bounds
     if (allCoords.length > 1) {
       const bounds = new google.maps.LatLngBounds();
       allCoords.forEach(c => bounds.extend(c));
