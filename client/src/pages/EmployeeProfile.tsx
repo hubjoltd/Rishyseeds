@@ -47,21 +47,6 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-const GMAPS_KEY = "AIzaSyBrXqf4qkgKxH6eIqCv0QnxPx7X-59qPQ8";
-let _gmLoaded = typeof (window as any).google !== "undefined";
-let _gmLoading = false;
-const _gmCbs: Array<() => void> = [];
-function loadGM(cb: () => void) {
-  if (_gmLoaded) { cb(); return; }
-  _gmCbs.push(cb);
-  if (_gmLoading) return;
-  _gmLoading = true;
-  const s = document.createElement("script");
-  s.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}`;
-  s.async = true;
-  s.onload = () => { _gmLoaded = true; _gmLoading = false; _gmCbs.forEach(f => f()); _gmCbs.length = 0; };
-  document.head.appendChild(s);
-}
 
 interface TripWithVisits extends Trip {
   visits: TripVisit[];
@@ -207,6 +192,149 @@ const MAP_TYPES = [
   { id: "hybrid",         label: "Google Hybrid"  },
 ];
 
+const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
+  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
+  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",       subdomains: ["a","b","c"],    attr: "© OpenStreetMap contributors" },
+  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
+  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
+};
+
+// ── LiveMapInner — inside MapContainer so Leaflet hooks work ──
+function LiveMapInner({
+  locationPoints,
+  segments,
+  visitStops,
+  punchInLat,
+  punchInLng,
+  punchOutLat,
+  punchOutLng,
+  mapTypeId,
+}: {
+  locationPoints: any[];
+  segments: LiveMapSegment[];
+  visitStops: VisitStop[];
+  punchInLat?: number | null;
+  punchInLng?: number | null;
+  punchOutLat?: number | null;
+  punchOutLng?: number | null;
+  mapTypeId: string;
+}) {
+  const map = useMap();
+  const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
+
+  const gpsPoints = useMemo(() =>
+    locationPoints.filter(p => p.latitude && p.longitude)
+      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
+    [locationPoints]
+  );
+
+  // Auto-fit bounds when data changes
+  useEffect(() => {
+    const all: [number, number][] = [...gpsPoints];
+    visitStops.forEach(v => { if (v.lat && v.lng) all.push([v.lat, v.lng]); });
+    if (punchInLat && punchInLng) all.push([punchInLat, punchInLng]);
+    if (punchOutLat && punchOutLng) all.push([punchOutLat, punchOutLng]);
+    if (all.length > 1) {
+      map.fitBounds(L.latLngBounds(all.map(c => L.latLng(c[0], c[1]))), { padding: [40, 40] });
+    } else if (all.length === 1) {
+      map.setView(all[0], 15);
+    }
+  }, [gpsPoints, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
+
+  const stoppageIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="7" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="9" font-weight="bold" font-family="sans-serif">S</text></svg>`,
+    className: "", iconSize: [36, 44], iconAnchor: [18, 44],
+  });
+  const chkIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42"><ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/><path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/><circle cx="17" cy="13" r="7" fill="white"/><text x="17" y="10" text-anchor="middle" fill="#16a34a" font-size="5.5" font-weight="bold" font-family="sans-serif">CHK</text><text x="17" y="18" text-anchor="middle" fill="#16a34a" font-size="5" font-family="sans-serif">✓</text></svg>`,
+    className: "", iconSize: [34, 42], iconAnchor: [17, 42],
+  });
+  const startIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text></svg>`,
+    className: "", iconSize: [36, 52], iconAnchor: [18, 52],
+  });
+  const endIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text></svg>`,
+    className: "", iconSize: [36, 52], iconAnchor: [18, 52],
+  });
+  const currentPosIcon = L.divIcon({
+    html: `<div style="width:38px;height:38px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)"><svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`,
+    className: "", iconSize: [38, 38], iconAnchor: [19, 19],
+  });
+
+  const startPos: [number, number] | null = punchInLat && punchInLng
+    ? [punchInLat, punchInLng]
+    : gpsPoints.length > 0 ? gpsPoints[0] : null;
+  const endPos: [number, number] | null = punchOutLat && punchOutLng
+    ? [punchOutLat, punchOutLng]
+    : gpsPoints.length > 1 ? gpsPoints[gpsPoints.length - 1] : null;
+  const currentPos: [number, number] | null = !punchOutLat && gpsPoints.length > 0
+    ? gpsPoints[gpsPoints.length - 1] : null;
+
+  return (
+    <>
+      <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+
+      {/* GPS route polyline — blue */}
+      {gpsPoints.length > 1 && (
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.9 }} />
+      )}
+
+      {/* Stoppage markers */}
+      {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
+        const mins = Math.floor((s.durationSecs || 0) / 60);
+        const secs = Math.round((s.durationSecs || 0) % 60);
+        const dur = `${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+        return (
+          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={stoppageIcon}>
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 130 }}>
+                <b style={{ color: "#f97316" }}>⏸ Stoppage</b><br/>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{dur}</span><br/>
+                <span style={{ fontSize: 11, color: "#666" }}>{new Date(s.startTime).toLocaleTimeString()} – {new Date(s.endTime).toLocaleTimeString()}</span>
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
+
+      {/* CHK visit markers */}
+      {visitStops.filter(v => v.lat && v.lng).map((v, i) => (
+        <Marker key={`chk-${i}`} position={[v.lat, v.lng]} icon={chkIcon}>
+          <Popup>
+            <div style={{ minWidth: 150, fontSize: 13 }}>
+              <b style={{ color: "#16a34a" }}>✓ CHK — {v.customerName}</b>
+              <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>⏱ {v.durationStr}</div>
+              {v.locationName && <div style={{ color: "#555", fontSize: 11 }}>{v.locationName}</div>}
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {/* START marker */}
+      {startPos && (
+        <Marker position={startPos} icon={startIcon} zIndexOffset={200}>
+          <Popup><div style={{ fontSize: 13 }}><b style={{ color: "#15803d" }}>▶ Trip Start</b>{punchInLat ? <><br/><span style={{ fontSize: 11, color: "#555" }}>Punch In location</span></> : null}</div></Popup>
+        </Marker>
+      )}
+
+      {/* END marker */}
+      {endPos && (
+        <Marker position={endPos} icon={endIcon} zIndexOffset={200}>
+          <Popup><div style={{ fontSize: 13 }}><b style={{ color: "#dc2626" }}>⬛ Trip End</b>{punchOutLat ? <><br/><span style={{ fontSize: 11, color: "#555" }}>Punch Out location</span></> : <><br/><span style={{ fontSize: 11, color: "#555" }}>Last recorded location</span></>}</div></Popup>
+        </Marker>
+      )}
+
+      {/* Current live position — blue person avatar */}
+      {currentPos && (
+        <Marker position={currentPos} icon={currentPosIcon} zIndexOffset={1000}>
+          <Popup><div style={{ fontSize: 13 }}><b>📍 Current Location</b><br/><span style={{ fontSize: 11, color: "#555" }}>Live tracking</span></div></Popup>
+        </Marker>
+      )}
+    </>
+  );
+}
+
 function LiveMap({
   locationPoints = [],
   segments = [],
@@ -228,309 +356,42 @@ function LiveMap({
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
 }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(_gmLoaded);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-  const overlaysRef = useRef<any[]>([]);
-  const lastKeyRef = useRef<string>("");
 
-  useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
+  const gpsPoints = locationPoints
+    .filter(p => p.latitude && p.longitude)
+    .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+  const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
+    : punchInLat && punchInLng ? [punchInLat, punchInLng]
+    : [22.8, 80.0];
 
-  // Initialize map instance ONCE when Google Maps is ready
-  useEffect(() => {
-    if (!ready || !mapRef.current || mapInstanceRef.current) return;
-    const map = new google.maps.Map(mapRef.current, {
-      center: { lat: 17.4, lng: 78.5 },
-      zoom: 14,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-    // Register OpenStreetMap as a custom tile layer
-    const osmType = new google.maps.ImageMapType({
-      getTileUrl: (coord: google.maps.Point, zoom: number) =>
-        `https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
-      tileSize: new google.maps.Size(256, 256),
-      name: "OpenStreetMap",
-      maxZoom: 19,
-    });
-    map.mapTypes.set("openstreetmap", osmType);
-    mapInstanceRef.current = map;
-    infoWindowRef.current = new google.maps.InfoWindow();
-  }, [ready]);
-
-  // Switch map type whenever the selector changes
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.setMapTypeId(mapTypeId as google.maps.MapTypeId);
-  }, [mapTypeId]);
-
-  // Redraw overlays only when data actually changes (prevents 30-second flicker from polling)
-  useEffect(() => {
-    if (!ready || !mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
-    const infoWindow = infoWindowRef.current!;
-
-    const lastPt = locationPoints.length > 0 ? locationPoints[locationPoints.length - 1] : null;
-    const lastPtKey = lastPt ? `${lastPt.id ?? locationPoints.length}_${lastPt.recordedAt}` : "none";
-    const newKey = `${lastPtKey}|${locationPoints.length}|${punchInLat}|${punchInLng}|${punchOutLat}|${punchOutLng}|${segments.length}|${visitStops.length}`;
-    if (newKey === lastKeyRef.current) return;
-    lastKeyRef.current = newKey;
-
-    // Clear previous overlays
-    overlaysRef.current.forEach(o => { try { if (o.setMap) o.setMap(null); } catch { /* ignore */ } });
-    overlaysRef.current = [];
-
-    const gpsPoints = locationPoints
-      .filter(lp => lp.latitude && lp.longitude)
-      .map(lp => ({ lat: Number(lp.latitude), lng: Number(lp.longitude) }));
-
-    const allCoords = [...gpsPoints];
-    visitStops.filter(v => v.lat && v.lng).forEach(v => allCoords.push({ lat: v.lat, lng: v.lng }));
-    if (punchInLat && punchInLng) allCoords.push({ lat: punchInLat, lng: punchInLng });
-    if (punchOutLat && punchOutLng) allCoords.push({ lat: punchOutLat, lng: punchOutLng });
-
-    // Center on latest known position
-    if (allCoords.length > 0) {
-      map.setCenter(allCoords[allCoords.length - 1]);
-    }
-
-    // GPS tracking — check spread first; skip Directions API if all points are within 300m (stationary)
-    if (gpsPoints.length > 1) {
-      const anchor = gpsPoints[0];
-      const maxSpreadM = gpsPoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
-
-      // Draw blue GPS route polyline for travelled segments (TrackClap style)
-      const drawPolyline = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4, map });
-        overlaysRef.current.push(pl);
-      };
-
-      if (maxSpreadM < 80) {
-        // Stationary — draw raw GPS track (zoom in to see micro-movement)
-        drawPolyline(gpsPoints);
-      } else if (maxSpreadM < 350) {
-        // Short movement — raw GPS polyline, no road-snapping needed
-        drawPolyline(gpsPoints);
-      } else {
-        // Significant travel — snap to roads via Directions API
-        const MAX_PTS = 23;
-        const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
-        const sampled: { lat: number; lng: number }[] = [];
-        for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
-        const lastGpsPt = gpsPoints[gpsPoints.length - 1];
-        if (sampled[sampled.length - 1] !== lastGpsPt) sampled.push(lastGpsPt);
-
-        const ds = new google.maps.DirectionsService();
-        const CHUNK = 23;
-
-        const drawChunk = (pts: { lat: number; lng: number }[]) => {
-          if (pts.length < 2) return;
-          const origin = pts[0];
-          const destination = pts[pts.length - 1];
-          const waypoints = pts.slice(1, -1).map(p => ({
-            location: new google.maps.LatLng(p.lat, p.lng),
-            stopover: false as const,
-          }));
-          ds.route(
-            { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-            (result, status) => {
-              if (status === "OK" && result) {
-                const dr = new google.maps.DirectionsRenderer({
-                  map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#2563eb", strokeOpacity: 0.9, strokeWeight: 4 },
-                });
-                overlaysRef.current.push(dr);
-              } else {
-                drawPolyline(pts);
-              }
-            },
-          );
-        };
-
-        for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-          drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
-        }
-      }
-    }
-
-    // Stoppage markers — orange circle pins (TrackClap style)
-    segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
-      const mins = Math.floor((s.durationSecs || 0) / 60);
-      const secs = Math.round((s.durationSecs || 0) % 60);
-      const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
-        <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="14" r="7" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="9" font-weight="bold" font-family="sans-serif">S</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: { lat: s.lat!, lng: s.lng! },
-        map,
-        zIndex: 50,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(svg),
-          scaledSize: new google.maps.Size(36, 44),
-          anchor: new google.maps.Point(18, 44),
-        },
-      });
-      m.addListener("click", () => {
-        infoWindow.setContent(
-          `<div style="font-size:13px;min-width:130px">` +
-          `<b style="color:#f97316">⏸ Stoppage</b><br/>` +
-          `<span style="font-size:12px;font-weight:bold">${dur}</span><br/>` +
-          `<span style="font-size:11px;color:#666">${new Date(s.startTime).toLocaleTimeString()} – ${new Date(s.endTime).toLocaleTimeString()}</span>` +
-          `</div>`
-        );
-        infoWindow.open(map, m);
-      });
-      overlaysRef.current.push(m);
-    });
-
-    // CHK — customer visit markers (green pin with "CHK" label)
-    visitStops.filter(v => v.lat && v.lng).forEach(v => {
-      const chkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
-        <ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/>
-        <path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/>
-        <circle cx="17" cy="13" r="7" fill="white"/>
-        <text x="17" y="10" text-anchor="middle" fill="#16a34a" font-size="5.5" font-weight="bold" font-family="sans-serif">CHK</text>
-        <text x="17" y="18" text-anchor="middle" fill="#16a34a" font-size="5" font-family="sans-serif">✓</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: { lat: v.lat, lng: v.lng },
-        map,
-        zIndex: 80,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(chkSvg),
-          scaledSize: new google.maps.Size(34, 42),
-          anchor: new google.maps.Point(17, 42),
-        },
-      });
-      const loc = v.locationName || "";
-      m.addListener("click", () => {
-        infoWindow.setContent(
-          `<div style="min-width:150px;font-size:13px">` +
-          `<b style="color:#16a34a">✓ CHK — ${v.customerName}</b>` +
-          `<div style="color:#555;font-size:11px;margin-top:2px">⏱ ${v.durationStr}</div>` +
-          (loc ? `<div style="color:#555;font-size:11px">${loc}</div>` : "") +
-          `</div>`
-        );
-        infoWindow.open(map, m);
-      });
-      overlaysRef.current.push(m);
-    });
-
-    // ── START marker: prefer punch-in coords, fallback to first GPS point ──
-    const startPos = (punchInLat && punchInLng)
-      ? { lat: punchInLat, lng: punchInLng }
-      : (gpsPoints.length > 0 ? gpsPoints[0] : null);
-    if (startPos) {
-      const startSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="14" r="9" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: startPos,
-        map,
-        zIndex: 200,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(startSvg),
-          scaledSize: new google.maps.Size(36, 52),
-          anchor: new google.maps.Point(18, 52),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#15803d">▶ Trip Start</b>${punchInLat ? "<br/><span style='font-size:11px;color:#555'>Punch In location</span>" : ""}</div>`); infoWindow.open(map, m); });
-      overlaysRef.current.push(m);
-    }
-
-    // ── END marker: prefer punch-out coords, fallback to last GPS point ──
-    const endPos = (punchOutLat && punchOutLng)
-      ? { lat: punchOutLat, lng: punchOutLng }
-      : (gpsPoints.length > 1 ? gpsPoints[gpsPoints.length - 1] : null);
-    if (endPos) {
-      const endSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="14" r="9" fill="white"/>
-        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
-      </svg>`;
-      const m = new google.maps.Marker({
-        position: endPos,
-        map,
-        zIndex: 200,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(endSvg),
-          scaledSize: new google.maps.Size(36, 52),
-          anchor: new google.maps.Point(18, 52),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#dc2626">⬛ Trip End</b>${punchOutLat ? "<br/><span style='font-size:11px;color:#555'>Punch Out location</span>" : "<br/><span style='font-size:11px;color:#555'>Last recorded location</span>"}</div>`); infoWindow.open(map, m); });
-      overlaysRef.current.push(m);
-    }
-
-    // ── Current live position: blue person icon (only if trip is ongoing = no punch-out yet) ──
-    if (!punchOutLat && gpsPoints.length > 0) {
-      const last = gpsPoints[gpsPoints.length - 1];
-      const m = new google.maps.Marker({
-        position: last,
-        map,
-        zIndex: 1000,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">` +
-            `<circle cx="19" cy="19" r="18" fill="#1d4ed8" stroke="white" stroke-width="3"/>` +
-            `<path d="M19 10c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/>` +
-            `</svg>`
-          ),
-          scaledSize: new google.maps.Size(38, 38),
-          anchor: new google.maps.Point(19, 19),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent("<div style='font-size:13px'><b>📍 Current Location</b><br/><span style='font-size:11px;color:#555'>Live tracking</span></div>"); infoWindow.open(map, m); });
-      overlaysRef.current.push(m);
-    }
-
-    // Auto-fit bounds
-    if (allCoords.length > 1) {
-      const bounds = new google.maps.LatLngBounds();
-      allCoords.forEach(c => bounds.extend(c));
-      map.fitBounds(bounds, 40);
-    }
-  }, [ready, locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
-
-  if (!ready) return (
-    <div className="relative h-full w-full flex items-center justify-center bg-muted/30 rounded">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
-  );
   return (
     <div className="relative h-full w-full">
-      <div ref={mapRef} className="h-full w-full" />
+      <MapContainer center={defaultCenter} zoom={14} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+        <LiveMapInner
+          locationPoints={locationPoints}
+          segments={segments}
+          visitStops={visitStops}
+          punchInLat={punchInLat}
+          punchInLng={punchInLng}
+          punchOutLat={punchOutLat}
+          punchOutLng={punchOutLng}
+          mapTypeId={mapTypeId}
+        />
+        <ZoomControl position="bottomright" />
+      </MapContainer>
 
-      {/* Map type selector — top-right overlay exactly like TrackClap */}
-      <div className="absolute top-2 right-2 z-10 bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
+      {/* Map type selector — top-right overlay */}
+      <div className="absolute top-2 right-2 z-[1001] bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
         {MAP_TYPES.map(opt => (
           <label key={opt.id} className="flex items-center gap-1.5 cursor-pointer py-[2px]">
-            <input
-              type="radio"
-              name="liveMapType"
-              value={opt.id}
-              checked={mapTypeId === opt.id}
-              onChange={() => onMapTypeChange(opt.id)}
-              className="accent-blue-600 w-3 h-3"
-            />
+            <input type="radio" name="liveMapType" value={opt.id} checked={mapTypeId === opt.id} onChange={() => onMapTypeChange(opt.id)} className="accent-blue-600 w-3 h-3" />
             <span className="text-gray-700 leading-none">{opt.label}</span>
           </label>
         ))}
       </div>
 
       {/* Legend — bottom-left */}
-      <div className="absolute bottom-6 left-2 z-10 bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
+      <div className="absolute bottom-10 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Travelled</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500"/><span>Stoppage</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
@@ -549,14 +410,6 @@ function fmtPopupTime(iso: string | null | undefined): string {
     return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
   } catch { return "-"; }
 }
-
-// ── Leaflet tile sources (matching TrackClap reference) ──
-const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
-  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
-  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",        subdomains: ["a","b","c"],    attr: "© OpenStreetMap contributors" },
-  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
-  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
-};
 
 // Fits map bounds whenever routePoints change — must be inside MapContainer
 function PbBoundsFitter({ points }: { points: [number, number][] }) {
