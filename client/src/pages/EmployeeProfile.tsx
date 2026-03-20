@@ -633,6 +633,7 @@ export default function EmployeeProfile() {
   // Build visit events from customer_checkins table (real check-in/check-out data from employee app)
   type VisitStoppage = {
     type: "visit";
+    checkinId: number;
     startTime: string;
     endTime: string | null;
     customerName: string;
@@ -642,6 +643,7 @@ export default function EmployeeProfile() {
   };
   const liveDateVisitEvents: VisitStoppage[] = liveCheckins.map((c: any) => ({
     type: "visit" as const,
+    checkinId: c.id,
     startTime: c.checkedInAt,
     endTime: c.checkedOutAt || null,
     customerName: c.customerName || "Customer Visit",
@@ -840,222 +842,224 @@ export default function EmployeeProfile() {
 
       <div className="p-4 md:p-6">
         {activeTab === "live" && (
-          <div className="space-y-3">
-            {/* Top bar: date picker + punch status + stats */}
-            <div className="bg-card border rounded-xl p-3 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={liveDate}
-                  onChange={(e) => setLiveDate(e.target.value)}
-                  className="h-8 text-sm w-36"
-                  data-testid="input-live-date"
-                />
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => refetchLocations()} data-testid="button-refresh-locations">
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
+          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ minHeight: "620px" }}>
+
+            {/* ── LEFT: TrackClap-style activity panel ── */}
+            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ minHeight: "620px" }}>
+
+              {/* Panel header: date picker + stats */}
+              <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Input
+                    type="date"
+                    value={liveDate}
+                    onChange={(e) => setLiveDate(e.target.value)}
+                    className="h-7 text-xs flex-1"
+                    data-testid="input-live-date"
+                  />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { refetchLocations(); refetchCheckins(); }} data-testid="button-refresh-locations">
+                    <RefreshCw className="h-3 w-3" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="text-muted-foreground">Completed</span>
+                  <span className="font-bold text-foreground">{liveCheckins.length}</span>
+                  <span className="text-muted-foreground ml-auto">Distance</span>
+                  <span className="font-bold text-foreground">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-1" />}
+                </div>
               </div>
 
-              {/* Punch status pill */}
-              {liveDateAttendance ? (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${liveDateAttendance.checkOut ? "bg-red-50 border-red-200 text-red-700" : "bg-green-50 border-green-200 text-green-700"}`}>
-                  <div className={`w-2 h-2 rounded-full ${liveDateAttendance.checkOut ? "bg-red-500" : "bg-green-500 animate-pulse"}`} />
-                  {liveDateAttendance.checkOut ? "Punched Out" : "Punched In — Live"}
-                </div>
-              ) : null}
+              {/* Timeline scroll area */}
+              <div className="flex-1 overflow-y-auto">
+                {locationLoading && !hasTimeline ? (
+                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : !hasTimeline ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
+                    <Timer className="h-10 w-10 opacity-20" />
+                    <p className="font-medium">No activity recorded</p>
+                    <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds</p>
+                  </div>
+                ) : (
+                  <div className="relative py-2">
+                    {/* vertical connector line */}
+                    <div className="absolute left-[27px] top-2 bottom-2 w-px bg-gray-200" />
 
-              <div className="flex items-center gap-4 ml-auto">
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Completed</p>
-                  <p className="text-sm font-bold text-primary">{liveCheckins.length > 0 ? liveCheckins.length : (locationData?.stoppageCount ?? 0)}</p>
-                </div>
-                <div className="w-px h-8 bg-border" />
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Distance</p>
-                  <p className="text-sm font-bold text-primary">{(locationData?.totalKm ?? 0).toFixed(2)} Km</p>
-                </div>
-                <div className="w-px h-8 bg-border" />
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">GPS Pings</p>
-                  <p className="text-sm font-bold text-primary">{locationData?.points?.length ?? 0}</p>
-                </div>
+                    {allTimelineEvents.map((seg, idx) => {
+                      const startT = new Date(seg.startTime);
+                      const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+                      const fmtTimeShort = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                      /* ── GAP TRAVEL ── */
+                      if (seg.type === "gap_travel") {
+                        const gapEndT = new Date((seg as any).endTime);
+                        const gapDur = formatDuration(startT, gapEndT);
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50 transition-colors">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
+                                <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-semibold text-orange-700">Travelled</p>
+                                <span className="text-[10px] text-muted-foreground shrink-0">({gapDur})</span>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(startT)}–{fmtTimeShort(gapEndT)}</p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      /* ── PUNCH IN ── */
+                      if (seg.type === "punch_in") {
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-green-50/50 transition-colors">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-green-600 border-2 border-white shadow flex items-center justify-center">
+                                <span className="text-[8px] font-black text-white leading-none">IN</span>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-bold text-green-700">Punch In</p>
+                                <span className="text-[10px] text-gray-500 font-mono shrink-0">{fmtTime(startT)}</span>
+                              </div>
+                              {seg.location
+                                ? <p className="text-[10px] text-gray-500 leading-relaxed mt-0.5 line-clamp-2">{seg.location}</p>
+                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
+                              }
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      /* ── PUNCH OUT ── */
+                      if (seg.type === "punch_out") {
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-red-50/50 transition-colors">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow flex items-center justify-center">
+                                <span className="text-[7px] font-black text-white leading-none">OUT</span>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-bold text-red-700">Punch Out</p>
+                                <span className="text-[10px] text-gray-500 font-mono shrink-0">{fmtTime(startT)}</span>
+                              </div>
+                              {seg.location
+                                ? <p className="text-[10px] text-gray-500 leading-relaxed mt-0.5 line-clamp-2">{seg.location}</p>
+                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
+                              }
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      /* ── STOPPAGE ── */
+                      if (seg.type === "stoppage") {
+                        const mins = Math.floor(seg.durationSecs / 60);
+                        const secs = Math.round(seg.durationSecs % 60);
+                        const durStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50 transition-colors">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center">
+                                <Timer className="w-3.5 h-3.5 text-gray-500" />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-semibold text-gray-700">Stoppage of {durStr}</p>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(new Date(seg.startTime))}–{fmtTimeShort(new Date(seg.endTime))}</p>
+                              <StoppageAddress lat={seg.lat} lng={seg.lng} />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      /* ── VISIT / CHECK-IN (CHK) ── */
+                      if (seg.type === "visit") {
+                        const outT = seg.endTime ? new Date(seg.endTime) : null;
+                        const durStr = outT ? formatDuration(startT, outT) : "ongoing";
+                        const durSecs = outT ? Math.round((outT.getTime() - startT.getTime()) / 1000) : null;
+                        const durShort = durSecs !== null
+                          ? (durSecs < 60 ? `${durSecs} Seconds` : `${Math.floor(durSecs / 60)}m ${durSecs % 60}s`)
+                          : "ongoing";
+                        return (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50/50 transition-colors">
+                            <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow flex items-center justify-center">
+                                <MapPin className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 pt-0.5">
+                              <div className="flex items-baseline justify-between gap-1">
+                                <p className="text-[11px] font-bold text-blue-700">CHK {seg.checkinId}</p>
+                                <span className="text-[10px] text-muted-foreground shrink-0">({durShort})</span>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-mono">
+                                {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}
+                              </p>
+                              {seg.locationName
+                                ? <p className="text-[10px] text-blue-600 font-medium mt-0.5 line-clamp-1">{seg.locationName}</p>
+                                : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat} lng={seg.lng} /> : null)
+                              }
+                              <p className="text-[10px] text-gray-600 font-medium">{seg.customerName}</p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      /* ── TRAVELLED (from segments) ── */
+                      const endT = new Date((seg as any).endTime);
+                      const distKm = (seg as any).distanceKm ?? 0;
+                      const durTravelled = formatDuration(startT, endT);
+                      return (
+                        <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50 transition-colors">
+                          <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                            <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
+                              <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <div className="flex items-baseline justify-between gap-1">
+                              <p className="text-[11px] font-semibold text-orange-700">Travelled ({distKm.toFixed(2)} km)</p>
+                              <span className="text-[10px] text-muted-foreground shrink-0">({durTravelled})</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 font-mono">{fmtTimeShort(startT)}–{fmtTimeShort(endT)}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* ── Nearest Location ── */}
+                    {(locationData?.points?.length ?? 0) > 0 && (() => {
+                      const lastPt = locationData!.points[locationData!.points.length - 1];
+                      return (
+                        <div className="flex items-start gap-2 px-3 py-2 mt-1 border-t bg-green-50/40">
+                          <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
+                            <div className="w-7 h-7 rounded-full bg-green-100 border border-green-300 flex items-center justify-center">
+                              <MapPin className="w-3.5 h-3.5 text-green-700" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <p className="text-[11px] font-bold text-green-700 mb-0.5">Nearest Location</p>
+                            <LastGpsAddress point={lastPt} />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex gap-3 flex-wrap md:flex-nowrap">
-              {/* LEFT: Timeline */}
-              <div className="w-full md:w-72 shrink-0">
-                <div className="bg-card border rounded-xl overflow-hidden" style={{ maxHeight: "580px", overflowY: "auto" }}>
-                  <div className="px-3 py-2.5 border-b bg-gradient-to-r from-green-50 to-transparent flex items-center justify-between sticky top-0 z-10">
-                    <span className="text-xs font-bold text-green-700 uppercase tracking-wide flex items-center gap-1.5">
-                      <Radio className="h-3 w-3" /> Timeline
-                    </span>
-                    {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                  </div>
-
-                  {locationLoading && !hasTimeline ? (
-                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                  ) : !hasTimeline ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
-                      <Timer className="h-10 w-10 opacity-20" />
-                      <p className="font-medium">No activity recorded</p>
-                      <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds while the employee is active</p>
-                    </div>
-                  ) : (
-                    <div className="relative px-3 py-3">
-                      <div className="absolute left-[22px] top-3 bottom-3 w-px bg-border/70" />
-                      <div className="space-y-0.5">
-                        {allTimelineEvents.map((seg, idx) => {
-                          const startT = new Date(seg.startTime);
-                          const fmtTime = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-
-                          if (seg.type === "gap_travel") {
-                            const gapEndT = new Date((seg as any).endTime);
-                            const gapDur = formatDuration(startT, gapEndT);
-                            return (
-                              <div key={idx} className="flex items-start gap-3 py-1.5">
-                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <Navigation className="w-3.5 h-3.5 text-primary mt-0.5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold text-primary">Travelled</p>
-                                  <p className="text-[10px] font-mono text-muted-foreground">
-                                    {fmtTime(startT)}–{fmtTime(gapEndT)} <span className="text-muted-foreground/60">({gapDur})</span>
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          if (seg.type === "punch_in") {
-                            return (
-                              <div key={idx} className="flex items-start gap-3 py-2">
-                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <div className="w-5 h-5 rounded-full bg-green-600 border-2 border-white shadow flex items-center justify-center">
-                                    <LogIn className="w-2.5 h-2.5 text-white" />
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0 pb-2 border-b border-dashed border-border/50">
-                                  <p className="text-xs font-bold text-green-700">Punch In</p>
-                                  <p className="text-xs font-mono text-foreground">{fmtTime(startT)}</p>
-                                  {seg.location && <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">{seg.location}</p>}
-                                  {!seg.location && seg.lat && seg.lng && <StoppageAddress lat={seg.lat} lng={seg.lng} />}
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          if (seg.type === "punch_out") {
-                            return (
-                              <div key={idx} className="flex items-start gap-3 py-2">
-                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <div className="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow flex items-center justify-center">
-                                    <LogOut className="w-2.5 h-2.5 text-white" />
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0 pt-2 border-t border-dashed border-border/50">
-                                  <p className="text-xs font-bold text-red-700">Punch Out</p>
-                                  <p className="text-xs font-mono text-foreground">{fmtTime(startT)}</p>
-                                  {seg.location && <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">{seg.location}</p>}
-                                  {!seg.location && seg.lat && seg.lng && <StoppageAddress lat={seg.lat} lng={seg.lng} />}
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          if (seg.type === "stoppage") {
-                            const mins = Math.floor(seg.durationSecs / 60);
-                            const secs = Math.round(seg.durationSecs % 60);
-                            const durStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-                            return (
-                              <div key={idx} className="flex items-start gap-3 py-1.5">
-                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
-                                  <p className="text-[10px] font-mono text-muted-foreground">
-                                    {fmtTime(new Date(seg.startTime))}–{fmtTime(new Date(seg.endTime))}
-                                  </p>
-                                  <StoppageAddress lat={seg.lat} lng={seg.lng} />
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          if (seg.type === "visit") {
-                            const outT = seg.endTime ? new Date(seg.endTime) : null;
-                            const durStr = outT ? formatDuration(startT, outT) : "ongoing";
-                            return (
-                              <div key={idx} className="flex items-start gap-3 py-1.5">
-                                <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white shadow mt-0.5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold text-red-600">Stoppage of {durStr}</p>
-                                  <p className="text-[10px] font-mono text-muted-foreground">
-                                    {fmtTime(startT)}{outT ? `–${fmtTime(outT)}` : ""}
-                                  </p>
-                                  {seg.locationName && (
-                                    <p className="text-[10px] text-muted-foreground leading-relaxed">{seg.locationName}</p>
-                                  )}
-                                  {!seg.locationName && seg.lat && seg.lng && (
-                                    <StoppageAddress lat={seg.lat} lng={seg.lng} />
-                                  )}
-                                  <p className="text-[10px] text-blue-600 font-medium mt-0.5">{seg.customerName}</p>
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          // travelled
-                          const endT = new Date((seg as any).endTime);
-                          const distKm = (seg as any).distanceKm ?? 0;
-                          const durTravelled = formatDuration(startT, endT);
-                          return (
-                            <div key={idx} className="flex items-start gap-3 py-1.5">
-                              <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                <Navigation className="w-3.5 h-3.5 text-primary mt-0.5" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="text-xs font-semibold text-primary">
-                                    Travelled ({distKm.toFixed(2)})
-                                  </p>
-                                </div>
-                                <p className="text-[10px] font-mono text-muted-foreground">
-                                  {fmtTime(startT)}–{fmtTime(endT)} <span className="text-muted-foreground/60">({durTravelled})</span>
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {/* Nearest Location — last GPS ping address, always shown if GPS data exists */}
-                        {(locationData?.points?.length ?? 0) > 0 && (() => {
-                          const lastPt = locationData!.points[locationData!.points.length - 1];
-                          return (
-                            <div className="flex items-start gap-3 py-2 mt-1 border-t border-dashed border-border/50">
-                              <div className="relative z-10 shrink-0 w-8 flex justify-center">
-                                <MapPin className="w-3.5 h-3.5 text-green-600 mt-0.5" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-green-700 flex items-center gap-1">
-                                  Nearest Location
-                                </p>
-                                <LastGpsAddress point={lastPt} />
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* RIGHT: Map */}
-              <div className="flex-1 bg-card border rounded-xl overflow-hidden" style={{ minHeight: "540px" }}>
+            {/* ── RIGHT: Full-height Map ── */}
+            <div className="flex-1 relative" style={{ minHeight: "620px" }}>
                 {tripsLoading ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="h-6 w-6 animate-spin" />
@@ -1082,7 +1086,6 @@ export default function EmployeeProfile() {
                   />
                 )}
               </div>
-            </div>
           </div>
         )}
 
