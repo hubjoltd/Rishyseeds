@@ -148,8 +148,20 @@ export default function LocationDetail() {
     return qty;
   };
 
-  // Calculate total stock at location (converting packed packets to kg)
-  const totalStockAtLocation = locationStockBalances.reduce((sum, sb) => sum + parseBalanceToKg(sb), 0);
+  // Get all balance rows for this location (including cs_outward, used for net calculation)
+  const allLocationBalances = (stockBalances as StockBalance[] || []).filter(
+    sb => sb.locationId === locationId
+  );
+
+  // Calculate total stock at location using net formula: loose + cs_inward - cs_outward per lot
+  const totalStockAtLocation = lotIdsAtLocation.reduce((total, lotId) => {
+    const lotBalances = allLocationBalances.filter(sb => sb.lotId === lotId);
+    const loose    = lotBalances.filter(sb => sb.stockForm === 'loose').reduce((s, sb) => s + parseBalanceToKg(sb), 0);
+    const packed   = lotBalances.filter(sb => sb.stockForm === 'packed').reduce((s, sb) => s + parseBalanceToKg(sb), 0);
+    const csInward = lotBalances.filter(sb => sb.stockForm === 'cs_inward').reduce((s, sb) => s + Number(sb.quantity), 0);
+    const csOutward= lotBalances.filter(sb => sb.stockForm === 'cs_outward').reduce((s, sb) => s + Number(sb.quantity), 0);
+    return total + Math.max(0, loose + packed + csInward - csOutward);
+  }, 0);
 
   useEffect(() => {
     if (location) {

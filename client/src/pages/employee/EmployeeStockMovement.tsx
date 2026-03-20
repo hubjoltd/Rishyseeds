@@ -193,10 +193,14 @@ export default function EmployeeStockMovement({ employee, permissions = {} }: Em
     : activeLots;
 
   const getStockForLotAndLocation = (lotId: number, locationId: number) => {
-    const balance = (stockBalances || []).find(
+    const balances = (stockBalances || []).filter(
       (b: any) => b.lotId === lotId && b.locationId === locationId
     );
-    return balance ? Number(balance.quantity) : 0;
+    const loose    = balances.filter((b: any) => b.stockForm === 'loose').reduce((s: number, b: any) => s + Number(b.quantity), 0);
+    const packed   = balances.filter((b: any) => b.stockForm === 'packed').reduce((s: number, b: any) => s + Number(b.quantity), 0);
+    const csInward = balances.filter((b: any) => b.stockForm === 'cs_inward').reduce((s: number, b: any) => s + Number(b.quantity), 0);
+    const csOutward= balances.filter((b: any) => b.stockForm === 'cs_outward').reduce((s: number, b: any) => s + Number(b.quantity), 0);
+    return Math.max(0, loose + packed + csInward - csOutward);
   };
 
   const getLotDetails = (lotId: number) => {
