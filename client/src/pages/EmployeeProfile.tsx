@@ -193,8 +193,8 @@ const MAP_TYPES = [
 ];
 
 const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
+  openstreetmap: { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: ["a","b","c","d"], attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' },
   roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
-  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",       subdomains: ["a","b","c"],    attr: "© OpenStreetMap contributors" },
   terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
   hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",  subdomains: ["0","1","2","3"], attr: "© Google" },
 };
