@@ -45,7 +45,7 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+const GMAPS_KEY = (window as any).__GMAPS_KEY__ || import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 let _gmLoaded = typeof (window as any).google !== "undefined";
 let _gmLoading = false;
 const _gmCbs: Array<() => void> = [];
