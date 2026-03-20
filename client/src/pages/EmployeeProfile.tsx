@@ -741,14 +741,13 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           )}
         </div>
 
-        {/* 2. Blue target button — toggles playback mode */}
+        {/* 2. Target button — toggles orange ↔ blue route */}
         <button
           onClick={handleLocateToggle}
           title={altMode ? "Back to standard view" : "Playback animation mode"}
-          style={{ background: altMode ? "#e8f0fe" : "white" }}
-          className="w-[34px] h-[34px] rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
+          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1a73e8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke={altMode ? "#1a73e8" : "#666"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="7"/>
             <line x1="12" y1="1" x2="12" y2="5"/>
             <line x1="12" y1="19" x2="12" y2="23"/>
