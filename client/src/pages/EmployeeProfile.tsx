@@ -374,9 +374,21 @@ function fmtPopupTime(iso: string | null | undefined): string {
   } catch { return "-"; }
 }
 
-function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string }) {
+function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; date: string; employeeId: number }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(_gmLoaded);
+
+  const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
+    queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${employeeId}/locations?date=${date}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) return { points: [] };
+      return res.json();
+    },
+    enabled: !!employeeId && !!date,
+  });
 
   useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
 
@@ -387,6 +399,13 @@ function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string })
 
     type LatLng = { lat: number; lng: number };
     const allPoints: LatLng[] = [];
+
+    // Prepend punch-in / first GPS point as the journey start
+    const locationPts = (locationData?.points ?? [])
+      .filter(p => p.latitude && p.longitude)
+      .map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+    if (locationPts.length > 0) allPoints.push(locationPts[0]);
+
     filtered.forEach(trip => {
       if (trip.startLatitude && trip.startLongitude)
         allPoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
@@ -467,7 +486,7 @@ function PlaybackMap({ trips, date }: { trips: TripWithVisits[]; date: string })
         });
       });
     });
-  }, [ready, trips, date]);
+  }, [ready, trips, date, locationData]);
 
   if (!ready) return (
     <div className="h-full w-full flex items-center justify-center bg-muted/30 rounded">
@@ -1075,7 +1094,7 @@ export default function EmployeeProfile() {
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
               ) : (
-                <PlaybackMap trips={trips} date={playbackDate} />
+                <PlaybackMap trips={trips} date={playbackDate} employeeId={empId} />
               )}
             </div>
 

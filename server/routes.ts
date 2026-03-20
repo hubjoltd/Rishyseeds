@@ -3545,7 +3545,34 @@ export async function registerRoutes(
     try {
       const empId = Number(req.params.id);
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-      const points = await storage.getEmployeeLocationsForDate(empId, date);
+      const rawPoints = await storage.getEmployeeLocationsForDate(empId, date);
+
+      // Prepend punch-in location as the very first point so trails always
+      // start from where the employee clocked in that day.
+      const attRecord = await storage.getAttendanceByEmployeeAndDate(empId, date);
+      let points = rawPoints;
+      if (
+        attRecord &&
+        attRecord.punchInLatitude != null &&
+        attRecord.punchInLongitude != null &&
+        attRecord.punchInTime
+      ) {
+        const punchInPoint = {
+          id: -1,
+          employeeId: empId,
+          latitude: attRecord.punchInLatitude,
+          longitude: attRecord.punchInLongitude,
+          accuracy: null,
+          recordedAt: attRecord.punchInTime,
+        } as any;
+        // Only prepend if the punch-in is not already the first recorded point
+        const firstPt = rawPoints[0];
+        const punchTime = new Date(attRecord.punchInTime).getTime();
+        const firstTime = firstPt ? new Date(firstPt.recordedAt).getTime() : Infinity;
+        if (punchTime < firstTime) {
+          points = [punchInPoint, ...rawPoints];
+        }
+      }
 
       const STOPPAGE_RADIUS_M = 150;   // metres — generous for mobile GPS drift
       const STOPPAGE_MIN_SECS = 2 * 60; // 2 minutes minimum to count as a stoppage
