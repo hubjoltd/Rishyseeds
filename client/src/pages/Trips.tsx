@@ -117,63 +117,6 @@ function loadGoogleMaps(callback: () => void) {
   document.head.appendChild(script);
 }
 
-type MapPoint = { lat: number; lng: number; label: string; color: string; icon: string };
-
-function placeMarker(map: google.maps.Map, p: MapPoint, infoWindow: google.maps.InfoWindow) {
-  const marker = new google.maps.Marker({
-    position: { lat: p.lat, lng: p.lng },
-    map,
-    title: p.label,
-    icon: {
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: p.icon === "large" ? 10 : 8,
-      fillColor: p.color,
-      fillOpacity: 1,
-      strokeColor: "#ffffff",
-      strokeWeight: 2.5,
-    },
-    zIndex: p.icon === "large" ? 10 : 5,
-  });
-  marker.addListener("click", () => {
-    infoWindow.setContent(`<div style="font-size:13px;font-weight:500;padding:4px 6px;max-width:200px">${p.label}</div>`);
-    infoWindow.open(map, marker);
-  });
-  return marker;
-}
-
-function drawRouteSegment(
-  directionsService: google.maps.DirectionsService,
-  map: google.maps.Map,
-  origin: google.maps.LatLngLiteral,
-  destination: google.maps.LatLngLiteral,
-  waypoints: google.maps.DirectionsWaypoint[],
-  color: string,
-) {
-  directionsService.route(
-    {
-      origin,
-      destination,
-      waypoints,
-      travelMode: google.maps.TravelMode.DRIVING,
-      optimizeWaypoints: false,
-    },
-    (result, status) => {
-      if (status === google.maps.DirectionsStatus.OK && result) {
-        new google.maps.DirectionsRenderer({
-          map,
-          directions: result,
-          suppressMarkers: true,
-          polylineOptions: {
-            strokeColor: color,
-            strokeOpacity: 0.85,
-            strokeWeight: 4,
-          },
-        });
-      }
-    },
-  );
-}
-
 function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[]; isActive?: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(googleMapsLoaded);
@@ -185,73 +128,126 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
   useEffect(() => {
     if (!ready || !mapRef.current) return;
 
-    const waypoints: MapPoint[] = [];
+    const gpsPoints = locationPoints.filter(p => p.lat && p.lng);
 
-    if (trip.startLatitude && trip.startLongitude)
-      waypoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude), label: `Start: ${trip.startLocationName || "Start Point"}`, color: "#16a34a", icon: "large" });
-
-    (trip.visits || []).forEach((v, i) => {
-      if (v.punchInLatitude && v.punchInLongitude)
-        waypoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude), label: `Visit ${i + 1} Check-In: ${v.punchInLocationName || ""}`, color: "#2563eb", icon: "small" });
-      if (v.punchOutLatitude && v.punchOutLongitude)
-        waypoints.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude), label: `Visit ${i + 1} Check-Out: ${v.punchOutLocationName || ""}`, color: "#7c3aed", icon: "small" });
+    const allCoords: { lat: number; lng: number }[] = [...gpsPoints];
+    if (trip.startLatitude && trip.startLongitude) allCoords.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
+    (trip.visits || []).forEach(v => {
+      if (v.punchInLatitude && v.punchInLongitude) allCoords.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
+      if (v.punchOutLatitude && v.punchOutLongitude) allCoords.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) });
     });
+    if (trip.endLatitude && trip.endLongitude) allCoords.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
 
-    if (trip.endLatitude && trip.endLongitude)
-      waypoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude), label: `End: ${trip.endLocationName || "End Point"}`, color: "#dc2626", icon: "large" });
-
-    const hasGps = locationPoints.length > 1;
-    const allCoords = hasGps ? locationPoints : waypoints.map(p => ({ lat: p.lat, lng: p.lng }));
     if (allCoords.length === 0) return;
 
+    const defaultCenter = { lat: 17.4, lng: 78.5 };
+    const center = allCoords[allCoords.length - 1] || defaultCenter;
+
     const map = new google.maps.Map(mapRef.current, {
-      center: allCoords[0],
-      zoom: 12,
+      center,
+      zoom: 14,
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: true,
-      zoomControl: true,
     });
 
     const bounds = new google.maps.LatLngBounds();
     allCoords.forEach(p => bounds.extend(p));
-    if (allCoords.length > 1) map.fitBounds(bounds, 40);
+    if (allCoords.length > 1) map.fitBounds(bounds, 50);
 
     const infoWindow = new google.maps.InfoWindow();
 
-    // Draw actual GPS breadcrumb trail if available (orange — exact path taken)
-    if (hasGps) {
-      new google.maps.Polyline({
-        path: locationPoints,
-        geodesic: false,
-        strokeColor: "#e67c22",
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        map,
-      });
-    } else if (waypoints.length >= 2) {
-      // Fallback: use Directions API road route between waypoints
+    // Road-snapped GPS trail — same as LiveMap (Directions API with downsampling)
+    if (gpsPoints.length > 1) {
+      const MAX_PTS = 20;
+      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
+      const sampled: { lat: number; lng: number }[] = [];
+      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
+      const lastPt = gpsPoints[gpsPoints.length - 1];
+      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
+
       const ds = new google.maps.DirectionsService();
-      const CHUNK = 10;
-      for (let i = 0; i < waypoints.length - 1; i += CHUNK) {
-        const chunk = waypoints.slice(i, Math.min(i + CHUNK + 1, waypoints.length));
-        if (chunk.length < 2) break;
-        drawRouteSegment(
-          ds, map,
-          { lat: chunk[0].lat, lng: chunk[0].lng },
-          { lat: chunk[chunk.length - 1].lat, lng: chunk[chunk.length - 1].lng },
-          chunk.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const })),
-          "#e67c22",
+      const CHUNK = 23;
+
+      const drawChunk = (pts: { lat: number; lng: number }[]) => {
+        if (pts.length < 2) return;
+        const origin = pts[0];
+        const destination = pts[pts.length - 1];
+        const waypoints = pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const }));
+        ds.route(
+          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
+          (result, status) => {
+            if (status === "OK" && result) {
+              new google.maps.DirectionsRenderer({ map, directions: result, suppressMarkers: true, polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 } });
+            } else {
+              new google.maps.Polyline({ path: pts, geodesic: false, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
+            }
+          },
         );
+      };
+
+      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
+        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
       }
     }
 
-    // Always draw the waypoint markers on top
-    waypoints.forEach(p => placeMarker(map, p, infoWindow));
+    // Start marker — IN badge (green)
+    if (trip.startLatitude && trip.startLongitude) {
+      const m = new google.maps.Marker({
+        position: { lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) },
+        map,
+        zIndex: 100,
+        icon: {
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="28"><rect rx="5" width="40" height="20" fill="#15803d"/><text x="20" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">IN</text></svg>`
+          ),
+          scaledSize: new google.maps.Size(40, 28),
+          anchor: new google.maps.Point(20, 28),
+        },
+      });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b>Trip Start</b><br/><span style="color:#555;font-size:11px">${trip.startLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+    }
 
-    // Live current location: blue person icon at last GPS point (active trips only)
-    if (isActive && locationPoints.length > 0) {
-      const last = locationPoints[locationPoints.length - 1];
+    // End marker — OUT badge (red)
+    if (trip.endLatitude && trip.endLongitude) {
+      const m = new google.maps.Marker({
+        position: { lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) },
+        map,
+        zIndex: 100,
+        icon: {
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="28"><rect rx="5" width="44" height="20" fill="#dc2626"/><text x="22" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">OUT</text></svg>`
+          ),
+          scaledSize: new google.maps.Size(44, 28),
+          anchor: new google.maps.Point(22, 28),
+        },
+      });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b>Trip End</b><br/><span style="color:#555;font-size:11px">${trip.endLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+    }
+
+    // Visit markers — blue circle for check-in, purple for check-out
+    (trip.visits || []).forEach((v, i) => {
+      if (v.punchInLatitude && v.punchInLongitude) {
+        const m = new google.maps.Marker({
+          position: { lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) },
+          map,
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
+        });
+        m.addListener("click", () => { infoWindow.setContent(`<div style="min-width:130px;font-size:12px"><b>Visit ${i + 1} Check-In</b><br/><span style="color:#555;font-size:11px">${v.punchInLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+      }
+      if (v.punchOutLatitude && v.punchOutLongitude) {
+        const m = new google.maps.Marker({
+          position: { lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) },
+          map,
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#7c3aed", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
+        });
+        m.addListener("click", () => { infoWindow.setContent(`<div style="min-width:130px;font-size:12px"><b>Visit ${i + 1} Check-Out</b><br/><span style="color:#555;font-size:11px">${v.punchOutLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+      }
+    });
+
+    // Active trip: live person icon at last GPS point
+    if (isActive && gpsPoints.length > 0) {
+      const last = gpsPoints[gpsPoints.length - 1];
       new google.maps.Marker({
         position: last,
         map,
@@ -272,23 +268,11 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
   }, [ready, trip, locationPoints, isActive]);
 
   if (!ready) return (
-    <div className="h-[380px] w-full rounded-md flex items-center justify-center bg-muted/30">
+    <div className="h-[480px] w-full rounded-md flex items-center justify-center bg-muted/30">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
     </div>
   );
-  return (
-    <div className="space-y-2">
-      <div ref={mapRef} className="h-[380px] w-full rounded-lg border shadow-sm" />
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-1">
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Start</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Check-In</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-600 inline-block" /> Check-Out</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> End</span>
-        <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> GPS Trail</span>
-        {isActive && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-700 inline-block" /> Live Location</span>}
-      </div>
-    </div>
-  );
+  return <div ref={mapRef} className="h-[480px] w-full rounded-lg border shadow-sm" />;
 }
 
 function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void }) {
@@ -627,10 +611,11 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
                 </h3>
                 <TripMap trip={trip} locationPoints={gpsPoints} isActive={isActiveTrip} />
                 <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Start</span>
+                  <span className="flex items-center gap-1"><span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-700 text-white leading-none">IN</span> Start</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Check In</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-600 inline-block" /> Check Out</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" /> End</span>
+                  <span className="flex items-center gap-1"><span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white leading-none">OUT</span> End</span>
+                  <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> GPS Trail</span>
                   {isActiveTrip && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block" /> Live Location</span>}
                 </div>
               </div>
