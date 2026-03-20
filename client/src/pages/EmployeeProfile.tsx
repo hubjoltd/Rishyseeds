@@ -551,11 +551,11 @@ function fmtPopupTime(iso: string | null | undefined): string {
 }
 
 // ── Leaflet tile sources (matching TrackClap reference) ──
-const LEAFLET_TILES: Record<string, { url: string; subdomains: string; attr: string }> = {
-  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
-  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",        subdomains: "abc",  attr: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>" },
-  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
-  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",   subdomains: "0123", attr: "© Google" },
+const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: string }> = {
+  roadmap:       { url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
+  openstreetmap: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",        subdomains: ["a","b","c"],    attr: "© OpenStreetMap contributors" },
+  terrain:       { url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
+  hybrid:        { url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",   subdomains: ["0","1","2","3"], attr: "© Google" },
 };
 
 // Fits map bounds whenever routePoints change — must be inside MapContainer
@@ -591,7 +591,7 @@ function PlaybackMapInner({
 
   return (
     <>
-      <TileLayer url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
+      <TileLayer key={mapTypeId} url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
       <PbBoundsFitter points={routePoints} />
       {routePoints.length > 1 && (
         <Polyline positions={routePoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.9 }} />
