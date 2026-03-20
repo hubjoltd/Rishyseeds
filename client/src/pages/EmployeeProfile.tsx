@@ -45,21 +45,16 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-const GMAPS_KEY = "AIzaSyBrXqf4qkgKxH6eIqCv0QnxPx7X-59qPQ8";
-let _gmLoaded = typeof (window as any).google !== "undefined";
-let _gmLoading = false;
-const _gmCbs: Array<() => void> = [];
-function loadGM(cb: () => void) {
-  if (_gmLoaded) { cb(); return; }
-  _gmCbs.push(cb);
-  if (_gmLoading) return;
-  _gmLoading = true;
-  const s = document.createElement("script");
-  s.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}`;
-  s.async = true;
-  s.onload = () => { _gmLoaded = true; _gmLoading = false; _gmCbs.forEach(f => f()); _gmCbs.length = 0; };
-  document.head.appendChild(s);
-}
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon paths broken by bundlers
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
 interface TripWithVisits extends Trip {
   visits: TripVisit[];
@@ -190,6 +185,16 @@ interface LiveMapSegment {
 
 interface VisitStop { lat: number; lng: number; customerName: string; locationName: string | null; durationStr: string }
 
+function svgIcon(svg: string, size: [number, number], anchor: [number, number]) {
+  return L.divIcon({
+    html: svg,
+    className: "",
+    iconSize: size,
+    iconAnchor: anchor,
+    popupAnchor: [0, -anchor[1]],
+  });
+}
+
 function LiveMap({
   locationPoints = [],
   segments = [],
@@ -208,188 +213,98 @@ function LiveMap({
   punchOutLng?: number | null;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(_gmLoaded);
-
-  useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
+  const mapInstanceRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
-
-    const gpsPoints = locationPoints
-      .filter(lp => lp.latitude && lp.longitude)
-      .map(lp => ({ lat: Number(lp.latitude), lng: Number(lp.longitude) }));
-
-    const allCoords = [...gpsPoints];
-    visitStops.filter(v => v.lat && v.lng).forEach(v => allCoords.push({ lat: v.lat, lng: v.lng }));
-    if (punchInLat && punchInLng) allCoords.push({ lat: punchInLat, lng: punchInLng });
-    if (punchOutLat && punchOutLng) allCoords.push({ lat: punchOutLat, lng: punchOutLng });
-
-    const defaultCenter = { lat: 17.4, lng: 78.5 };
-    const center = allCoords.length > 0 ? allCoords[allCoords.length - 1] : defaultCenter;
-
-    const map = new google.maps.Map(mapRef.current, {
-      center,
-      zoom: 14,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-
-    const infoWindow = new google.maps.InfoWindow();
-
-    // GPS tracking — snap to roads using Directions API
-    if (gpsPoints.length > 1) {
-      // Downsample: keep at most ~20 evenly-spaced points to stay within API limits
-      const MAX_PTS = 20;
-      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
-      const sampled: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
-      // Always include the last point
-      const lastPt = gpsPoints[gpsPoints.length - 1];
-      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
-
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 23; // max intermediate waypoints per request
-
-      const drawChunk = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        const origin = pts[0];
-        const destination = pts[pts.length - 1];
-        const waypoints = pts.slice(1, -1).map(p => ({
-          location: new google.maps.LatLng(p.lat, p.lng),
-          stopover: false as const,
-        }));
-        ds.route(
-          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-          (result, status) => {
-            if (status === "OK" && result) {
-              new google.maps.DirectionsRenderer({
-                map,
-                directions: result,
-                suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
-              });
-            } else {
-              // Fallback to raw polyline if Directions API fails
-              new google.maps.Polyline({ path: pts, geodesic: false, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
-            }
-          },
-        );
-      };
-
-      // Process in chunks of CHUNK+1 points (overlap at boundaries)
-      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
-      }
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
     }
 
-    // Stoppage markers
+    const gpsPoints: [number, number][] = locationPoints
+      .filter(lp => lp.latitude && lp.longitude)
+      .map(lp => [Number(lp.latitude), Number(lp.longitude)]);
+
+    const allCoords: [number, number][] = [...gpsPoints];
+    visitStops.filter(v => v.lat && v.lng).forEach(v => allCoords.push([v.lat, v.lng]));
+    if (punchInLat && punchInLng) allCoords.push([punchInLat, punchInLng]);
+    if (punchOutLat && punchOutLng) allCoords.push([punchOutLat, punchOutLng]);
+
+    const defaultCenter: [number, number] = [22.8, 80.0];
+    const center: [number, number] = allCoords.length > 0 ? allCoords[allCoords.length - 1] : defaultCenter;
+
+    const map = L.map(mapRef.current, { center, zoom: 13, zoomControl: true });
+    mapInstanceRef.current = map;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Orange route polyline
+    if (gpsPoints.length > 1) {
+      L.polyline(gpsPoints, { color: "#e67c22", weight: 4, opacity: 0.9 }).addTo(map);
+    }
+
+    // Stoppage markers (red circle)
     segments.filter(s => s.type === "stoppage" && s.lat && s.lng).forEach(s => {
       const mins = Math.floor((s.durationSecs || 0) / 60);
       const secs = Math.round((s.durationSecs || 0) % 60);
       const dur = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-      const m = new google.maps.Marker({
-        position: { lat: s.lat!, lng: s.lng! },
-        map,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#e11d48", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-      });
-      m.addListener("click", () => {
-        infoWindow.setContent(`<div style="font-size:12px"><b>Stoppage</b><br/>${dur}</div>`);
-        infoWindow.open(map, m);
-      });
+      L.circleMarker([s.lat!, s.lng!], { radius: 7, fillColor: "#e11d48", color: "#fff", weight: 2, fillOpacity: 1 })
+        .addTo(map)
+        .bindPopup(`<b>Stoppage</b><br/>${dur}`);
     });
 
-    // Customer visit markers
+    // Visit markers (blue circle)
     visitStops.filter(v => v.lat && v.lng).forEach(v => {
-      const m = new google.maps.Marker({
-        position: { lat: v.lat, lng: v.lng },
-        map,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#e11d48", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
-      });
-      const loc = v.locationName || "";
-      m.addListener("click", () => {
-        infoWindow.setContent(
-          `<div style="min-width:150px;font-size:13px">` +
-          `<b>${v.customerName}</b>` +
-          `<div style="color:#e11d48;font-size:11px">⏱ ${v.durationStr}</div>` +
-          (loc ? `<div style="color:#555;font-size:11px">${loc}</div>` : "") +
-          `</div>`
+      const loc = v.locationName ? `<div style="color:#555;font-size:11px">${v.locationName}</div>` : "";
+      L.circleMarker([v.lat, v.lng], { radius: 8, fillColor: "#2563eb", color: "#fff", weight: 2.5, fillOpacity: 1 })
+        .addTo(map)
+        .bindPopup(
+          `<div style="min-width:150px;font-size:13px"><b>${v.customerName}</b>` +
+          `<div style="color:#e11d48;font-size:11px">⏱ ${v.durationStr}</div>${loc}</div>`
         );
-        infoWindow.open(map, m);
-      });
     });
 
     // Punch-in marker (green badge)
     if (punchInLat && punchInLng) {
-      const m = new google.maps.Marker({
-        position: { lat: punchInLat, lng: punchInLng },
-        map,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="28"><rect rx="5" width="40" height="20" fill="#15803d"/><text x="20" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">IN</text></svg>`
-          ),
-          scaledSize: new google.maps.Size(40, 28),
-          anchor: new google.maps.Point(20, 28),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent("<b>Punch In</b>"); infoWindow.open(map, m); });
+      const icon = svgIcon(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="24"><rect rx="5" width="40" height="22" fill="#15803d"/><text x="20" y="15" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">IN</text></svg>`,
+        [40, 24], [20, 24]
+      );
+      L.marker([punchInLat, punchInLng], { icon }).addTo(map).bindPopup("<b>Punch In</b>");
     }
 
     // Punch-out marker (red badge)
     if (punchOutLat && punchOutLng) {
-      const m = new google.maps.Marker({
-        position: { lat: punchOutLat, lng: punchOutLng },
-        map,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="28"><rect rx="5" width="44" height="20" fill="#dc2626"/><text x="22" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">OUT</text></svg>`
-          ),
-          scaledSize: new google.maps.Size(44, 28),
-          anchor: new google.maps.Point(22, 28),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent("<b>Punch Out</b>"); infoWindow.open(map, m); });
+      const icon = svgIcon(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="24"><rect rx="5" width="44" height="22" fill="#dc2626"/><text x="22" y="15" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">OUT</text></svg>`,
+        [44, 24], [22, 24]
+      );
+      L.marker([punchOutLat, punchOutLng], { icon }).addTo(map).bindPopup("<b>Punch Out</b>");
     }
 
     // Current location: blue person icon
     if (gpsPoints.length > 0) {
       const last = gpsPoints[gpsPoints.length - 1];
-      const m = new google.maps.Marker({
-        position: last,
-        map,
-        zIndex: 1000,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">` +
-            `<circle cx="19" cy="19" r="18" fill="#1d4ed8" stroke="white" stroke-width="3"/>` +
-            `<path d="M19 10c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/>` +
-            `</svg>`
-          ),
-          scaledSize: new google.maps.Size(38, 38),
-          anchor: new google.maps.Point(19, 19),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent("<b>Current Location</b>"); infoWindow.open(map, m); });
+      const icon = svgIcon(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38"><circle cx="19" cy="19" r="18" fill="#1d4ed8" stroke="white" stroke-width="3"/><path d="M19 10c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/></svg>`,
+        [38, 38], [19, 19]
+      );
+      L.marker(last, { icon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>Current Location</b>");
     }
 
     // Auto-fit
     if (allCoords.length > 1) {
-      const bounds = new google.maps.LatLngBounds();
-      allCoords.forEach(c => bounds.extend(c));
-      map.fitBounds(bounds, 40);
+      map.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
     }
-  }, [ready, locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
 
-  if (!ready) return (
-    <div className="relative h-full w-full flex items-center justify-center bg-muted/30 rounded">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
-  );
-  return (
-    <div className="relative h-full w-full">
-      <div ref={mapRef} className="h-full w-full" />
-    </div>
-  );
+    return () => { map.remove(); mapInstanceRef.current = null; };
+  }, [locationPoints, segments, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
+
+  return <div ref={mapRef} className="h-full w-full" />;
 }
 
 function fmtPopupTime(iso: string | null | undefined): string {
@@ -405,7 +320,7 @@ function fmtPopupTime(iso: string | null | undefined): string {
 
 function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; date: string; employeeId: number }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(_gmLoaded);
+  const mapInstanceRef = useRef<L.Map | null>(null);
 
   const { data: locationData } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
@@ -419,109 +334,75 @@ function PlaybackMap({ trips, date, employeeId }: { trips: TripWithVisits[]; dat
     enabled: !!employeeId && !!date,
   });
 
-  useEffect(() => { if (!ready) loadGM(() => setReady(true)); }, [ready]);
-
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
 
     const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
 
-    type LatLng = { lat: number; lng: number };
-    const allPoints: LatLng[] = [];
-
-    // Prepend punch-in / first GPS point as the journey start
-    const locationPts = (locationData?.points ?? [])
+    const locationPts: [number, number][] = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
-      .map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-    if (locationPts.length > 0) allPoints.push(locationPts[0]);
+      .map(p => [Number(p.latitude), Number(p.longitude)]);
 
+    const visitPts: [number, number][] = [];
     filtered.forEach(trip => {
-      if (trip.startLatitude && trip.startLongitude)
-        allPoints.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
       (trip.visits || []).forEach(v => {
-        if (v.punchInLatitude && v.punchInLongitude) allPoints.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
-        if (v.punchOutLatitude && v.punchOutLongitude) allPoints.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) });
+        if (v.punchInLatitude && v.punchInLongitude) visitPts.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
       });
-      if (trip.endLatitude && trip.endLongitude)
-        allPoints.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
     });
 
-    const defaultCenter = { lat: 22.8, lng: 80.0 };
-    const center = allPoints.length > 0 ? allPoints[0] : defaultCenter;
-    const map = new google.maps.Map(mapRef.current, {
-      center, zoom: 12,
-      mapTypeControl: false, streetViewControl: false, fullscreenControl: true,
-    });
+    const allCoords: [number, number][] = [...locationPts, ...visitPts];
+    const defaultCenter: [number, number] = [22.8, 80.0];
+    const center: [number, number] = allCoords.length > 0 ? allCoords[0] : defaultCenter;
 
-    const infoWindow = new google.maps.InfoWindow();
-    const bounds = new google.maps.LatLngBounds();
-    allPoints.forEach(p => bounds.extend(p));
+    const map = L.map(mapRef.current, { center, zoom: 12 });
+    mapInstanceRef.current = map;
 
-    if (allPoints.length > 1) {
-      // Draw road route using Directions API
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 10;
-      for (let i = 0; i < allPoints.length - 1; i += CHUNK) {
-        const chunk = allPoints.slice(i, Math.min(i + CHUNK + 1, allPoints.length));
-        if (chunk.length < 2) break;
-        ds.route(
-          {
-            origin: chunk[0], destination: chunk[chunk.length - 1],
-            waypoints: chunk.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false })),
-            travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
-          },
-          (result, status) => {
-            if (status === google.maps.DirectionsStatus.OK && result) {
-              new google.maps.DirectionsRenderer({
-                map, directions: result, suppressMarkers: true,
-                polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
-              });
-            }
-          }
-        );
-      }
-      map.fitBounds(bounds, 40);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Orange route polyline from GPS points
+    if (locationPts.length > 1) {
+      L.polyline(locationPts, { color: "#e67c22", weight: 4, opacity: 0.9 }).addTo(map);
     }
 
-    // Visit check-in numbered markers
-    filtered.forEach((trip, ti) => {
-      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).forEach((v, vi) => {
-        const num = ti * 10 + vi + 1;
-        const m = new google.maps.Marker({
-          position: { lat: Number(v.punchInLatitude!), lng: Number(v.punchInLongitude!) },
-          map,
-          icon: {
-            url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-              `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="11" fill="#2563eb" stroke="white" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="white" font-size="10" font-weight="bold" font-family="sans-serif">${num}</text></svg>`
-            ),
-            scaledSize: new google.maps.Size(24, 24),
-            anchor: new google.maps.Point(12, 12),
-          },
-        });
+    // Numbered check-in markers
+    let num = 0;
+    filtered.forEach(trip => {
+      (trip.visits || []).filter(v => v.punchInLatitude && v.punchInLongitude).forEach(v => {
+        num++;
         const inTime = fmtPopupTime(v.punchInTime as unknown as string);
         const outTime = fmtPopupTime(v.punchOutTime as unknown as string);
         const loc = v.punchInLocationName || v.punchOutLocationName || "";
-        m.addListener("click", () => {
-          infoWindow.setContent(
-            `<div style="min-width:160px;font-size:13px">` +
-            `<b>Check-in ${num}</b>` +
+        const icon = svgIcon(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="11" fill="#2563eb" stroke="white" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="white" font-size="10" font-weight="bold" font-family="sans-serif">${num}</text></svg>`,
+          [24, 24], [12, 12]
+        );
+        L.marker([Number(v.punchInLatitude!), Number(v.punchInLongitude!)], { icon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="min-width:160px;font-size:13px"><b>Check-in ${num}</b>` +
             (loc ? `<div style="color:#555;font-size:11px;margin-top:2px">${loc}</div>` : "") +
             `<table style="margin-top:6px;width:100%">` +
-            `<tr><td style="color:#16a34a;font-weight:600;padding-right:8px">Punch In</td><td style="font-weight:600">${inTime}</td></tr>` +
-            `<tr><td style="color:#dc2626;font-weight:600;padding-right:8px">Punch Out</td><td style="font-weight:600">${outTime}</td></tr>` +
+            `<tr><td style="color:#16a34a;font-weight:600;padding-right:8px">Punch In</td><td>${inTime}</td></tr>` +
+            `<tr><td style="color:#dc2626;font-weight:600;padding-right:8px">Punch Out</td><td>${outTime}</td></tr>` +
             `</table></div>`
           );
-          infoWindow.open(map, m);
-        });
       });
     });
-  }, [ready, trips, date, locationData]);
 
-  if (!ready) return (
-    <div className="h-full w-full flex items-center justify-center bg-muted/30 rounded">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
-  );
+    if (allCoords.length > 1) {
+      map.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
+    }
+
+    return () => { map.remove(); mapInstanceRef.current = null; };
+  }, [trips, date, locationData]);
+
   return <div ref={mapRef} className="h-full w-full" />;
 }
 
