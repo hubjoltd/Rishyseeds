@@ -1046,7 +1046,7 @@ export default function EmployeeProfile() {
                             </div>
                             <div className="flex-1 min-w-0 pt-0.5">
                               <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-bold text-blue-700">CHK {seg.checkinId}</p>
+                                <p className="text-[11px] font-bold text-blue-700">Stoppage {seg.checkinId}</p>
                                 <span className="text-[10px] text-muted-foreground shrink-0">({durShort})</span>
                               </div>
                               <p className="text-[10px] text-gray-500 font-mono">
