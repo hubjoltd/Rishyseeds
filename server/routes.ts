@@ -2101,12 +2101,28 @@ export async function registerRoutes(
         });
       }
 
-      // Auto-create a trip if no active trip exists for today
+      // Auto-create a trip if no active trip exists for TODAY
       let autoTrip = null;
       try {
+        const todayIST = getISTDate();
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const tripISTDate = (t: any): string =>
+          new Date(new Date(t.startTime).getTime() + istOffset).toISOString().slice(0, 10);
+
         const empTrips = await storage.getTripsByEmployee(employeeId);
-        const hasActiveTrip = empTrips.some((t: any) => t.status === "started" || t.status === "in_progress");
-        if (!hasActiveTrip) {
+        const isActiveStatus = (t: any) => t.status === "started" || t.status === "in_progress";
+
+        // Auto-close stale active trips from previous days so they don't block today's trip
+        for (const stale of empTrips.filter((t: any) => isActiveStatus(t) && t.startTime && tripISTDate(t) !== todayIST)) {
+          await storage.updateTrip(stale.id, { status: "submitted", endTime: new Date() });
+        }
+
+        // Only block creation if there's already an active trip started TODAY
+        const hasActiveTripToday = empTrips.some((t: any) =>
+          isActiveStatus(t) && t.startTime && tripISTDate(t) === todayIST
+        );
+
+        if (!hasActiveTripToday) {
           autoTrip = await storage.createTrip({
             employeeId,
             status: "started",
