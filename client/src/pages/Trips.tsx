@@ -196,33 +196,43 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
       const m = new google.maps.Marker({
         position: { lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) },
         map,
-        zIndex: 100,
+        zIndex: 200,
         icon: {
           url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="28"><rect rx="5" width="40" height="20" fill="#15803d"/><text x="20" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">IN</text></svg>`
+            `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+              <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+              <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
+              <circle cx="18" cy="14" r="9" fill="white"/>
+              <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
+            </svg>`
           ),
-          scaledSize: new google.maps.Size(40, 28),
-          anchor: new google.maps.Point(20, 28),
+          scaledSize: new google.maps.Size(36, 52),
+          anchor: new google.maps.Point(18, 52),
         },
       });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b>Trip Start</b><br/><span style="color:#555;font-size:11px">${trip.startLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#15803d">▶ Trip Start</b><br/><span style="color:#555;font-size:11px">${trip.startLocationName || ""}</span></div>`); infoWindow.open(map, m); });
     }
 
-    // End marker — OUT badge (red)
+    // End marker — tall red pin
     if (trip.endLatitude && trip.endLongitude) {
       const m = new google.maps.Marker({
         position: { lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) },
         map,
-        zIndex: 100,
+        zIndex: 200,
         icon: {
           url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="28"><rect rx="5" width="44" height="20" fill="#dc2626"/><text x="22" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">OUT</text></svg>`
+            `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+              <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+              <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
+              <circle cx="18" cy="14" r="9" fill="white"/>
+              <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
+            </svg>`
           ),
-          scaledSize: new google.maps.Size(44, 28),
-          anchor: new google.maps.Point(22, 28),
+          scaledSize: new google.maps.Size(36, 52),
+          anchor: new google.maps.Point(18, 52),
         },
       });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b>Trip End</b><br/><span style="color:#555;font-size:11px">${trip.endLocationName || ""}</span></div>`); infoWindow.open(map, m); });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#dc2626">⬛ Trip End</b><br/><span style="color:#555;font-size:11px">${trip.endLocationName || ""}</span></div>`); infoWindow.open(map, m); });
     }
 
     // Visit markers — blue circle for check-in, purple for check-out

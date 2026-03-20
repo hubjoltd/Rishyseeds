@@ -331,40 +331,56 @@ function LiveMap({
       });
     });
 
-    // Punch-in marker (green badge)
-    if (punchInLat && punchInLng) {
+    // ── START marker: prefer punch-in coords, fallback to first GPS point ──
+    const startPos = (punchInLat && punchInLng)
+      ? { lat: punchInLat, lng: punchInLng }
+      : (gpsPoints.length > 0 ? gpsPoints[0] : null);
+    if (startPos) {
+      const startSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="14" r="9" fill="white"/>
+        <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
+      </svg>`;
       const m = new google.maps.Marker({
-        position: { lat: punchInLat, lng: punchInLng },
+        position: startPos,
         map,
+        zIndex: 200,
         icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="28"><rect rx="5" width="40" height="20" fill="#15803d"/><text x="20" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">IN</text></svg>`
-          ),
-          scaledSize: new google.maps.Size(40, 28),
-          anchor: new google.maps.Point(20, 28),
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(startSvg),
+          scaledSize: new google.maps.Size(36, 52),
+          anchor: new google.maps.Point(18, 52),
         },
       });
-      m.addListener("click", () => { infoWindow.setContent("<b>Punch In</b>"); infoWindow.open(map, m); });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#15803d">▶ Trip Start</b>${punchInLat ? "<br/><span style='font-size:11px;color:#555'>Punch In location</span>" : ""}</div>`); infoWindow.open(map, m); });
     }
 
-    // Punch-out marker (red badge)
-    if (punchOutLat && punchOutLng) {
+    // ── END marker: prefer punch-out coords, fallback to last GPS point ──
+    const endPos = (punchOutLat && punchOutLng)
+      ? { lat: punchOutLat, lng: punchOutLng }
+      : (gpsPoints.length > 1 ? gpsPoints[gpsPoints.length - 1] : null);
+    if (endPos) {
+      const endSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
+        <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
+        <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="14" r="9" fill="white"/>
+        <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
+      </svg>`;
       const m = new google.maps.Marker({
-        position: { lat: punchOutLat, lng: punchOutLng },
+        position: endPos,
         map,
+        zIndex: 200,
         icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="28"><rect rx="5" width="44" height="20" fill="#dc2626"/><text x="22" y="14" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">OUT</text></svg>`
-          ),
-          scaledSize: new google.maps.Size(44, 28),
-          anchor: new google.maps.Point(22, 28),
+          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(endSvg),
+          scaledSize: new google.maps.Size(36, 52),
+          anchor: new google.maps.Point(18, 52),
         },
       });
-      m.addListener("click", () => { infoWindow.setContent("<b>Punch Out</b>"); infoWindow.open(map, m); });
+      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#dc2626">⬛ Trip End</b>${punchOutLat ? "<br/><span style='font-size:11px;color:#555'>Punch Out location</span>" : "<br/><span style='font-size:11px;color:#555'>Last recorded location</span>"}</div>`); infoWindow.open(map, m); });
     }
 
-    // Current location: blue person icon
-    if (gpsPoints.length > 0) {
+    // ── Current live position: blue person icon (only if trip is ongoing = no end pos from punch-out) ──
+    if (!punchOutLat && gpsPoints.length > 0) {
       const last = gpsPoints[gpsPoints.length - 1];
       const m = new google.maps.Marker({
         position: last,
@@ -381,7 +397,7 @@ function LiveMap({
           anchor: new google.maps.Point(19, 19),
         },
       });
-      m.addListener("click", () => { infoWindow.setContent("<b>Current Location</b>"); infoWindow.open(map, m); });
+      m.addListener("click", () => { infoWindow.setContent("<div style='font-size:13px'><b>📍 Current Location</b><br/><span style='font-size:11px;color:#555'>Live tracking</span></div>"); infoWindow.open(map, m); });
     }
 
     // Auto-fit
