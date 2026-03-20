@@ -1041,15 +1041,15 @@ export default function EmployeeProfile() {
                         <p className="text-[10px] text-gray-400 font-mono leading-none mt-0.5">{fmtS(a)}{b ? `–${fmtS(b)}` : ""}</p>
                       );
 
-                      /* ── GAP TRAVEL ── */
+                      /* ── GAP TRAVEL (synthesised gap between events) ── */
                       if (seg.type === "gap_travel") {
                         const gapEndT = new Date((seg as any).endTime);
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-orange-50/50 transition-colors">
+                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                             {dot("bg-orange-400", <Navigation className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
-                                <p className="text-[11px] font-bold text-orange-700 leading-tight">Travelled</p>
+                                <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled</p>
                                 {dur(formatDuration(startT, gapEndT))}
                               </div>
                               {timeRow(startT, gapEndT)}
@@ -1140,15 +1140,16 @@ export default function EmployeeProfile() {
                         );
                       }
 
-                      /* ── TRAVELLED (from GPS segments) ── */
+                      /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
-                      const distKm = (seg as any).distanceKm ?? 0;
+                      const distKm: number = (seg as any).distanceKm ?? 0;
+                      const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       return (
-                        <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-orange-50/40 transition-colors">
+                        <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline">
-                              <p className="text-[11px] font-bold text-orange-700 leading-tight">Travelled ({distKm.toFixed(2)} km)</p>
+                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel})</p>
                               {dur(formatDuration(startT, endT))}
                             </div>
                             {timeRow(startT, endT)}
