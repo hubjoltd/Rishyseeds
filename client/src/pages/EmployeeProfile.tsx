@@ -594,7 +594,7 @@ function PlaybackMapInner({
       <TileLayer url={tile.url} subdomains={tile.subdomains} attribution={tile.attr} maxZoom={20} />
       <PbBoundsFitter points={routePoints} />
       {routePoints.length > 1 && (
-        <Polyline positions={routePoints} pathOptions={{ color: "#f97316", weight: 4, opacity: 0.9 }} />
+        <Polyline positions={routePoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.9 }} />
       )}
       {routePoints.length > 0 && (
         <Marker position={routePoints[0]} icon={startIcon}>
@@ -690,7 +690,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         center={defaultCenter}
         zoom={12}
         style={{ height: "100%", width: "100%" }}
-        zoomControl={true}
+        zoomControl={false}
       >
         <PlaybackMapInner
           routePoints={routePoints}
@@ -719,7 +719,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
 
       {/* Legend */}
       <div className="absolute bottom-8 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-orange-500"/><span>Route</span></div>
+        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Route</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-red-600"/><span>Start (B)</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-600"/><span>CHK Visit</span></div>
       </div>
