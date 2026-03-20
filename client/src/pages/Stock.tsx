@@ -122,9 +122,12 @@ export default function Stock() {
 
   const getStockBalanceAtLocation = (lotId: number, locationId: number) => {
     const balances = (stockBalances as StockBalance[] || []).filter(
-      sb => sb.lotId === lotId && sb.locationId === locationId && Number(sb.quantity) > 0
+      sb => sb.lotId === lotId && sb.locationId === locationId
     );
-    return balances.reduce((sum, sb) => sum + Number(sb.quantity), 0);
+    const loose    = balances.filter(sb => sb.stockForm === 'loose').reduce((s, sb) => s + Number(sb.quantity), 0);
+    const csInward = balances.filter(sb => sb.stockForm === 'cs_inward').reduce((s, sb) => s + Number(sb.quantity), 0);
+    const csOutward= balances.filter(sb => sb.stockForm === 'cs_outward').reduce((s, sb) => s + Number(sb.quantity), 0);
+    return Math.max(0, loose + csInward - csOutward);
   };
 
   const getStockByWarehouse = (lotId: number) => {
