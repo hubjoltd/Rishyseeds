@@ -94,7 +94,7 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
-const GOOGLE_MAPS_API_KEY = (window as any).__GMAPS_KEY__ || import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+const GOOGLE_MAPS_API_KEY = "AIzaSyBrXqf4qkgKxH6eIqCv0QnxPx7X-59qPQ8";
 
 let googleMapsLoaded = false;
 let googleMapsLoading = false;
