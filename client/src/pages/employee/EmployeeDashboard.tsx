@@ -260,6 +260,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     onSuccess: (data, { type }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance/today"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employee/attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/trips"] });
       const time = format(new Date(), "h:mm a");
       setPunchTime(time); setShareType(type);
       if (data.location) setPunchLocation(data.location);

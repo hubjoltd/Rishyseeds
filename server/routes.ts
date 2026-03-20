@@ -2100,8 +2100,25 @@ export async function registerRoutes(
           employeeName: employee.fullName,
         });
       }
-      
-      res.json({ message: "Punched in successfully", time: now, location: locationName || null });
+
+      // Auto-create a trip if no active trip exists for today
+      let autoTrip = null;
+      try {
+        const empTrips = await storage.getTripsByEmployee(employeeId);
+        const hasActiveTrip = empTrips.some((t: any) => t.status === "started" || t.status === "in_progress");
+        if (!hasActiveTrip) {
+          autoTrip = await storage.createTrip({
+            employeeId,
+            status: "started",
+            startTime: new Date(),
+            startLatitude: latitude || null,
+            startLongitude: longitude || null,
+            startLocationName: locationName || null,
+          });
+        }
+      } catch {}
+
+      res.json({ message: "Punched in successfully", time: now, location: locationName || null, autoTrip });
     } catch (error) {
       res.status(400).json({ message: "Punch in failed" });
     }
@@ -2142,7 +2159,22 @@ export async function registerRoutes(
           employeeName: employee.fullName,
         });
       }
-      
+
+      // Auto-end the active trip on punch-out
+      try {
+        const empTrips = await storage.getTripsByEmployee(employeeId);
+        const activeTrip = empTrips.find((t: any) => t.status === "started" || t.status === "in_progress");
+        if (activeTrip) {
+          await storage.updateTrip(activeTrip.id, {
+            status: "submitted",
+            endTime: new Date(),
+            endLatitude: latitude || null,
+            endLongitude: longitude || null,
+            endLocationName: locationName || null,
+          });
+        }
+      } catch {}
+
       res.json({ message: "Punched out successfully", time: now, location: locationName || null });
     } catch (error) {
       res.status(400).json({ message: "Punch out failed" });

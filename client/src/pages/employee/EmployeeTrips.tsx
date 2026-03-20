@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -213,6 +213,14 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
 
   const activeTrip = trips.find(t => t.status === "started" || t.status === "in_progress");
   const trip = tripDetail || selectedTrip;
+
+  // Auto-navigate to active trip when page loads and no trip is selected
+  useEffect(() => {
+    if (!isLoading && activeTrip && !selectedTrip && view === "list") {
+      setSelectedTrip(activeTrip);
+      setView("detail");
+    }
+  }, [isLoading, activeTrip, selectedTrip, view]);
 
   // ===== START TRIP FORM =====
   if (view === "start_trip") {
@@ -512,7 +520,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
               <Navigation className="h-6 w-6 text-gray-300" />
             </div>
             <p className="text-sm font-medium">No Trips Yet</p>
-            <p className="text-xs text-gray-300">Start your first trip below</p>
+            <p className="text-xs text-gray-300">A trip is automatically created when you punch in</p>
           </div>
         ) : (
           trips.map(t => {
