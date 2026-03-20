@@ -291,6 +291,10 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    refetchInterval: (query) => {
+      const d = query.state.data as TripDetail | undefined;
+      return d?.status === "started" || d?.status === "in_progress" ? 15000 : false;
+    },
   });
 
   const isActiveTrip = trip?.status === "started" || trip?.status === "in_progress";
@@ -777,6 +781,7 @@ export default function Trips() {
 
   const { data: trips, isLoading } = useQuery<TripWithEmployee[]>({
     queryKey: ["/api/trips"],
+    refetchInterval: 30000,
   });
 
   if (selectedTripId) {

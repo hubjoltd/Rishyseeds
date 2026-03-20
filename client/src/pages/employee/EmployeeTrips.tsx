@@ -113,6 +113,7 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    refetchInterval: 30000,
   });
 
   const { data: tripDetail, isLoading: detailLoading } = useQuery<any>({
