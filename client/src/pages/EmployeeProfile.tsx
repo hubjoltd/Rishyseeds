@@ -272,31 +272,21 @@ function LiveMap({
       const anchor = gpsPoints[0];
       const maxSpreadM = gpsPoints.reduce((mx, p) => Math.max(mx, haversineM(anchor.lat, anchor.lng, p.lat, p.lng)), 0);
 
-      // Helper: draw bold orange route + dark shadow underneath for visibility
+      // Draw orange GPS route polyline (exact TrackClap style)
       const drawPolyline = (pts: { lat: number; lng: number }[]) => {
         if (pts.length < 2) return;
-        // Shadow line (dark, wider, below the orange)
-        const shadow = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#92400e", strokeOpacity: 0.35, strokeWeight: 9, map, zIndex: 1 });
-        // Orange route line on top
-        const route = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#f97316", strokeOpacity: 1, strokeWeight: 5, map, zIndex: 2 });
-        overlaysRef.current.push(shadow, route);
+        const pl = new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4, map });
+        overlaysRef.current.push(pl);
       };
 
       if (maxSpreadM < 80) {
-        // Truly stationary (< 80 m) — draw accent circle + raw path
-        const circle = new google.maps.Circle({
-          center: anchor, radius: Math.max(maxSpreadM / 2, 20),
-          strokeColor: "#f97316", strokeOpacity: 0.7, strokeWeight: 2,
-          fillColor: "#f97316", fillOpacity: 0.08, map,
-        });
-        overlaysRef.current.push(circle);
-        // Still draw actual GPS track so admin can zoom in and see micro-movements
+        // Stationary — draw raw GPS track (zoom in to see micro-movement)
         drawPolyline(gpsPoints);
       } else if (maxSpreadM < 350) {
-        // Short movement — draw raw GPS polyline (no Directions API needed)
+        // Short movement — raw GPS polyline, no road-snapping needed
         drawPolyline(gpsPoints);
       } else {
-        // Significant travel — snap route to roads using Directions API
+        // Significant travel — snap to roads via Directions API
         const MAX_PTS = 23;
         const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
         const sampled: { lat: number; lng: number }[] = [];
@@ -319,19 +309,12 @@ function LiveMap({
             { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
             (result, status) => {
               if (status === "OK" && result) {
-                // Shadow layer
-                const shadowDr = new google.maps.DirectionsRenderer({
-                  map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#92400e", strokeOpacity: 0.35, strokeWeight: 9, zIndex: 1 },
-                });
-                // Orange route on top
                 const dr = new google.maps.DirectionsRenderer({
                   map, directions: result, suppressMarkers: true,
-                  polylineOptions: { strokeColor: "#f97316", strokeOpacity: 1, strokeWeight: 5, zIndex: 2 },
+                  polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.9, strokeWeight: 4 },
                 });
-                overlaysRef.current.push(shadowDr, dr);
+                overlaysRef.current.push(dr);
               } else {
-                // Fallback: raw polyline if Directions API fails
                 drawPolyline(pts);
               }
             },
@@ -996,30 +979,29 @@ export default function EmployeeProfile() {
           <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ height: "calc(100vh - 210px)", minHeight: "600px" }}>
 
             {/* ── LEFT: TrackClap-style activity panel ── */}
-            <div className="w-72 shrink-0 flex flex-col border-r bg-white" style={{ height: "100%" }}>
+            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ height: "100%" }}>
 
-              {/* Panel header: date picker + stats */}
-              <div className="px-3 pt-2.5 pb-2 border-b bg-gray-50 shrink-0">
-                <div className="flex items-center gap-1.5 mb-2">
+              {/* Header exactly as TrackClap: date row + "Completed N | Distance X Km" */}
+              <div className="px-3 py-2 border-b bg-white shrink-0">
+                <div className="flex items-center gap-1 mb-1.5">
                   <Input
                     type="date"
                     value={liveDate}
                     onChange={(e) => setLiveDate(e.target.value)}
-                    className="h-7 text-xs flex-1"
+                    className="h-6 text-[11px] flex-1 border-gray-200"
                     data-testid="input-live-date"
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { refetchLocations(); refetchCheckins(); }} data-testid="button-refresh-locations">
+                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { refetchLocations(); refetchCheckins(); }} data-testid="button-refresh-locations">
                     <RefreshCw className="h-3 w-3" />
                   </Button>
                 </div>
-                {/* Stats bar: "Completed N | Distance X Km" — mirrors TrackClap header */}
-                <div className="flex items-center text-[11px] bg-white rounded border px-2 py-1 gap-0">
-                  <span className="text-muted-foreground">Completed</span>
-                  <span className="font-bold text-foreground ml-1">{liveCheckins.length}</span>
-                  <span className="mx-2 text-gray-300">|</span>
-                  <span className="text-muted-foreground">Distance</span>
-                  <span className="font-bold text-foreground ml-1">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
-                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-auto" />}
+                <div className="flex items-center gap-1 text-[11px] text-gray-600">
+                  <span>Completed</span>
+                  <span className="font-bold text-gray-900">{liveCheckins.length}</span>
+                  <span className="text-gray-300 mx-1">|</span>
+                  <span>Distance</span>
+                  <span className="font-bold text-gray-900">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
               </div>
 
