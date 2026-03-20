@@ -45,33 +45,20 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 let _gmLoaded = typeof (window as any).google !== "undefined";
 let _gmLoading = false;
 const _gmCbs: Array<() => void> = [];
-let _gmKey: string | null = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || null;
-
-async function getGMKey(): Promise<string> {
-  if (_gmKey) return _gmKey;
-  try {
-    const res = await fetch("/api/config");
-    const data = await res.json();
-    _gmKey = data.googleMapsApiKey || "";
-  } catch { _gmKey = ""; }
-  return _gmKey!;
-}
-
 function loadGM(cb: () => void) {
   if (_gmLoaded) { cb(); return; }
   _gmCbs.push(cb);
   if (_gmLoading) return;
   _gmLoading = true;
-  getGMKey().then(key => {
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
-    s.async = true;
-    s.onload = () => { _gmLoaded = true; _gmLoading = false; _gmCbs.forEach(f => f()); _gmCbs.length = 0; };
-    document.head.appendChild(s);
-  });
+  const s = document.createElement("script");
+  s.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}`;
+  s.async = true;
+  s.onload = () => { _gmLoaded = true; _gmLoading = false; _gmCbs.forEach(f => f()); _gmCbs.length = 0; };
+  document.head.appendChild(s);
 }
 
 interface TripWithVisits extends Trip {
