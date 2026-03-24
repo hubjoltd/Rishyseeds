@@ -112,17 +112,26 @@ export default function Stock() {
 
   const getLotClosingBalance = (lot: Lot): number => {
     const balances = (stockBalances as StockBalance[] || []).filter(sb => sb.lotId === lot.id);
-    if (balances.length === 0) return 0;
-    return Math.max(0, balances.reduce((total, b) => {
-      const qty = Number(b.quantity);
-      if (b.stockForm === 'cs_outward') return total - qty;
-      if (b.stockForm === 'packed' && b.packetSize) {
-        const s = b.packetSize.toLowerCase().trim();
-        if (s.endsWith('kg')) return total + qty * parseFloat(s);
-        if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
-      }
-      return total + qty;
-    }, 0));
+    if (balances.length > 0) {
+      return Math.max(0, balances.reduce((total, b) => {
+        const qty = Number(b.quantity);
+        if (b.stockForm === 'cs_outward') return total - qty;
+        if (b.stockForm === 'packed' && b.packetSize) {
+          const s = b.packetSize.toLowerCase().trim();
+          if (s.endsWith('kg')) return total + qty * parseFloat(s);
+          if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
+        }
+        return total + qty;
+      }, 0));
+    }
+    // Fallback for lots without stock_balances records
+    const dispatched = ((outwardRecords as any[]) || [])
+      .filter(r => r.lotId === lot.id)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    const returned = ((outwardReturnsData as any[]) || [])
+      .filter(r => r.lotId === lot.id)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, Number(lot.initialQuantity || 0) - dispatched + returned);
   };
 
   const getStockBalanceAtLocation = (lotId: number, locationId: number) => {
@@ -143,13 +152,21 @@ export default function Stock() {
 
   const getStockByWarehouse = (lotId: number) => {
     const balances = (stockBalances as StockBalance[] || []).filter(
-      sb => sb.lotId === lotId && sb.stockForm === 'loose' && Number(sb.quantity) > 0
+      sb => sb.lotId === lotId && (sb.stockForm === 'loose' || sb.stockForm === 'cobs') && Number(sb.quantity) > 0
     );
-    return balances.map(sb => ({
-      locationId: sb.locationId,
-      locationName: getLocationName(sb.locationId),
-      quantity: Number(sb.quantity)
-    }));
+    // Group by location (a lot can have both loose and cobs at same location)
+    const locationMap: Record<number, { locationId: number; locationName: string; quantity: number }> = {};
+    balances.forEach(sb => {
+      if (!locationMap[sb.locationId]) {
+        locationMap[sb.locationId] = {
+          locationId: sb.locationId,
+          locationName: getLocationName(sb.locationId),
+          quantity: 0,
+        };
+      }
+      locationMap[sb.locationId].quantity += Number(sb.quantity);
+    });
+    return Object.values(locationMap).filter(item => item.quantity > 0);
   };
 
   const handleDeleteMovement = () => {
@@ -235,15 +252,30 @@ export default function Stock() {
   const { availableAtSource, isPerLocation } = useMemo(() => {
     if (!selectedLot) return { availableAtSource: 0, isPerLocation: false };
     if (!selectedFromLocationId) return { availableAtSource: getLotClosingBalance(selectedLot), isPerLocation: false };
-    const balances = (stockBalances as StockBalance[] || []);
+    const allBalances = (stockBalances as StockBalance[] || []);
     const fromLocType = (selectedFromLocation as any)?.type;
     if (fromLocType === 'cold_storage') {
-      const csIn = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_inward');
-      const csOut = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_outward');
+      const csIn = allBalances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_inward');
+      const csOut = allBalances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_outward');
       return { availableAtSource: Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0)), isPerLocation: true };
     }
-    const loose = balances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'loose');
-    if (loose && Number(loose.quantity) > 0) return { availableAtSource: Number(loose.quantity), isPerLocation: true };
+    // Sum loose + cobs at this location (both are movable forms)
+    const locationBalances = allBalances.filter(b =>
+      b.lotId === selectedLot.id &&
+      b.locationId === selectedFromLocationId &&
+      (b.stockForm === 'loose' || b.stockForm === 'cobs')
+    );
+    if (locationBalances.length > 0) {
+      const qty = locationBalances.reduce((s, b) => s + Math.max(0, Number(b.quantity)), 0);
+      return { availableAtSource: qty, isPerLocation: true };
+    }
+    // If lot has no stock_balance records at all, fall back to lot's total closing balance
+    const hasAnyRecord = allBalances.some(b => b.lotId === selectedLot.id);
+    if (hasAnyRecord) {
+      // Records exist but none at this location — truly 0 at this location
+      return { availableAtSource: 0, isPerLocation: true };
+    }
+    // No records at all — use manual fallback (untracked lot)
     return { availableAtSource: getLotClosingBalance(selectedLot), isPerLocation: false };
   }, [selectedLot, selectedFromLocationId, selectedFromLocation, stockBalances, outwardRecords, outwardReturnsData]);
 
@@ -460,8 +492,8 @@ export default function Stock() {
                 <TableHead>Lot & Crop Details</TableHead>
                 <TableHead>From Warehouse</TableHead>
                 <TableHead>To Warehouse</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
+                <TableHead className="text-right">Transfer</TableHead>
+                <TableHead className="text-right">Source Balance</TableHead>
                 <TableHead>Person</TableHead>
                 <TableHead>Created By</TableHead>
                 {(canEditStock || canDeleteStock) && <TableHead className="text-right">Actions</TableHead>}
@@ -499,14 +531,21 @@ export default function Stock() {
                           <div className="text-xs text-muted-foreground">Destination</div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{m.quantity} kg</TableCell>
+                      <TableCell className="text-right">
+                        <div className="space-y-0.5">
+                          <div className="text-red-600 font-semibold text-sm">− {Number(m.quantity).toFixed(2)} kg</div>
+                          <div className="text-xs text-muted-foreground">from {getLocationName(m.fromLocationId)}</div>
+                          <div className="text-green-600 font-semibold text-sm">+ {Number(m.quantity).toFixed(2)} kg</div>
+                          <div className="text-xs text-muted-foreground">to {getLocationName(m.toLocationId)}</div>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         {m.lotId && m.fromLocationId ? (
                           <div>
                             <div className="font-medium text-sm">
                               {getStockBalanceAtLocation(m.lotId, m.fromLocationId).toFixed(2)} kg
                             </div>
-                            <div className="text-xs text-muted-foreground">at source</div>
+                            <div className="text-xs text-muted-foreground">remaining at source</div>
                           </div>
                         ) : '-'}
                       </TableCell>

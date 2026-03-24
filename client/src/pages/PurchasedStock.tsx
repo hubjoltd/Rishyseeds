@@ -102,19 +102,25 @@ export default function PurchasedStock() {
       .filter(r => r.lotId === lotId)
       .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
 
-  const getLotBalance = (lotId: number, _initialQty?: number | string): number => {
+  const getLotBalance = (lotId: number, initialQty?: number | string): number => {
     const balances = (stockBalances as StockBalance[]).filter(sb => sb.lotId === lotId);
-    if (balances.length === 0) return 0;
-    return Math.max(0, balances.reduce((total, b) => {
-      const qty = Number(b.quantity);
-      if (b.stockForm === 'cs_outward') return total - qty;
-      if (b.stockForm === 'packed' && b.packetSize) {
-        const s = b.packetSize.toLowerCase().trim();
-        if (s.endsWith('kg')) return total + qty * parseFloat(s);
-        if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
-      }
-      return total + qty;
-    }, 0));
+    if (balances.length > 0) {
+      return Math.max(0, balances.reduce((total, b) => {
+        const qty = Number(b.quantity);
+        if (b.stockForm === 'cs_outward') return total - qty;
+        if (b.stockForm === 'packed' && b.packetSize) {
+          const s = b.packetSize.toLowerCase().trim();
+          if (s.endsWith('kg')) return total + qty * parseFloat(s);
+          if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
+        }
+        return total + qty;
+      }, 0));
+    }
+    // Fallback for lots without stock_balances records
+    const outward = ((outwardRecords as any[]) || [])
+      .filter(r => r.lotId === lotId)
+      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+    return Math.max(0, Number(initialQty || 0) - outward + getLotReturned(lotId));
   };
 
   const productsGrouped = useMemo(() =>
