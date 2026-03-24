@@ -302,7 +302,13 @@ export class DatabaseStorage implements IStorage {
 
   // Locations
   async getLocations(): Promise<Location[]> {
-    return await db.select().from(locations);
+    const all = await db.select().from(locations).orderBy(locations.id);
+    const seen = new Set<string>();
+    return all.filter(loc => {
+      if (seen.has(loc.name)) return false;
+      seen.add(loc.name);
+      return true;
+    });
   }
 
   async getLocation(id: number): Promise<Location | undefined> {

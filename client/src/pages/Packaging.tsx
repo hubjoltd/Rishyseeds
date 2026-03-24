@@ -304,7 +304,7 @@ export default function Packaging() {
                     <SelectValue placeholder="Select Warehouse" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(locations as Location[] || []).map((loc: Location) => (
+                    {(locations as Location[] || []).filter((loc: Location) => loc.type === 'storage').map((loc: Location) => (
                       <SelectItem key={loc.id} value={loc.id.toString()}>
                         {loc.name}
                       </SelectItem>

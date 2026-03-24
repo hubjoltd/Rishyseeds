@@ -260,7 +260,7 @@ export default function Processing() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Warehouse / Location</label>
                 <Combobox
-                  options={(locations as Location[] || []).map((l: Location) => ({
+                  options={(locations as Location[] || []).filter((l: Location) => l.type === 'storage').map((l: Location) => ({
                     value: l.id.toString(),
                     label: l.name,
                   }))}

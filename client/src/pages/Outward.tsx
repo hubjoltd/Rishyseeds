@@ -295,7 +295,7 @@ export default function Outward() {
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(locations as Location[] || []).map((loc: Location) => (
+                      {(locations as Location[] || []).filter((loc: Location) => loc.type === 'storage').map((loc: Location) => (
                         <SelectItem key={loc.id} value={loc.id.toString()}>
                           {loc.name}
                         </SelectItem>
@@ -593,7 +593,7 @@ export default function Outward() {
                     <SelectValue placeholder="Select warehouse..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {(locations as Location[] || []).map((l: Location) => (
+                    {(locations as Location[] || []).filter((l: Location) => l.type === 'storage').map((l: Location) => (
                       <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
                     ))}
                   </SelectContent>

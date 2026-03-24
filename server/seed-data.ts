@@ -4,6 +4,11 @@ import { eq } from "drizzle-orm";
 
 export async function seedProductsAndWarehouses() {
   console.log("Seeding products and warehouses from license document...");
+  const existingLocations = await db.select({ id: locations.id }).from(locations);
+  const skipWarehouses = existingLocations.length > 0;
+  if (skipWarehouses) {
+    console.log(`Locations already seeded (${existingLocations.length} found), skipping warehouses.`);
+  }
 
   // Notified Varieties
   const notifiedProducts = [
@@ -138,21 +143,23 @@ export async function seedProductsAndWarehouses() {
   }
   console.log(`Inserted ${productsInserted} products`);
 
-  // Insert warehouses
+  // Insert warehouses (skip if already seeded)
   let warehousesInserted = 0;
-  for (const warehouse of warehouses) {
-    try {
-      await db.insert(locations).values({
-        name: warehouse.name,
-        address: warehouse.address,
-        type: warehouse.type,
-      }).onConflictDoNothing();
-      warehousesInserted++;
-    } catch (e) {
-      // Skip duplicates
+  if (!skipWarehouses) {
+    for (const warehouse of warehouses) {
+      try {
+        await db.insert(locations).values({
+          name: warehouse.name,
+          address: warehouse.address,
+          type: warehouse.type,
+        }).onConflictDoNothing();
+        warehousesInserted++;
+      } catch (e) {
+        // Skip duplicates
+      }
     }
+    console.log(`Inserted ${warehousesInserted} warehouses`);
   }
-  console.log(`Inserted ${warehousesInserted} warehouses`);
 
   console.log("Seeding complete!");
 }

@@ -31,8 +31,8 @@ export const updateUserSchema = z.object({
 // === LOCATIONS ===
 export const locations = pgTable("locations", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type").notNull(), // storage, packaging, processing, sale
+  name: text("name").notNull().unique(),
+  type: text("type").notNull(), // storage, cold_storage, office
   capacity: integer("capacity"), // Optional
   address: text("address"),
   isActive: boolean("is_active").default(true),
