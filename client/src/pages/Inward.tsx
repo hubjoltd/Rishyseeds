@@ -658,7 +658,7 @@ export default function Inward() {
                         </TableCell>
                         <TableCell className="font-medium">
                           {(() => {
-                            const bal = getLotBalance(lot.id, lot.initialQuantity);
+                            const bal = csRem + plant + office;
                             const dispatched = getLotDispatched(lot.id);
                             return (
                               <div>
