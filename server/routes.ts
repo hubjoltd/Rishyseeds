@@ -1635,13 +1635,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Input lot not found" });
       }
       
-      const product = await storage.getProduct(inputLot.productId);
-      if (!product) {
-        return res.status(404).json({ message: "Product not found" });
-      }
-      
-      const outputLotNumber = await storage.generateLotNumber(inputLot.productId);
-      
       // Get the input lot's stock balance at the processing location
       const inputStockBalances = await storage.getStockBalancesByLot(record.inputLotId);
       const processingLocationId = record.locationId;
@@ -1662,47 +1655,35 @@ export async function registerRoutes(
         });
       }
       
-      const outputLot = await storage.createLot({
-        lotNumber: outputLotNumber,
-        productId: inputLot.productId,
-        sourceType: "processing_output",
-        sourceReferenceId: processingId,
-        sourceName: `Processing #${processingId}`,
-        initialQuantity: String(outputQuantity),
-        quantityUnit: "kg",
-        stockForm: "loose",
-        status: "active",
-        inwardDate: new Date().toISOString().slice(0, 10),
-        remarks: `Output from processing ${record.processingType} of lot ${inputLot.lotNumber}`,
-      });
-      
-      // Decrease input lot stock balance
+      // Processing stays within the same lot — subtract input, add output back (net loss = waste)
       if (locationId) {
+        // Deduct the full input quantity from loose at the processing location
         await storage.adjustStockBalance(
           record.inputLotId,
           locationId,
           'loose',
           -inputQuantity
         );
-        
-        // Create stock balance for output lot
-        await storage.createStockBalance({
-          lotId: outputLot.id,
-          locationId: locationId,
-          stockForm: 'loose',
-          quantity: String(outputQuantity),
-          packetSize: null,
-        });
+        // Add back the output quantity to the same lot at the same location
+        if (outputQuantity > 0) {
+          await storage.adjustStockBalance(
+            record.inputLotId,
+            locationId,
+            'loose',
+            outputQuantity
+          );
+        }
       }
       
+      // Mark processing complete — outputLotId points back to the same input lot
       const updatedRecord = await storage.updateProcessingRecord(processingId, {
         outputQuantity: String(outputQuantity),
         wasteQuantity: String(wasteQuantity || 0),
-        outputLotId: outputLot.id,
+        outputLotId: record.inputLotId,
         status: "completed",
       });
       
-      res.json({ record: updatedRecord, outputLot });
+      res.json({ record: updatedRecord, outputLot: inputLot });
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to complete processing" });
     }
