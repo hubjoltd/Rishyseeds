@@ -112,26 +112,34 @@ export default function Stock() {
 
   const getLotClosingBalance = (lot: Lot): number => {
     const balances = (stockBalances as StockBalance[] || []).filter(sb => sb.lotId === lot.id);
-    if (balances.length > 0) {
-      return Math.max(0, balances.reduce((total, b) => {
-        const qty = Number(b.quantity);
-        if (b.stockForm === 'cs_outward') return total - qty;
-        if (b.stockForm === 'packed' && b.packetSize) {
-          const s = b.packetSize.toLowerCase().trim();
-          if (s.endsWith('kg')) return total + qty * parseFloat(s);
-          if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
-        }
-        return total + qty;
-      }, 0));
+    if (balances.length === 0) {
+      // Fallback for lots without stock_balances records
+      const dispatched = ((outwardRecords as any[]) || [])
+        .filter(r => r.lotId === lot.id)
+        .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+      const returned = ((outwardReturnsData as any[]) || [])
+        .filter(r => r.lotId === lot.id)
+        .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+      return Math.max(0, Number(lot.initialQuantity || 0) - dispatched + returned);
     }
-    // Fallback for lots without stock_balances records
-    const dispatched = ((outwardRecords as any[]) || [])
-      .filter(r => r.lotId === lot.id)
-      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
-    const returned = ((outwardReturnsData as any[]) || [])
-      .filter(r => r.lotId === lot.id)
-      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
-    return Math.max(0, Number(lot.initialQuantity || 0) - dispatched + returned);
+    let total = 0;
+    balances.forEach(b => {
+      const loc = (locations || []).find((l: any) => l.id === b.locationId);
+      const qty = Number(b.quantity);
+      if (loc?.type === 'cold_storage') {
+        if (b.stockForm === 'cs_inward') total += qty;
+        else if (b.stockForm === 'cs_outward') total -= qty;
+      } else {
+        if (b.stockForm === 'loose') {
+          total += qty;
+        } else if (b.stockForm === 'packed' && b.packetSize) {
+          const s = b.packetSize.toLowerCase().trim();
+          if (s.endsWith('kg')) total += qty * parseFloat(s);
+          else if (s.endsWith('g')) total += qty * parseFloat(s) / 1000;
+        }
+      }
+    });
+    return Math.max(0, total);
   };
 
   const getStockBalanceAtLocation = (lotId: number, locationId: number) => {
