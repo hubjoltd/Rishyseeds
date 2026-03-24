@@ -116,11 +116,43 @@ export default function PurchasedStock() {
         return total + qty;
       }, 0));
     }
-    // Fallback for lots without stock_balances records
     const outward = ((outwardRecords as any[]) || [])
       .filter(r => r.lotId === lotId)
       .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
     return Math.max(0, Number(initialQty || 0) - outward + getLotReturned(lotId));
+  };
+
+  const getLotBalanceBreakdown = (lot: Lot): { coldStorage: number; plant: number; storage: number; total: number } => {
+    const balances = (stockBalances as StockBalance[]).filter(sb => sb.lotId === lot.id);
+    if (balances.length === 0) {
+      const outward = ((outwardRecords as any[]) || []).filter(r => r.lotId === lot.id).reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
+      const fallback = Math.max(0, Number(lot.initialQuantity || 0) - outward + getLotReturned(lot.id));
+      return { coldStorage: 0, plant: fallback, storage: 0, total: fallback };
+    }
+    let coldStorage = 0, plant = 0, storage = 0;
+    for (const b of balances) {
+      const loc = (locations as Location[]).find(l => l.id === b.locationId);
+      if (!loc) continue;
+      const qty = Number(b.quantity);
+      const kgQty = (() => {
+        if (b.stockForm === 'packed' && b.packetSize) {
+          const s = b.packetSize.toLowerCase().trim();
+          if (s.endsWith('kg')) return qty * parseFloat(s);
+          if (s.endsWith('g')) return qty * parseFloat(s) / 1000;
+        }
+        return qty;
+      })();
+      if ((loc as any).type === 'cold_storage') {
+        if (b.stockForm === 'cs_inward') coldStorage += qty;
+        else if (b.stockForm === 'cs_outward') coldStorage -= qty;
+      } else {
+        if (b.stockForm === 'cs_outward') continue;
+        if ((loc as any).type === 'storage' && loc.name.toLowerCase().includes('plant')) plant += kgQty;
+        else storage += kgQty;
+      }
+    }
+    const cs = Math.max(0, coldStorage), pl = Math.max(0, plant), st = Math.max(0, storage);
+    return { coldStorage: cs, plant: pl, storage: st, total: cs + pl + st };
   };
 
   const productsGrouped = useMemo(() =>
@@ -167,6 +199,10 @@ export default function PurchasedStock() {
 
   const totalInward = filteredLots.reduce((s, l) => s + Number(l.initialQuantity || 0), 0);
   const totalBags = filteredLots.reduce((s, l) => s + Number((l as any).numberOfBags || 0), 0);
+  const totalColdStorage = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).coldStorage, 0);
+  const totalPlant = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).plant, 0);
+  const totalStorage = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).storage, 0);
+  const totalCurrentBalance = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).total, 0);
 
   // Distribution data
   const coldStorageLocations = useMemo(() =>
@@ -304,7 +340,7 @@ export default function PurchasedStock() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Lots</p>
           <p className="text-2xl font-bold text-primary">{filteredLots.length}</p>
@@ -315,16 +351,24 @@ export default function PurchasedStock() {
           <p className="text-2xl font-bold text-green-700 dark:text-green-400">{totalInward.toFixed(0)}</p>
           <p className="text-xs text-muted-foreground">KG</p>
         </div>
-        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Bags</p>
-          <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{totalBags}</p>
-          <p className="text-xs text-muted-foreground">Bags</p>
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Cold Storage</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{totalColdStorage.toFixed(0)}</p>
+          <p className="text-xs text-muted-foreground">KG</p>
         </div>
-        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800 rounded-lg px-4 py-3">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Closing Balance</p>
-          <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">
-            {filteredLots.reduce((s, l) => s + getLotBalance(l.id, l.initialQuantity), 0).toFixed(0)}
-          </p>
+        <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Plant</p>
+          <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{totalPlant.toFixed(0)}</p>
+          <p className="text-xs text-muted-foreground">KG</p>
+        </div>
+        <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Storage</p>
+          <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{totalStorage.toFixed(0)}</p>
+          <p className="text-xs text-muted-foreground">KG</p>
+        </div>
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Current Balance</p>
+          <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{totalCurrentBalance.toFixed(0)}</p>
           <p className="text-xs text-muted-foreground">KG</p>
         </div>
       </div>
@@ -355,13 +399,17 @@ export default function PurchasedStock() {
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">Germination %</th>
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">Total Qty (KGs/Tons)</th>
               <th className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide text-muted-foreground">Bags</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-blue-600 dark:text-blue-400 whitespace-nowrap">Cold Storage</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-purple-600 dark:text-purple-400">Plant</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-orange-600 dark:text-orange-400">Storage</th>
+              <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-amber-700 dark:text-amber-400 whitespace-nowrap">Current Balance</th>
               <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center">
+                <td colSpan={14} className="px-4 py-10 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Warehouse className="h-8 w-8 opacity-30" />
                     <p className="text-sm">
@@ -422,6 +470,33 @@ export default function PurchasedStock() {
                       ? <span className="font-medium">{bags}</span>
                       : <span className="text-muted-foreground">-</span>}
                   </td>
+                  {(() => {
+                    const bd = getLotBalanceBreakdown(lot);
+                    return (
+                      <>
+                        <td className="px-3 py-2.5 text-right text-xs">
+                          {bd.coldStorage > 0
+                            ? <span className="font-semibold text-blue-600 dark:text-blue-400">{bd.coldStorage.toFixed(0)}</span>
+                            : <span className="text-muted-foreground">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs">
+                          {bd.plant > 0
+                            ? <span className="font-semibold text-purple-600 dark:text-purple-400">{bd.plant.toFixed(0)}</span>
+                            : <span className="text-muted-foreground">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs">
+                          {bd.storage > 0
+                            ? <span className="font-semibold text-orange-600 dark:text-orange-400">{bd.storage.toFixed(0)}</span>
+                            : <span className="text-muted-foreground">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs">
+                          <span className={`font-bold ${bd.total <= 0 ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}>
+                            {bd.total.toFixed(0)}
+                          </span>
+                        </td>
+                      </>
+                    );
+                  })()}
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">
                     <button
                       onClick={() => openEdit(lot)}
@@ -448,13 +523,25 @@ export default function PurchasedStock() {
                 <td colSpan={7} className="px-3 py-2 text-muted-foreground uppercase tracking-wide">
                   {sorted.length} record{sorted.length !== 1 ? "s" : ""}{search ? " (filtered)" : ""}
                 </td>
-                <td className="px-3 py-2 text-center text-muted-foreground">—</td>
                 <td className="px-3 py-2 text-center text-green-700 dark:text-green-400">
                   {sorted.reduce((s, l) => s + Number(l.initialQuantity || 0), 0).toFixed(0)} KG
                 </td>
                 <td className="px-3 py-2 text-center text-amber-700 dark:text-amber-300">
                   {sorted.reduce((s, l) => s + Number((l as any).numberOfBags || 0), 0)} bags
                 </td>
+                <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">
+                  {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).coldStorage, 0).toFixed(0)} KG
+                </td>
+                <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">
+                  {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).plant, 0).toFixed(0)} KG
+                </td>
+                <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">
+                  {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).storage, 0).toFixed(0)} KG
+                </td>
+                <td className="px-3 py-2 text-right text-amber-700 dark:text-amber-400 font-bold">
+                  {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).total, 0).toFixed(0)} KG
+                </td>
+                <td />
               </tr>
             </tfoot>
           )}

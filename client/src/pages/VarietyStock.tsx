@@ -97,9 +97,9 @@ export default function VarietyStock() {
       if (loc.type === 'cold_storage') {
         if (b.stockForm === 'cs_inward') coldStorage += Number(b.quantity);
         else if (b.stockForm === 'cs_outward') coldStorage -= Number(b.quantity);
-      } else if (loc.type === 'storage') {
+      } else {
         if (b.stockForm === 'cs_outward') continue;
-        const isPlant = loc.name.toLowerCase().includes('plant');
+        const isPlant = loc.type === 'storage' && loc.name.toLowerCase().includes('plant');
         if (isPlant) {
           plant += balanceToKg(b);
         } else {
