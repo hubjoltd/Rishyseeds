@@ -1642,10 +1642,15 @@ export async function registerRoutes(
       
       const outputLotNumber = await storage.generateLotNumber(inputLot.productId);
       
-      // Get the input lot's stock balance to find the location
+      // Get the input lot's stock balance at the processing location
       const inputStockBalances = await storage.getStockBalancesByLot(record.inputLotId);
-      const inputLooseBalance = inputStockBalances.find((b: any) => b.stockForm === 'loose');
-      const locationId = inputLooseBalance?.locationId || (inputStockBalances[0]?.locationId);
+      const processingLocationId = record.locationId;
+      // Look for loose stock at the processing location first, then fall back to any loose
+      const inputLooseBalance = processingLocationId
+        ? inputStockBalances.find((b: any) => b.stockForm === 'loose' && b.locationId === processingLocationId)
+          || inputStockBalances.find((b: any) => b.stockForm === 'loose')
+        : inputStockBalances.find((b: any) => b.stockForm === 'loose');
+      const locationId = processingLocationId || inputLooseBalance?.locationId || (inputStockBalances[0]?.locationId);
       
       // Validate stock availability
       const inputQuantity = Number(record.inputQuantity);
