@@ -658,7 +658,11 @@ export default function Inward() {
                         </TableCell>
                         <TableCell className="font-medium">
                           {(() => {
-                            const bal = csRem + plant + office;
+                            const rawSeedAtNonCS = balances
+                              .filter(b => b.lotId === lot.id && b.stockForm === 'raw_seed' && !coldStorageIds.includes(b.locationId))
+                              .reduce((s, b) => s + Number(b.quantity || 0), 0);
+                            const effectiveRawSeed = Math.max(0, rawSeedAtNonCS - csIn);
+                            const bal = csRem + plant + office + effectiveRawSeed;
                             const dispatched = getLotDispatched(lot.id);
                             return (
                               <div>
