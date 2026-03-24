@@ -389,6 +389,7 @@ export class DatabaseStorage implements IStorage {
     const [toLoc] = await db.select().from(locations).where(eq(locations.id, movement.toLocationId));
     const fromIsColdStorage = fromLoc?.type === 'cold_storage';
     const toIsColdStorage = toLoc?.type === 'cold_storage';
+    let sourceFormToDecrement: string = 'loose';
 
     if (fromIsColdStorage) {
       // For cold storage source: validate cs remaining at that location
@@ -399,16 +400,29 @@ export class DatabaseStorage implements IStorage {
         throw new Error(`Cannot move ${requestedQty}kg from cold storage. Only ${csRemaining.toFixed(2)}kg remaining.`);
       }
     } else {
-      // For regular locations: validate against the loose balance at source location
-      // Fall back to lot closing balance if no stock_balance record exists yet
-      const sourceBalance = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'loose');
-      if (sourceBalance) {
-        const available = Math.max(0, Number(sourceBalance.quantity));
+      // For regular locations: check loose + raw_seed (with CS deduction) at source location
+      const sourceLoose = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'loose');
+      const sourceRawSeed = await this.getStockBalanceByLotAndLocation(movement.lotId, movement.fromLocationId, 'raw_seed');
+      const hasAnyRecord = sourceLoose || sourceRawSeed;
+      if (hasAnyRecord) {
+        const looseQty = Math.max(0, Number(sourceLoose?.quantity || 0));
+        let rawSeedAvailable = 0;
+        if (sourceRawSeed) {
+          const allLotBalances = await db.select().from(stockBalances).where(eq(stockBalances.lotId, movement.lotId));
+          const allLocs = await db.select().from(locations);
+          const totalCsInward = allLotBalances.reduce((s, b) => {
+            const loc = allLocs.find(l => l.id === b.locationId);
+            return loc?.type === 'cold_storage' && b.stockForm === 'cs_inward' ? s + Number(b.quantity) : s;
+          }, 0);
+          rawSeedAvailable = Math.max(0, Number(sourceRawSeed.quantity) - totalCsInward);
+        }
+        const available = looseQty + rawSeedAvailable;
         if (requestedQty > available + 0.001) {
           throw new Error(`Cannot move ${requestedQty}kg. Only ${available.toFixed(2)}kg available at source location.`);
         }
+        sourceFormToDecrement = looseQty >= requestedQty ? 'loose' : 'raw_seed';
       } else {
-        // No pre-existing balance record — validate against lot closing balance as fallback
+        // No balance records at this location — fallback to lot closing balance
         const [lot] = await db.select().from(lots).where(eq(lots.id, movement.lotId));
         if (!lot) throw new Error("Lot not found");
         const allOutward = await db.select().from(outwardRecords).where(eq(outwardRecords.lotId, movement.lotId));
@@ -419,15 +433,15 @@ export class DatabaseStorage implements IStorage {
         if (requestedQty > lotClosingBalance + 0.001) {
           throw new Error(`Cannot move ${requestedQty}kg. Only ${lotClosingBalance.toFixed(2)}kg available in this lot.`);
         }
+        sourceFormToDecrement = 'loose';
       }
     }
 
-    // Update source: if cold storage, increase cs_outward (tracking cumulative outflow)
-    // else decrease loose
+    // Update source: if cold storage, increase cs_outward; else decrease loose or raw_seed
     if (fromIsColdStorage) {
       await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'cs_outward', requestedQty);
     } else {
-      await this.adjustStockBalance(movement.lotId, movement.fromLocationId, 'loose', -requestedQty);
+      await this.adjustStockBalance(movement.lotId, movement.fromLocationId, sourceFormToDecrement, -requestedQty);
     }
 
     // Update destination: if cold storage, increase cs_inward (tracking cumulative inflow)
