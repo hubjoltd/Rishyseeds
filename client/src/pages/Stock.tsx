@@ -155,7 +155,15 @@ export default function Stock() {
     }
     const loose  = balances.filter(sb => sb.stockForm === 'loose').reduce((s, sb) => s + Number(sb.quantity), 0);
     const packed = balances.filter(sb => sb.stockForm === 'packed').reduce((s, sb) => s + Number(sb.quantity), 0);
-    return Math.max(0, loose + packed);
+    // Also count raw_seed at this location, deducting total cs_inward to avoid double-counting
+    const rawSeedQty = balances.filter(sb => sb.stockForm === 'raw_seed').reduce((s, sb) => s + Number(sb.quantity), 0);
+    const allLotBalances = (stockBalances as StockBalance[] || []).filter(sb => sb.lotId === lotId);
+    const totalCsInward = allLotBalances.reduce((s, sb) => {
+      const loc = (locations || []).find((l: any) => l.id === sb.locationId);
+      return loc?.type === 'cold_storage' && sb.stockForm === 'cs_inward' ? s + Number(sb.quantity) : s;
+    }, 0);
+    const rawSeedEffective = Math.max(0, rawSeedQty - totalCsInward);
+    return Math.max(0, loose + packed + rawSeedEffective);
   };
 
   const getStockByWarehouse = (lotId: number) => {
