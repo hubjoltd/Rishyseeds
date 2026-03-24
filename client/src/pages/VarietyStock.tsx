@@ -173,7 +173,7 @@ export default function VarietyStock() {
       map[product.id].coldStorageBalance += breakdown.coldStorage;
       map[product.id].plantBalance += breakdown.plant;
       map[product.id].storageBalance += breakdown.storage;
-      map[product.id].closingBalance += breakdown.total;
+      map[product.id].closingBalance += breakdown.plant + breakdown.storage;
       map[product.id].lots.push(lot);
     }
     return Object.values(map).sort((a, b) => a.crop.localeCompare(b.crop));

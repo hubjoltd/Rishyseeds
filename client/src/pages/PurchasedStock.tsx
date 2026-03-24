@@ -222,7 +222,10 @@ export default function PurchasedStock() {
   const totalColdStorage = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).coldStorage, 0);
   const totalPlant = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).plant, 0);
   const totalStorage = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).storage, 0);
-  const totalCurrentBalance = filteredLots.reduce((s, l) => s + getLotBalanceBreakdown(l).total, 0);
+  const totalCurrentBalance = filteredLots.reduce((s, l) => {
+    const bd = getLotBalanceBreakdown(l);
+    return s + bd.plant + bd.storage;
+  }, 0);
 
   // Distribution data
   const coldStorageLocations = useMemo(() =>
@@ -510,9 +513,14 @@ export default function PurchasedStock() {
                             : <span className="text-muted-foreground">-</span>}
                         </td>
                         <td className="px-3 py-2.5 text-right text-xs">
-                          <span className={`font-bold ${bd.total <= 0 ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}>
-                            {bd.total.toFixed(0)}
-                          </span>
+                          {(() => {
+                            const available = bd.plant + bd.storage;
+                            return (
+                              <span className={`font-bold ${available <= 0 ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}>
+                                {available.toFixed(0)}
+                              </span>
+                            );
+                          })()}
                         </td>
                       </>
                     );
@@ -559,7 +567,7 @@ export default function PurchasedStock() {
                   {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).storage, 0).toFixed(0)} KG
                 </td>
                 <td className="px-3 py-2 text-right text-amber-700 dark:text-amber-400 font-bold">
-                  {sorted.reduce((s, l) => s + getLotBalanceBreakdown(l).total, 0).toFixed(0)} KG
+                  {sorted.reduce((s, l) => { const bd = getLotBalanceBreakdown(l); return s + bd.plant + bd.storage; }, 0).toFixed(0)} KG
                 </td>
                 <td />
               </tr>
