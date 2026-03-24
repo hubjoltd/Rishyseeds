@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { useLots, useProducts, useOutwardRecords, useOutwardReturns } from "@/hooks/use-inventory";
-import type { Lot, Product, OutwardRecord } from "@shared/schema";
+import { useLots, useProducts, useOutwardRecords, useOutwardReturns, useStockBalances } from "@/hooks/use-inventory";
+import type { Lot, Product, OutwardRecord, StockBalance } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -26,6 +26,7 @@ export default function VarietyStock() {
   const { data: products = [] } = useProducts() as { data: Product[] };
   const { data: outwardRecords = [] } = useOutwardRecords() as { data: OutwardRecord[] };
   const { data: outwardReturnsData = [] } = useOutwardReturns();
+  const { data: stockBalances = [] } = useStockBalances() as { data: StockBalance[] };
 
   const [search, setSearch] = useState("");
   const [selectedYear, setSelectedYear] = useState("all");
@@ -57,8 +58,20 @@ export default function VarietyStock() {
     return Math.max(0, outward - returned);
   };
 
-  const getLotBalance = (lot: Lot): number =>
-    Math.max(0, Number(lot.initialQuantity || 0) - getLotOutward(lot.id));
+  const getLotBalance = (lot: Lot): number => {
+    const balances = (stockBalances as StockBalance[]).filter(sb => sb.lotId === lot.id);
+    if (balances.length === 0) return 0;
+    return Math.max(0, balances.reduce((total, b) => {
+      const qty = Number(b.quantity);
+      if (b.stockForm === 'cs_outward') return total - qty;
+      if (b.stockForm === 'packed' && b.packetSize) {
+        const s = b.packetSize.toLowerCase().trim();
+        if (s.endsWith('kg')) return total + qty * parseFloat(s);
+        if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
+      }
+      return total + qty;
+    }, 0));
+  };
 
   type VarietyRow = {
     productId: number;
@@ -100,7 +113,7 @@ export default function VarietyStock() {
       map[product.id].lots.push(lot);
     }
     return Object.values(map).sort((a, b) => a.crop.localeCompare(b.crop));
-  }, [filteredLots, products, outwardRecords]);
+  }, [filteredLots, products, outwardRecords, stockBalances]);
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();

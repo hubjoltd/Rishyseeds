@@ -63,15 +63,18 @@ export default function Reports() {
   };
 
   const getLotCurrentBalance = (lotId: number): number => {
-    const lot = (lots || []).find(l => l.id === lotId);
-    if (!lot) return 0;
-    const outward = (outwardRecords || [])
-      .filter(r => r.lotId === lotId)
-      .reduce((s, r) => s + Number(r.quantity || 0), 0);
-    const returned = (outwardReturnsData || [])
-      .filter((r: any) => r.lotId === lotId)
-      .reduce((s: number, r: any) => s + Number(r.quantity || 0), 0);
-    return Math.max(0, Number(lot.initialQuantity || 0) - outward + returned);
+    const balances = (stockBalances || []).filter(b => b.lotId === lotId);
+    if (balances.length === 0) return 0;
+    return Math.max(0, balances.reduce((total, b) => {
+      const qty = Number(b.quantity);
+      if (b.stockForm === 'cs_outward') return total - qty;
+      if (b.stockForm === 'packed' && b.packetSize) {
+        const s = b.packetSize.toLowerCase().trim();
+        if (s.endsWith('kg')) return total + qty * parseFloat(s);
+        if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
+      }
+      return total + qty;
+    }, 0));
   };
 
   const handlePrint = () => {

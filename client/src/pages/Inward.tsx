@@ -334,9 +334,20 @@ export default function Inward() {
     return Math.max(0, outward - returned);
   };
 
-  const getLotBalance = (lotId: number, initialQty: number | string) => {
-    const dispatched = getLotDispatched(lotId);
-    return Math.max(0, Number(initialQty) - dispatched);
+  const getLotBalance = (lotId: number, _initialQty?: number | string) => {
+    const balances = (stockBalances as StockBalance[]) ? 
+      (stockBalances as StockBalance[]).filter(sb => sb.lotId === lotId) : [];
+    if (balances.length === 0) return 0;
+    return Math.max(0, balances.reduce((total, b) => {
+      const qty = Number(b.quantity);
+      if (b.stockForm === 'cs_outward') return total - qty;
+      if (b.stockForm === 'packed' && b.packetSize) {
+        const s = b.packetSize.toLowerCase().trim();
+        if (s.endsWith('kg')) return total + qty * parseFloat(s);
+        if (s.endsWith('g')) return total + qty * parseFloat(s) / 1000;
+      }
+      return total + qty;
+    }, 0));
   };
 
   const handleSaveDistribution = (lotId: number, vals: z.infer<typeof stockDistSchema>) => {
