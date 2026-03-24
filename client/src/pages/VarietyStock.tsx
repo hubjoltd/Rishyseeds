@@ -86,6 +86,15 @@ export default function VarietyStock() {
       return { coldStorage: 0, plant: fallback, storage: 0, total: fallback };
     }
 
+    // Total cs_inward: stock that physically left the inward location for cold storage.
+    // raw_seed balance at the inward location equals initialQuantity and is never auto-decremented
+    // when stock moves to CS, so we must deduct totalCsInward to avoid double-counting.
+    const totalCsInward = balances.reduce((s, b) => {
+      const loc = (locations as Location[]).find(l => l.id === b.locationId);
+      return (loc && loc.type === 'cold_storage' && b.stockForm === 'cs_inward')
+        ? s + Number(b.quantity) : s;
+    }, 0);
+
     let coldStorage = 0;
     let plant = 0;
     let storage = 0;
@@ -100,10 +109,15 @@ export default function VarietyStock() {
       } else {
         if (b.stockForm === 'cs_outward') continue;
         const isPlant = loc.type === 'storage' && loc.name.toLowerCase().includes('plant');
-        if (isPlant) {
-          plant += balanceToKg(b);
+        if (b.stockForm === 'raw_seed' || b.stockForm === 'cobs') {
+          // Deduct cs_inward from raw balance — those KGs already moved to cold storage
+          const effective = Math.max(0, balanceToKg(b) - totalCsInward);
+          if (isPlant) plant += effective;
+          else storage += effective;
         } else {
-          storage += balanceToKg(b);
+          // loose / packed — properly maintained current balances, use as-is
+          if (isPlant) plant += balanceToKg(b);
+          else storage += balanceToKg(b);
         }
       }
     }

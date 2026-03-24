@@ -129,6 +129,17 @@ export default function PurchasedStock() {
       const fallback = Math.max(0, Number(lot.initialQuantity || 0) - outward + getLotReturned(lot.id));
       return { coldStorage: 0, plant: fallback, storage: 0, total: fallback };
     }
+
+    // Total cs_inward for this lot: stock that physically LEFT the inward location for cold storage.
+    // The raw_seed balance at the inward location is set to initialQuantity on lot creation and is
+    // never automatically decremented when stock moves to CS, so we must deduct it here to avoid
+    // double-counting (raw_seed + cs_inward − cs_outward would overstate the total).
+    const totalCsInward = balances.reduce((s, b) => {
+      const loc = (locations as Location[]).find(l => l.id === b.locationId);
+      return (loc && (loc as any).type === 'cold_storage' && b.stockForm === 'cs_inward')
+        ? s + Number(b.quantity) : s;
+    }, 0);
+
     let coldStorage = 0, plant = 0, storage = 0;
     for (const b of balances) {
       const loc = (locations as Location[]).find(l => l.id === b.locationId);
@@ -147,8 +158,17 @@ export default function PurchasedStock() {
         else if (b.stockForm === 'cs_outward') coldStorage -= qty;
       } else {
         if (b.stockForm === 'cs_outward') continue;
-        if ((loc as any).type === 'storage' && loc.name.toLowerCase().includes('plant')) plant += kgQty;
-        else storage += kgQty;
+        const isPlant = (loc as any).type === 'storage' && loc.name.toLowerCase().includes('plant');
+        if (b.stockForm === 'raw_seed' || b.stockForm === 'cobs') {
+          // Deduct cs_inward from raw balance — those KGs already moved to cold storage
+          const effective = Math.max(0, kgQty - totalCsInward);
+          if (isPlant) plant += effective;
+          else storage += effective;
+        } else {
+          // loose / packed — properly maintained current balances, use as-is
+          if (isPlant) plant += kgQty;
+          else storage += kgQty;
+        }
       }
     }
     const cs = Math.max(0, coldStorage), pl = Math.max(0, plant), st = Math.max(0, storage);
