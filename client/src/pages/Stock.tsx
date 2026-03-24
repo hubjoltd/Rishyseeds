@@ -267,21 +267,32 @@ export default function Stock() {
       const csOut = allBalances.find(b => b.lotId === selectedLot.id && b.locationId === selectedFromLocationId && b.stockForm === 'cs_outward');
       return { availableAtSource: Math.max(0, Number(csIn?.quantity || 0) - Number(csOut?.quantity || 0)), isPerLocation: true };
     }
-    // Sum loose + cobs at this location (both are movable forms)
-    const locationBalances = allBalances.filter(b =>
-      b.lotId === selectedLot.id &&
-      b.locationId === selectedFromLocationId &&
-      (b.stockForm === 'loose' || b.stockForm === 'cobs')
-    );
-    if (locationBalances.length > 0) {
-      const qty = locationBalances.reduce((s, b) => s + Math.max(0, Number(b.quantity)), 0);
+    // For non-CS locations: include loose, cobs, and raw_seed (with CS deduction)
+    const allLotBalances = allBalances.filter(b => b.lotId === selectedLot.id);
+    const hasAnyRecord = allLotBalances.length > 0;
+    if (!hasAnyRecord) {
+      // No records at all — fall through to fallback below
+    } else {
+      const locationBalances = allLotBalances.filter(b => b.locationId === selectedFromLocationId);
+      if (locationBalances.length === 0) {
+        // Records exist but none at this location — truly 0
+        return { availableAtSource: 0, isPerLocation: true };
+      }
+      // Compute total cs_inward across all CS locations to deduct from raw_seed
+      const totalCsInward = allLotBalances.reduce((s, b) => {
+        const loc = (locations || []).find((l: any) => l.id === b.locationId);
+        return loc?.type === 'cold_storage' && b.stockForm === 'cs_inward' ? s + Number(b.quantity) : s;
+      }, 0);
+      let qty = 0;
+      locationBalances.forEach(b => {
+        const n = Math.max(0, Number(b.quantity));
+        if (b.stockForm === 'loose' || b.stockForm === 'cobs') {
+          qty += n;
+        } else if (b.stockForm === 'raw_seed') {
+          qty += Math.max(0, n - totalCsInward);
+        }
+      });
       return { availableAtSource: qty, isPerLocation: true };
-    }
-    // If lot has no stock_balance records at all, fall back to lot's total closing balance
-    const hasAnyRecord = allBalances.some(b => b.lotId === selectedLot.id);
-    if (hasAnyRecord) {
-      // Records exist but none at this location — truly 0 at this location
-      return { availableAtSource: 0, isPerLocation: true };
     }
     // No records at all — use manual fallback (untracked lot)
     return { availableAtSource: getLotClosingBalance(selectedLot), isPerLocation: false };
