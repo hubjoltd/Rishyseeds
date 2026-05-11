@@ -277,9 +277,9 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* GPS route polyline — orange */}
+      {/* GPS route polyline — blue */}
       {gpsPoints.length > 1 && (
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#f97316", weight: 5, opacity: 0.9 }} />
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#1d4ed8", weight: 5, opacity: 0.95 }} />
       )}
 
       {/* Stoppage markers */}
@@ -705,7 +705,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           routePoints={routePoints}
           chkStops={chkStops}
           mapTypeId={mapTypeId}
-          routeColor={altMode ? "#2563eb" : "#f97316"}
+          routeColor={"#1d4ed8"}
           playbackPos={playbackPos}
           onMapReady={(m) => { leafletMap.current = m; }}
         />
