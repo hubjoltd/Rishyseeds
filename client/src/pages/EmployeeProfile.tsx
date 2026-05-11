@@ -273,13 +273,27 @@ function LiveMapInner({
   const currentPos: [number, number] | null = !punchOutLat && gpsPoints.length > 0
     ? gpsPoints[gpsPoints.length - 1] : null;
 
+  // Fallback waypoint route: punch-in → visits → punch-out (used when GPS data is sparse)
+  const waypointLine = useMemo<[number, number][]>(() => {
+    const pts: [number, number][] = [];
+    if (punchInLat && punchInLng) pts.push([punchInLat, punchInLng]);
+    visitStops.filter(v => v.lat && v.lng).forEach(v => pts.push([v.lat, v.lng]));
+    if (punchOutLat && punchOutLng) pts.push([punchOutLat, punchOutLng]);
+    return pts;
+  }, [punchInLat, punchInLng, punchOutLat, punchOutLng, visitStops]);
+
   return (
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* GPS route polyline — blue */}
+      {/* GPS route polyline — solid blue when data is rich */}
       {gpsPoints.length > 1 && (
         <Polyline positions={gpsPoints} pathOptions={{ color: "#1d4ed8", weight: 5, opacity: 0.95 }} />
+      )}
+
+      {/* Fallback dashed route — connects punch-in/visits/punch-out when GPS points unavailable */}
+      {gpsPoints.length <= 1 && waypointLine.length > 1 && (
+        <Polyline positions={waypointLine} pathOptions={{ color: "#1d4ed8", weight: 4, opacity: 0.7, dashArray: "10 8" }} />
       )}
 
       {/* Stoppage markers */}
@@ -394,10 +408,25 @@ function LiveMap({
 
       {/* Legend — bottom-left */}
       <div className="absolute bottom-10 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5"><span className="inline-block w-6 h-[3px] rounded bg-blue-600"/><span>Travelled</span></div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-6 h-[3px] rounded bg-blue-600"/>
+          <span>Travelled (GPS)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-6 border-t-2 border-dashed border-blue-500" style={{ height: 0 }}/>
+          <span>Route (Approx.)</span>
+        </div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500"/><span>Stoppage</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
       </div>
+
+      {/* No-data badge — bottom-center */}
+      {gpsPoints.length === 0 && (
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1001] bg-white/90 border border-blue-200 rounded-full shadow px-3 py-1 text-[11px] text-blue-700 font-medium flex items-center gap-1.5 whitespace-nowrap">
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-300" />
+          GPS tracking starts on next punch-in
+        </div>
+      )}
     </div>
   );
 }
