@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Combobox } from "@/components/ui/combobox";
-import { Loader2, User, Camera, MapPin, Share2, Image } from "lucide-react";
+import { Loader2, User, Camera, MapPin, Share2, Image, Gauge, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
@@ -142,6 +142,20 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   const [expensePeriod, setExpensePeriod] = useState<"today" | "month" | "all">("today");
 
+  // Odometer dialog state
+  const [startOdoDialogOpen, setStartOdoDialogOpen] = useState(false);
+  const [endOdoDialogOpen, setEndOdoDialogOpen] = useState(false);
+  const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
+  const [startOdoFile, setStartOdoFile] = useState<File | null>(null);
+  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(null);
+  const [startOdoReading, setStartOdoReading] = useState("");
+  const [endOdoFile, setEndOdoFile] = useState<File | null>(null);
+  const [endOdoPreview, setEndOdoPreview] = useState<string | null>(null);
+  const [endOdoReading, setEndOdoReading] = useState("");
+  const startOdoPhotoRef = useRef<HTMLInputElement>(null);
+  const endOdoPhotoRef = useRef<HTMLInputElement>(null);
+  const pendingOdoRef = useRef<"start" | "end" | null>(null);
+
   useEffect(() => { requestLocationPermission().then(setLocationGranted); }, []);
 
   const handleAuthError = (res: Response) => {
@@ -192,7 +206,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
-  // GPS pinging: send location every 30 seconds while punched in
+  // GPS tracking: use watchPosition for continuous background tracking + Wake Lock to prevent sleep
   useEffect(() => {
     if (!isPunchedIn) {
       setGpsStatus('idle');
@@ -202,46 +216,73 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       setGpsStatus('error');
       return;
     }
-    const sendLocation = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          fetch("/api/employee/location", {
-            method: "POST",
-            headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-              speed: pos.coords.speed,
-            }),
-          })
-            .then((res) => {
-              if (res.ok) setGpsStatus('active');
-              else setGpsStatus('error');
-            })
-            .catch(() => setGpsStatus('error'));
-        },
-        (err) => {
-          setGpsStatus('error');
-          if (err.code === 1) {
-            toast({
-              title: "Location Permission Denied",
-              description: "Enable location access in your browser settings to allow GPS tracking.",
-              variant: "destructive",
-            });
-          }
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
-      );
+
+    let wakeLock: any = null;
+    const acquireWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch {}
     };
-    sendLocation();
-    const intervalId = setInterval(sendLocation, 30000);
-    // When tab becomes visible again after being backgrounded, fire a ping immediately
-    const onVisible = () => { if (document.visibilityState === 'visible') sendLocation(); };
+    acquireWakeLock();
+
+    let lastSentAt = 0;
+    const THROTTLE_MS = 30000;
+
+    const postLocation = (pos: GeolocationPosition) => {
+      fetch("/api/employee/location", {
+        method: "POST",
+        headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          speed: pos.coords.speed,
+        }),
+      })
+        .then((r) => { if (r.ok) setGpsStatus('active'); else setGpsStatus('error'); })
+        .catch(() => setGpsStatus('error'));
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now();
+        if (now - lastSentAt >= THROTTLE_MS) {
+          lastSentAt = now;
+          postLocation(pos);
+        }
+      },
+      (err) => {
+        setGpsStatus('error');
+        if (err.code === 1) {
+          toast({
+            title: "Location Permission Denied",
+            description: "Enable location access in your browser settings for GPS tracking.",
+            variant: "destructive",
+          });
+        }
+      },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
+    );
+
+    // Re-acquire wake lock and force an immediate ping when tab regains focus
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        acquireWakeLock();
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { lastSentAt = Date.now(); postLocation(pos); },
+          () => {},
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        );
+      }
+    };
     document.addEventListener('visibilitychange', onVisible);
+
     return () => {
-      clearInterval(intervalId);
+      navigator.geolocation.clearWatch(watchId);
       document.removeEventListener('visibilitychange', onVisible);
+      if (wakeLock) wakeLock.release().catch(() => {});
     };
   }, [isPunchedIn]);
 
@@ -296,9 +337,68 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       setPunchTime(time); setShareType(type);
       if (data.location) setPunchLocation(data.location);
       toast({ title: type === "in" ? "Punched In" : "Punched Out", description: `Punched ${type} at ${time}`, variant: type === "in" ? "success" : "destructive" });
+      // Mark which odo dialog to open after share dialog closes
+      if (type === "in") {
+        pendingOdoRef.current = "start";
+      } else if (type === "out") {
+        // Check for open expense to complete
+        fetch("/api/employee/expenses/open-trip", { headers: getEmployeeAuthHeaders() })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (d && d.id) { setOpenExpenseId(d.id); pendingOdoRef.current = "end"; }
+          })
+          .catch(() => {});
+      }
       setShareDialogOpen(true);
     },
     onError: (error: Error) => { if (error.message !== "Session expired") toast({ title: "Error", description: error.message, variant: "destructive" }); },
+  });
+
+  const saveStartOdoMutation = useMutation({
+    mutationFn: async () => {
+      const fd = new FormData();
+      fd.append("expenseDate", format(new Date(), "yyyy-MM-dd"));
+      fd.append("title", `Trip Expense - ${format(new Date(), "dd MMM yyyy")}`);
+      if (startOdoReading) fd.append("startingOdometer", startOdoReading);
+      if (startOdoFile) fd.append("startingOdometerPhoto", startOdoFile);
+      const res = await fetch("/api/employee/expenses/open-trip", {
+        method: "POST",
+        headers: getEmployeeAuthHeaders(),
+        body: fd,
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed to save"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      setStartOdoDialogOpen(false);
+      setStartOdoFile(null); setStartOdoPreview(null); setStartOdoReading("");
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
+      toast({ title: "Start odometer saved", description: "Expense opened — complete it when you punch out." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const saveEndOdoMutation = useMutation({
+    mutationFn: async () => {
+      if (!openExpenseId) throw new Error("No open expense found");
+      const fd = new FormData();
+      if (endOdoReading) fd.append("endOdometer", endOdoReading);
+      if (endOdoFile) fd.append("endOdometerPhoto", endOdoFile);
+      const res = await fetch(`/api/employee/expenses/${openExpenseId}/complete-trip`, {
+        method: "PATCH",
+        headers: getEmployeeAuthHeaders(),
+        body: fd,
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed to save"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      setEndOdoDialogOpen(false);
+      setEndOdoFile(null); setEndOdoPreview(null); setEndOdoReading(""); setOpenExpenseId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
+      toast({ title: "Trip expense completed", description: "Expense submitted for approval." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -874,8 +974,107 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
         </DialogContent>
       </Dialog>
 
+      {/* ── Start Odometer Dialog (after punch-in) ── */}
+      <Dialog open={startOdoDialogOpen} onOpenChange={(o) => { if (!o) { setStartOdoDialogOpen(false); setStartOdoFile(null); setStartOdoPreview(null); setStartOdoReading(""); } }}>
+        <DialogContent className="max-w-sm mx-auto">
+          <DialogHeader>
+            <div className="bg-green-700 -mx-6 -mt-6 px-5 pt-5 pb-4 rounded-t-lg">
+              <DialogTitle className="text-white font-bold text-base flex items-center gap-2">
+                <Gauge className="w-4 h-4" /> Enter Start Odometer
+              </DialogTitle>
+              <p className="text-green-200 text-xs mt-1">Capture your starting odometer reading for today's trip expense.</p>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <p className="text-xs text-gray-500 font-semibold mb-2">Odometer Photo <span className="text-red-500">*</span></p>
+              {startOdoPreview ? (
+                <div className="relative w-full h-36">
+                  <img src={startOdoPreview} alt="Start odo" className="w-full h-36 object-cover rounded-lg border border-gray-200" />
+                  <button onClick={() => { setStartOdoFile(null); setStartOdoPreview(null); }} className="absolute top-1.5 right-1.5 bg-white rounded-full shadow p-0.5 border border-gray-200">
+                    <X className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => startOdoPhotoRef.current?.click()} className="w-full h-36 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-green-500 hover:text-green-600 transition-colors">
+                  <Camera className="w-7 h-7" />
+                  <span className="text-xs font-medium">Capture odometer photo</span>
+                </button>
+              )}
+              <input ref={startOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setStartOdoFile(f); const r = new FileReader(); r.onload = () => setStartOdoPreview(r.result as string); r.readAsDataURL(f); e.target.value = ""; }} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold block mb-1.5">Starting Reading (km)</label>
+              <Input type="number" placeholder="e.g. 50000" value={startOdoReading} onChange={e => setStartOdoReading(e.target.value)} className="text-sm" data-testid="input-start-odo-reading" />
+            </div>
+            <Button className="w-full bg-green-700 hover:bg-green-800 font-bold py-3" disabled={!startOdoFile || saveStartOdoMutation.isPending} onClick={() => saveStartOdoMutation.mutate()} data-testid="button-save-start-odo">
+              {saveStartOdoMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Gauge className="w-4 h-4 mr-2" />}
+              Save Start Odometer
+            </Button>
+            <button onClick={() => setStartOdoDialogOpen(false)} className="w-full text-xs text-gray-400 underline text-center py-1">Skip for now</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── End Odometer Dialog (after punch-out) ── */}
+      <Dialog open={endOdoDialogOpen} onOpenChange={(o) => { if (!o) { setEndOdoDialogOpen(false); setEndOdoFile(null); setEndOdoPreview(null); setEndOdoReading(""); } }}>
+        <DialogContent className="max-w-sm mx-auto">
+          <DialogHeader>
+            <div className="bg-red-600 -mx-6 -mt-6 px-5 pt-5 pb-4 rounded-t-lg">
+              <DialogTitle className="text-white font-bold text-base flex items-center gap-2">
+                <Gauge className="w-4 h-4" /> Enter End Odometer
+              </DialogTitle>
+              <p className="text-red-100 text-xs mt-1">Capture your ending odometer to complete today's trip expense.</p>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <p className="text-xs text-gray-500 font-semibold mb-2">Odometer Photo <span className="text-red-500">*</span></p>
+              {endOdoPreview ? (
+                <div className="relative w-full h-36">
+                  <img src={endOdoPreview} alt="End odo" className="w-full h-36 object-cover rounded-lg border border-gray-200" />
+                  <button onClick={() => { setEndOdoFile(null); setEndOdoPreview(null); }} className="absolute top-1.5 right-1.5 bg-white rounded-full shadow p-0.5 border border-gray-200">
+                    <X className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => endOdoPhotoRef.current?.click()} className="w-full h-36 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-red-500 hover:text-red-600 transition-colors">
+                  <Camera className="w-7 h-7" />
+                  <span className="text-xs font-medium">Capture odometer photo</span>
+                </button>
+              )}
+              <input ref={endOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setEndOdoFile(f); const r = new FileReader(); r.onload = () => setEndOdoPreview(r.result as string); r.readAsDataURL(f); e.target.value = ""; }} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-semibold block mb-1.5">Ending Reading (km)</label>
+              <Input type="number" placeholder="e.g. 50120" value={endOdoReading} onChange={e => setEndOdoReading(e.target.value)} className="text-sm" data-testid="input-end-odo-reading" />
+            </div>
+            <Button className="w-full bg-red-600 hover:bg-red-700 font-bold py-3" disabled={!endOdoFile || saveEndOdoMutation.isPending} onClick={() => saveEndOdoMutation.mutate()} data-testid="button-save-end-odo">
+              {saveEndOdoMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Gauge className="w-4 h-4 mr-2" />}
+              Complete Trip Expense
+            </Button>
+            <button onClick={() => setEndOdoDialogOpen(false)} className="w-full text-xs text-gray-400 underline text-center py-1">Skip for now</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── WhatsApp Share Dialog ── */}
-      <Dialog open={shareDialogOpen} onOpenChange={(o) => { setShareDialogOpen(o); if (!o) { setEmployeePhoto(null); setPhotoServerUrl(null); setPunchLocation(null); } }}>
+      <Dialog open={shareDialogOpen} onOpenChange={(o) => {
+        setShareDialogOpen(o);
+        if (!o) {
+          setEmployeePhoto(null); setPhotoServerUrl(null); setPunchLocation(null);
+          // After share dialog closes, open the appropriate odo dialog
+          const pending = pendingOdoRef.current;
+          pendingOdoRef.current = null;
+          if (pending === "start") {
+            setTimeout(() => setStartOdoDialogOpen(true), 200);
+          } else if (pending === "end" && openExpenseId) {
+            setTimeout(() => setEndOdoDialogOpen(true), 200);
+          }
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{shareType === "in" ? "Punched In Successfully" : "Punched Out Successfully"}</DialogTitle>

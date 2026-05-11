@@ -3453,6 +3453,102 @@ export async function registerRoutes(
   });
 
   // Employee portal expense routes
+
+  // Get the current open trip expense (started at punch-in, completed at punch-out)
+  app.get("/api/employee/expenses/open-trip", async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const list = await storage.getExpensesByEmployee(empId);
+      const open = list.find((e: any) => e.status === "open");
+      res.json(open || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Create an open trip expense with only start odometer (called at punch-in)
+  app.post("/api/employee/expenses/open-trip", upload.fields([
+    { name: "startingOdometerPhoto", maxCount: 1 },
+  ]), async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const existing = await storage.getExpensesByEmployee(empId);
+      if (existing.find((e: any) => e.status === "open")) {
+        return res.status(400).json({ message: "An open trip expense already exists. Complete it by punching out." });
+      }
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const countResult = await storage.getExpenses();
+      const nextNum = countResult.length + 1;
+      const expenseCode = `EXP-${String(nextNum).padStart(4, "0")}`;
+      const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+      const startPhotoPath = files.startingOdometerPhoto?.[0] ? `/uploads/${files.startingOdometerPhoto[0].filename}` : undefined;
+      const today = new Date().toISOString().slice(0, 10);
+      const expense = await storage.createExpense({
+        expenseCode,
+        title: req.body.title || `Trip Expense - ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`,
+        employeeDbId: empId,
+        category: "Travel",
+        type: "LOCAL TRAVEL CLAIM",
+        amount: "0",
+        expenseDate: req.body.expenseDate || today,
+        status: "open",
+        ...(req.body.startingOdometer ? { startingOdometer: req.body.startingOdometer } : {}),
+        ...(startPhotoPath ? { startingOdometerPhoto: startPhotoPath } : {}),
+      } as any);
+      res.status(201).json(expense);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Complete an open trip expense by adding end odometer (called at punch-out)
+  app.patch("/api/employee/expenses/:id/complete-trip", upload.fields([
+    { name: "endOdometerPhoto", maxCount: 1 },
+  ]), async (req: any, res) => {
+    try {
+      const empId = req.employeeId;
+      if (!empId) return res.status(401).json({ message: "Not authenticated" });
+      const expense = await storage.getExpense(parseInt(req.params.id));
+      if (!expense) return res.status(404).json({ message: "Expense not found" });
+      if (expense.employeeDbId !== empId) return res.status(403).json({ message: "Not authorized" });
+      if (expense.status !== "open") return res.status(400).json({ message: "Expense is not open" });
+      const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+      const endPhotoPath = files.endOdometerPhoto?.[0] ? `/uploads/${files.endOdometerPhoto[0].filename}` : undefined;
+      const endOdo = req.body.endOdometer ? parseFloat(req.body.endOdometer) : null;
+      const startOdo = expense.startingOdometer ? parseFloat(expense.startingOdometer) : null;
+      const totalDistance = endOdo && startOdo && endOdo > startOdo ? endOdo - startOdo : null;
+      const amtPerKm = expense.amountPerKm ? parseFloat(expense.amountPerKm) : 1;
+      const totalTravelAmt = totalDistance ? totalDistance * amtPerKm : null;
+      const updated = await storage.updateExpense(expense.id, {
+        status: "pending",
+        ...(endOdo !== null ? { endOdometer: String(endOdo) } : {}),
+        ...(endPhotoPath ? { endOdometerPhoto: endPhotoPath } : {}),
+        ...(totalDistance !== null ? { totalDistance: String(totalDistance) } : {}),
+        ...(totalTravelAmt !== null ? {
+          totalTravelAmount: String(totalTravelAmt),
+          amount: String(totalTravelAmt),
+          finalAmount: String(totalTravelAmt),
+        } : {}),
+      });
+      const emp = await storage.getEmployee(empId);
+      if (emp) {
+        await storage.createExpenseAudit({
+          expenseId: expense.id,
+          fromStatus: "open",
+          toStatus: "pending",
+          changedByName: emp.fullName,
+          notes: "Trip completed via punch-out",
+        });
+      }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.get("/api/employee/expenses", async (req: any, res) => {
     try {
       const empId = req.employeeId;

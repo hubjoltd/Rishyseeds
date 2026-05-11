@@ -862,7 +862,7 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
-  const [sharedMapTypeId, setSharedMapTypeId] = useState("roadmap");
+  const [sharedMapTypeId, setSharedMapTypeId] = useState("openstreetmap");
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],

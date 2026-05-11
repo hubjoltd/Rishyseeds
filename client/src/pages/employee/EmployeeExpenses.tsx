@@ -37,18 +37,19 @@ function fmtDate(dt: string | null | undefined) {
   try { return format(new Date(dt), "dd MMM yyyy"); } catch { return "-"; }
 }
 
-type TabKey = "pending" | "approved" | "rejected" | "all";
+type TabKey = "open" | "pending" | "approved" | "rejected" | "all";
 type View = "list" | "create" | "detail";
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
+    open: "bg-blue-100 text-blue-700",
     pending: "bg-amber-100 text-amber-700",
     approved: "bg-green-100 text-green-700",
     rejected: "bg-red-100 text-red-700",
   };
   return (
     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${map[status] || "bg-gray-100 text-gray-500"}`}>
-      {status}
+      {status === "open" ? "Open (In-Progress)" : status}
     </span>
   );
 }
@@ -212,7 +213,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const endOdoPhotoRef = useRef<HTMLInputElement>(null);
   const billsPhotoRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("pending");
+  const [activeTab, setActiveTab] = useState<TabKey>("open");
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<any | null>(null);
 
@@ -401,6 +402,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   const filtered = expenses.filter(e => activeTab === "all" || e.status === activeTab);
   const counts: Record<TabKey, number> = {
+    open: expenses.filter(e => e.status === "open").length,
     pending: expenses.filter(e => e.status === "pending").length,
     approved: expenses.filter(e => e.status === "approved").length,
     rejected: expenses.filter(e => e.status === "rejected").length,
@@ -426,6 +428,16 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           </div>
           <StatusPill status={exp.status} />
         </div>
+
+        {exp.status === "open" && (
+          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-md px-3 py-2.5 mb-3">
+            <Gauge className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-blue-700">Trip In Progress</p>
+              <p className="text-[11px] text-blue-600 mt-0.5">This expense is still open. The end odometer will be captured when you punch out.</p>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 pb-4">
           <div className="border border-gray-100 rounded-md bg-white divide-y divide-gray-100 text-sm">
@@ -916,6 +928,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
   // ===== LIST VIEW =====
   const TABS: { key: TabKey; label: string }[] = [
+    { key: "open", label: "In-Progress" },
     { key: "pending", label: "Pending" },
     { key: "approved", label: "Approved" },
     { key: "rejected", label: "Rejected" },
