@@ -17,16 +17,16 @@ android {
 
     signingConfigs {
         release {
-            def keystorePath = System.getenv("KEYSTORE_PATH")
-            def keystorePassword = System.getenv("KEYSTORE_PASSWORD")
-            def keyAlias = System.getenv("KEY_ALIAS")
-            def keyPassword = System.getenv("KEY_PASSWORD")
+            def ksPath = System.getenv("KEYSTORE_PATH")
+            def ksPassword = System.getenv("KEYSTORE_PASSWORD")
+            def ksAlias = System.getenv("KEY_ALIAS")
+            def ksKeyPass = System.getenv("KEY_PASSWORD")
 
-            if (keystorePath && keystorePassword && keyAlias && keyPassword) {
-                storeFile file(keystorePath)
-                storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+            if (ksPath && ksPassword && ksAlias && ksKeyPass) {
+                storeFile file(ksPath)
+                storePassword ksPassword
+                keyAlias ksAlias
+                keyPassword ksKeyPass
             }
         }
     }
@@ -37,8 +37,7 @@ android {
             versionNameSuffix "-debug"
         }
         release {
-            def keystorePassword = System.getenv("KEYSTORE_PASSWORD")
-            if (keystorePassword) {
+            if (System.getenv("KEYSTORE_PASSWORD")) {
                 signingConfig signingConfigs.release
             }
             minifyEnabled false
