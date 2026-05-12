@@ -32,7 +32,8 @@ import {
   Warehouse,
   BarChart2,
   RotateCcw,
-  CalendarDays
+  CalendarDays,
+  MapPinned
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@assets/image_1773664509659.png";
@@ -95,6 +96,7 @@ const allMenuItems: MenuItem[] = [
       { icon: CreditCard, label: "Payroll", href: "/payroll", roles: ["admin", "hr"] },
     ]
   },
+  { icon: MapPinned, label: "Live Map", href: "/live-map", roles: ["admin", "manager"] },
   { icon: MapPin, label: "Trips", href: "/trips", roles: ["admin", "manager"] },
   { icon: ClipboardList, label: "Tasks", href: "/tasks", roles: ["admin", "manager"] },
   { icon: Users, label: "Customers", href: "/customers", roles: ["admin", "manager"] },

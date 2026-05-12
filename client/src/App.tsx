@@ -40,6 +40,7 @@ import VarietyStock from "@/pages/VarietyStock";
 import OutwardReturns from "@/pages/OutwardReturns";
 import OverdueDryerAlert from "@/components/OverdueDryerAlert";
 import AdminLeave from "@/pages/AdminLeave";
+import LiveMap from "@/pages/LiveMap";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -160,6 +161,9 @@ function Router() {
       </Route>
       <Route path="/admin-leave">
         <ProtectedRoute component={AdminLeave} />
+      </Route>
+      <Route path="/live-map">
+        <ProtectedRoute component={LiveMap} />
       </Route>
 
       <Route component={NotFound} />

@@ -199,6 +199,7 @@ export interface IStorage {
   // Employee Locations (GPS tracking)
   addEmployeeLocation(data: InsertEmployeeLocation): Promise<EmployeeLocation>;
   getEmployeeLocationsForDate(employeeId: number, date: string): Promise<EmployeeLocation[]>;
+  getLatestLocationsAllEmployees(): Promise<{ employeeId: number; latitude: string; longitude: string; accuracy: string | null; speed: string | null; recordedAt: Date }[]>;
 
   // Dryer
   getDryerEntries(): Promise<DryerEntry[]>;
@@ -1006,10 +1007,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployeeLocationsForDate(employeeId: number, date: string): Promise<EmployeeLocation[]> {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
+    // Use IST (UTC+5:30) day boundaries so employees in India don't lose GPS pings
+    const start = new Date(`${date}T00:00:00+05:30`);
+    const end = new Date(`${date}T23:59:59.999+05:30`);
     return db.select().from(employeeLocations)
       .where(
         and(
@@ -1019,6 +1019,25 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(employeeLocations.recordedAt);
+  }
+
+  async getLatestLocationsAllEmployees() {
+    // Get the most recent GPS point per employee recorded today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const rows = await db.select().from(employeeLocations)
+      .where(gte(employeeLocations.recordedAt, todayStart))
+      .orderBy(desc(employeeLocations.recordedAt));
+    // Keep only the latest row per employee
+    const seen = new Set<number>();
+    const latest: typeof rows = [];
+    for (const row of rows) {
+      if (!seen.has(row.employeeId)) {
+        seen.add(row.employeeId);
+        latest.push(row);
+      }
+    }
+    return latest;
   }
 
   async getDryerEntries(): Promise<DryerEntry[]> {

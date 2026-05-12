@@ -224,6 +224,12 @@ function LiveMapInner({
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
 
+  // Force Leaflet to recalculate its size after the container becomes visible
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 120);
+    return () => clearTimeout(t);
+  }, [map]);
+
   const gpsPoints = useMemo(() =>
     locationPoints.filter(p => p.latitude && p.longitude)
       .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
@@ -531,6 +537,13 @@ function PlaybackMapInner({
   onMapReady: (m: any) => void;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
+  const map = useMap();
+
+  // Force Leaflet to recalculate its size once visible (critical inside flex containers)
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 120);
+    return () => clearTimeout(t);
+  }, [map]);
 
   const startIcon = makeCircleIcon("#e11d48", "B", 34);
   const personIcon = makePersonIcon();
@@ -1484,10 +1497,10 @@ export default function EmployeeProfile() {
         )}
 
         {activeTab === "playback" && (
-          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ minHeight: "620px" }}>
+          <div className="flex gap-0 rounded-xl border overflow-hidden bg-card" style={{ height: "calc(100vh - 210px)", minHeight: "600px" }}>
 
             {/* ── LEFT: sidebar (same style as Live tab) ── */}
-            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ minHeight: "620px" }}>
+            <div className="w-64 shrink-0 flex flex-col border-r bg-white" style={{ height: "100%" }}>
 
               {/* Header: date picker + stats */}
               <div className="px-3 py-2.5 border-b bg-gray-50 shrink-0 space-y-2">
@@ -1620,7 +1633,7 @@ export default function EmployeeProfile() {
             </div>
 
             {/* ── RIGHT: Full-height Playback Map ── */}
-            <div className="flex-1 relative" style={{ minHeight: "620px" }}>
+            <div className="flex-1 relative" style={{ height: "100%" }}>
               {tripsLoading ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />

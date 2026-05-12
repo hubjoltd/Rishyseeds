@@ -3776,6 +3776,29 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: get latest GPS location for every employee who has reported today (live map)
+  app.get("/api/employees/live-locations", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const locs = await storage.getLatestLocationsAllEmployees();
+      // Attach employee name/code for display
+      const empList = await storage.getEmployees();
+      const empMap = Object.fromEntries(empList.map(e => [e.id, e]));
+      const result = locs.map(l => ({
+        employeeId: l.employeeId,
+        employeeName: empMap[l.employeeId]?.fullName || `Emp #${l.employeeId}`,
+        employeeCode: empMap[l.employeeId]?.employeeCode || "",
+        latitude: parseFloat(l.latitude),
+        longitude: parseFloat(l.longitude),
+        accuracy: l.accuracy ? parseFloat(l.accuracy) : null,
+        speed: l.speed ? parseFloat(l.speed) : null,
+        recordedAt: l.recordedAt,
+      }));
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch live locations" });
+    }
+  });
+
   // Admin fetches customer check-ins for an employee on a given date
   app.get("/api/employees/:id/checkins", checkPermission('employees', 'view'), async (req, res) => {
     try {
