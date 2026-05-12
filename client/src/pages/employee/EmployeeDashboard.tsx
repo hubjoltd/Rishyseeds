@@ -219,7 +219,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
     startGpsTracking({
       authHeaders: getEmployeeAuthHeaders(),
-      throttleMs: 30000,
+      throttleMs: 15000,
       onStatus: (s) => { if (!stopped) setGpsStatus(s); },
     }).then((stop) => {
       if (stopped) { stop(); return; }

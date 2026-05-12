@@ -201,6 +201,21 @@ const LEAFLET_TILES: Record<string, { url: string; subdomains?: string[]; attr: 
   openstreetmap:{ url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", subdomains: ["a","b","c","d"], attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' },
 };
 
+// Inject pulsing-dot CSS once
+if (typeof document !== "undefined" && !document.getElementById("rishi-gps-pulse-css")) {
+  const s = document.createElement("style");
+  s.id = "rishi-gps-pulse-css";
+  s.textContent = `
+    @keyframes rishi-pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(29,78,216,0.55), 0 2px 8px rgba(0,0,0,0.35); }
+      60%  { box-shadow: 0 0 0 14px rgba(29,78,216,0), 0 2px 8px rgba(0,0,0,0.35); }
+      100% { box-shadow: 0 0 0 0 rgba(29,78,216,0), 0 2px 8px rgba(0,0,0,0.35); }
+    }
+    .rishi-live-dot { animation: rishi-pulse 1.8s ease-out infinite; }
+  `;
+  document.head.appendChild(s);
+}
+
 // ── LiveMapInner — inside MapContainer so Leaflet hooks work ──
 function LiveMapInner({
   locationPoints,
@@ -211,6 +226,7 @@ function LiveMapInner({
   punchOutLat,
   punchOutLng,
   mapTypeId,
+  autoFollow,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -220,9 +236,11 @@ function LiveMapInner({
   punchOutLat?: number | null;
   punchOutLng?: number | null;
   mapTypeId: string;
+  autoFollow: boolean;
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
+  const fittedOnce = useRef(false);
 
   // Force Leaflet to recalculate its size after the container becomes visible
   useEffect(() => {
@@ -236,23 +254,38 @@ function LiveMapInner({
     [locationPoints]
   );
 
-  // Auto-fit bounds when data changes
+  // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
     const all: [number, number][] = [...gpsPoints];
     visitStops.forEach(v => { if (v.lat && v.lng) all.push([v.lat, v.lng]); });
     if (punchInLat && punchInLng) all.push([punchInLat, punchInLng]);
     if (punchOutLat && punchOutLng) all.push([punchOutLat, punchOutLng]);
-    if (all.length > 1) {
-      map.fitBounds(L.latLngBounds(all.map(c => L.latLng(c[0], c[1]))), { padding: [40, 40] });
-    } else if (all.length === 1) {
-      map.setView(all[0], 15);
-    }
-  }, [gpsPoints, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng]);
 
-  const stoppageIcon = L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="7" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="9" font-weight="bold" font-family="sans-serif">S</text></svg>`,
+    if (!fittedOnce.current) {
+      // First time: fit all points to view
+      if (all.length > 1) {
+        map.fitBounds(L.latLngBounds(all.map(c => L.latLng(c[0], c[1]))), { padding: [50, 50] });
+      } else if (all.length === 1) {
+        map.setView(all[0], 15);
+      }
+      if (all.length > 0) fittedOnce.current = true;
+    } else if (autoFollow && gpsPoints.length > 0) {
+      // Auto-follow mode: pan smoothly to latest GPS point
+      map.panTo(gpsPoints[gpsPoints.length - 1], { animate: true, duration: 0.8 });
+    }
+  }, [gpsPoints, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng, autoFollow]);
+
+  // Numbered stoppage icon factory
+  const makeStoppageIcon = (num: number) => L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+      <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
+      <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
+      <circle cx="18" cy="14" r="8" fill="white"/>
+      <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="${num > 9 ? 8 : 10}" font-weight="bold" font-family="sans-serif">${num}</text>
+    </svg>`,
     className: "", iconSize: [36, 44], iconAnchor: [18, 44],
   });
+
   const chkIcon = L.divIcon({
     html: `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42"><ellipse cx="17" cy="39" rx="5" ry="3" fill="rgba(0,0,0,0.18)"/><path d="M17 0C9.82 0 4 5.82 4 13c0 9.9 13 27 13 27S30 22.9 30 13C30 5.82 24.18 0 17 0z" fill="#16a34a" stroke="white" stroke-width="2"/><circle cx="17" cy="13" r="7" fill="white"/><text x="17" y="10" text-anchor="middle" fill="#16a34a" font-size="5.5" font-weight="bold" font-family="sans-serif">CHK</text><text x="17" y="18" text-anchor="middle" fill="#16a34a" font-size="5" font-family="sans-serif">✓</text></svg>`,
     className: "", iconSize: [34, 42], iconAnchor: [17, 42],
@@ -265,8 +298,9 @@ function LiveMapInner({
     html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text></svg>`,
     className: "", iconSize: [36, 52], iconAnchor: [18, 52],
   });
+  // Pulsing blue live-position dot
   const currentPosIcon = L.divIcon({
-    html: `<div style="width:38px;height:38px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)"><svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`,
+    html: `<div class="rishi-live-dot" style="width:38px;height:38px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`,
     className: "", iconSize: [38, 38], iconAnchor: [19, 19],
   });
 
@@ -302,16 +336,16 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1d4ed8", weight: 4, opacity: 0.7, dashArray: "10 8" }} />
       )}
 
-      {/* Stoppage markers */}
+      {/* Stoppage markers — numbered orange pins */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
         const mins = Math.floor((s.durationSecs || 0) / 60);
         const secs = Math.round((s.durationSecs || 0) % 60);
         const dur = `${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
         return (
-          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={stoppageIcon}>
+          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={makeStoppageIcon(i + 1)}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 130 }}>
-                <b style={{ color: "#f97316" }}>⏸ Stoppage</b><br/>
+                <b style={{ color: "#f97316" }}>⏸ Stoppage #{i + 1}</b><br/>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{dur}</span><br/>
                 <span style={{ fontSize: 11, color: "#666" }}>{new Date(s.startTime).toLocaleTimeString()} – {new Date(s.endTime).toLocaleTimeString()}</span>
               </div>
@@ -378,6 +412,7 @@ function LiveMap({
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
 }) {
+  const [autoFollow, setAutoFollow] = useState(true);
 
   const gpsPoints = locationPoints
     .filter(p => p.latitude && p.longitude)
@@ -398,9 +433,29 @@ function LiveMap({
           punchOutLat={punchOutLat}
           punchOutLng={punchOutLng}
           mapTypeId={mapTypeId}
+          autoFollow={autoFollow}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
+
+      {/* Top-left: LIVE badge + Follow toggle */}
+      <div className="absolute top-2 left-2 z-[1001] flex flex-col gap-1.5">
+        {gpsPoints.length > 0 && (
+          <div className="flex items-center gap-1.5 bg-white rounded-full shadow px-2.5 py-1 text-[11px] font-semibold text-blue-700 border border-blue-200">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse inline-block" />
+            LIVE
+          </div>
+        )}
+        <button
+          onClick={() => setAutoFollow(f => !f)}
+          title={autoFollow ? "Auto-follow ON — click to disable" : "Auto-follow OFF — click to enable"}
+          className={`flex items-center gap-1.5 rounded-full shadow px-2.5 py-1 text-[11px] font-semibold border transition-colors ${autoFollow ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"}`}
+          data-testid="button-auto-follow"
+        >
+          <Navigation className="w-3 h-3" />
+          {autoFollow ? "Following" : "Follow"}
+        </button>
+      </div>
 
       {/* Map type selector — top-right overlay */}
       <div className="absolute top-2 right-2 z-[1001] bg-white rounded shadow-md py-1.5 px-2.5 text-[11px] select-none">
@@ -415,7 +470,7 @@ function LiveMap({
       {/* Legend — bottom-left */}
       <div className="absolute bottom-10 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5">
-          <span className="inline-block w-6 h-[3px] rounded bg-blue-600"/>
+          <span className="inline-block w-6 h-[3px] rounded bg-blue-700"/>
           <span>Travelled (GPS)</span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -942,7 +997,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId && activeTab === "live",
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
   const { data: playbackLocationData } = useQuery<{

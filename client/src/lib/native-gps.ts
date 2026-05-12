@@ -108,7 +108,7 @@ async function postLocation(
 // ── Native (Capacitor) GPS ─────────────────────────────────────────────────
 
 async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
-  const throttleMs = opts.throttleMs ?? 30000;
+  const throttleMs = opts.throttleMs ?? 15000;
   const onStatus = opts.onStatus ?? (() => {});
   let lastSentAt = 0;
 
@@ -119,7 +119,7 @@ async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
       backgroundTitle: "GPS Tracking Active",
       requestPermissions: true,
       stale: false,
-      distanceFilter: 30,
+      distanceFilter: 20,
     },
     (location, error) => {
       if (error || !location) {
@@ -151,7 +151,7 @@ async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
 // ── Web (browser / basic WebView) GPS ────────────────────────────────────
 
 function startWebGps(opts: GpsOptions): StopFn {
-  const throttleMs = opts.throttleMs ?? 30000;
+  const throttleMs = opts.throttleMs ?? 15000;
   const onStatus = opts.onStatus ?? (() => {});
   let lastSentAt = 0;
   let wakeLock: any = null;
