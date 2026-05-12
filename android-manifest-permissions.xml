@@ -1,0 +1,38 @@
+<!--
+  Add these permissions to:
+  android/app/src/main/AndroidManifest.xml
+
+  Paste the <uses-permission> lines BEFORE the <application> tag.
+  Paste the <service> line INSIDE the <application> tag.
+-->
+
+<!-- Location permissions (required for GPS tracking) -->
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+<!-- Foreground service — keeps GPS alive when the app is minimised -->
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+<!-- Wake lock — prevents CPU sleep during active tracking -->
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+
+<!-- Restart tracking after phone reboot -->
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+<!-- Camera for punch-in/out photos and odometer photos -->
+<uses-permission android:name="android.permission.CAMERA" />
+
+<!-- Network -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+
+<!-- ───────────────────────────────────────────────────────────────────────
+     Inside <application> tag — add this service declaration:
+     ─────────────────────────────────────────────────────────────────────── -->
+<service
+    android:name="com.capacitorjs.community.plugin.backgroundgeolocation.BackgroundGeolocationService"
+    android:foregroundServiceType="location"
+    android:exported="false" />

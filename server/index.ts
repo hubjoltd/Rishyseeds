@@ -22,6 +22,33 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Allow requests from the Capacitor native app (Android/iOS WebView origins)
+const CAPACITOR_ORIGINS = [
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
+];
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && CAPACITOR_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization,X-Requested-With"
+    );
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+  }
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

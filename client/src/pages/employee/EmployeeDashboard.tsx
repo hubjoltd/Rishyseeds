@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
+import { startGpsTracking, isCapacitorNative } from "@/lib/native-gps";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -206,83 +207,37 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
-  // GPS tracking: use watchPosition for continuous background tracking + Wake Lock to prevent sleep
+  // GPS tracking: native Capacitor background GPS on Android, web watchPosition fallback in browser
   useEffect(() => {
     if (!isPunchedIn) {
       setGpsStatus('idle');
       return;
     }
-    if (!navigator.geolocation) {
-      setGpsStatus('error');
-      return;
-    }
 
-    let wakeLock: any = null;
-    const acquireWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
-        }
-      } catch {}
-    };
-    acquireWakeLock();
+    let stopped = false;
+    let stopFn: (() => void) | null = null;
 
-    let lastSentAt = 0;
-    const THROTTLE_MS = 30000;
-
-    const postLocation = (pos: GeolocationPosition) => {
-      fetch("/api/employee/location", {
-        method: "POST",
-        headers: { ...getEmployeeAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          speed: pos.coords.speed,
-        }),
-      })
-        .then((r) => { if (r.ok) setGpsStatus('active'); else setGpsStatus('error'); })
-        .catch(() => setGpsStatus('error'));
-    };
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const now = Date.now();
-        if (now - lastSentAt >= THROTTLE_MS) {
-          lastSentAt = now;
-          postLocation(pos);
-        }
-      },
-      (err) => {
-        setGpsStatus('error');
-        if (err.code === 1) {
-          toast({
-            title: "Location Permission Denied",
-            description: "Enable location access in your browser settings for GPS tracking.",
-            variant: "destructive",
-          });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
-    );
-
-    // Re-acquire wake lock and force an immediate ping when tab regains focus
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        acquireWakeLock();
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { lastSentAt = Date.now(); postLocation(pos); },
-          () => {},
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-        );
+    startGpsTracking({
+      authHeaders: getEmployeeAuthHeaders(),
+      throttleMs: 30000,
+      onStatus: (s) => { if (!stopped) setGpsStatus(s); },
+    }).then((stop) => {
+      if (stopped) { stop(); return; }
+      stopFn = stop;
+    }).catch(() => {
+      if (!stopped) setGpsStatus('error');
+      if (!isCapacitorNative) {
+        toast({
+          title: "Location Permission Denied",
+          description: "Enable location access in your device settings for GPS tracking.",
+          variant: "destructive",
+        });
       }
-    };
-    document.addEventListener('visibilitychange', onVisible);
+    });
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
-      document.removeEventListener('visibilitychange', onVisible);
-      if (wakeLock) wakeLock.release().catch(() => {});
+      stopped = true;
+      stopFn?.();
     };
   }, [isPunchedIn]);
 
