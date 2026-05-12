@@ -54,6 +54,21 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation"
 );
 
+/**
+ * Request all location permissions needed for background GPS.
+ * Call this once at app startup when running natively.
+ * On Android this asks for FINE + COARSE first, then BACKGROUND location.
+ */
+export async function requestAllLocationPermissions(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { Geolocation } = await import("@capacitor/geolocation");
+    await Geolocation.requestPermissions({ permissions: ["location", "coarseLocation"] });
+    // Background location must be requested separately on Android 11+
+    // The BackgroundGeolocation watcher handles this automatically via requestPermissions:true
+  } catch {}
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export const isCapacitorNative: boolean = Capacitor.isNativePlatform();

@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
 import { useEffect } from "react";
 import { registerPushNotifications } from "@/lib/pushNotifications";
+import { requestAllLocationPermissions } from "@/lib/native-gps";
 import EmployeeDashboard from "./EmployeeDashboard";
 import EmployeeAttendance from "./EmployeeAttendance";
 import EmployeePayslips from "./EmployeePayslips";
@@ -70,6 +71,7 @@ export default function EmployeeLayout() {
   useEffect(() => {
     if (employee) {
       registerPushNotifications().catch(() => {});
+      requestAllLocationPermissions().catch(() => {});
     }
   }, [employee?.id]);
 

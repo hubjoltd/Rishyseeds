@@ -19,6 +19,15 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
+    SplashScreen: {
+      launchShowDuration: 2500,
+      launchAutoHide: true,
+      backgroundColor: "#000000",
+      androidSplashResourceName: "splash",
+      androidScaleType: "CENTER_INSIDE",
+      showSpinner: false,
+    },
+
     BackgroundGeolocation: {
       backgroundMessage:
         "Rishi Seeds is recording your trip location for expense reporting.",
