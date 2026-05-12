@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: "dist/public",
 
   server: {
-    url: "https://app.rishihybridseeds.com",
+    url: "https://app.rishihybridseeds.com/employee-login",
     androidScheme: "https",
     cleartext: false,
     allowNavigation: ["app.rishihybridseeds.com", "nominatim.openstreetmap.org"],
