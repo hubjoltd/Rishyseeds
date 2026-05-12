@@ -6,16 +6,10 @@ const config: CapacitorConfig = {
   webDir: "dist/public",
 
   server: {
-    // ─── IMPORTANT ───────────────────────────────────────────────────────────
-    // Set this to your deployed Replit URL after you publish the app.
-    // Example: "https://rishi-seeds.replit.app"
-    // This makes the native app load from the live server so all API calls
-    // work automatically without any code changes.
-    // ─────────────────────────────────────────────────────────────────────────
-    url: process.env.CAPACITOR_SERVER_URL || undefined,
+    url: "https://app.rishihybridseeds.com",
     androidScheme: "https",
     cleartext: false,
-    allowNavigation: ["*.replit.app", "nominatim.openstreetmap.org"],
+    allowNavigation: ["app.rishihybridseeds.com", "nominatim.openstreetmap.org"],
   },
 
   android: {

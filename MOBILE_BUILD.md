@@ -31,12 +31,21 @@ Add to PATH: `%ANDROID_HOME%\tools`, `%ANDROID_HOME%\platform-tools`
 
 ---
 
-## Step 1 — Deploy the backend to Replit
+## Step 1 — Push the latest code to your VPS
 
-The app needs a live server URL so API calls work from the phone.
+The CORS fix for the native app has been added to `server/index.ts`.
+You need to deploy this update to your VPS at **https://app.rishihybridseeds.com**
+before the APK can make API calls.
 
-1. In Replit, click **Deploy** → **Autoscale** → **Deploy**
-2. Copy the URL — it looks like `https://rishi-seeds.replit.app`
+On your VPS, pull the latest code and restart the server:
+```bash
+git pull
+npm install
+npm run build
+# restart your process manager, e.g.:
+pm2 restart all
+# or: systemctl restart rishi-seeds
+```
 
 ---
 
