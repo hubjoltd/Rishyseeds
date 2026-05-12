@@ -227,6 +227,7 @@ function LiveMapInner({
   punchOutLng,
   mapTypeId,
   autoFollow,
+  snappedPoints,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -237,6 +238,7 @@ function LiveMapInner({
   punchOutLng?: number | null;
   mapTypeId: string;
   autoFollow: boolean;
+  snappedPoints: [number, number][];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -253,6 +255,9 @@ function LiveMapInner({
       .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
     [locationPoints]
   );
+
+  // Use road-snapped route when available, fallback to raw GPS
+  const routeLine = snappedPoints.length > 1 ? snappedPoints : gpsPoints;
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
@@ -326,9 +331,9 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* GPS route polyline — solid blue when data is rich */}
-      {gpsPoints.length > 1 && (
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#1d4ed8", weight: 5, opacity: 0.95 }} />
+      {/* Main route — road-snapped (or raw GPS fallback) */}
+      {routeLine.length > 1 && (
+        <Polyline positions={routeLine} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
       )}
 
       {/* Fallback dashed route — connects punch-in/visits/punch-out when GPS points unavailable */}
@@ -413,10 +418,33 @@ function LiveMap({
   onMapTypeChange: (t: string) => void;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
+  const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
+  const [snapping, setSnapping] = useState(false);
+  const lastSnapCount = useRef(0);
 
-  const gpsPoints = locationPoints
-    .filter(p => p.latitude && p.longitude)
-    .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+  const gpsPoints = useMemo(() =>
+    locationPoints
+      .filter(p => p.latitude && p.longitude)
+      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
+    [locationPoints]
+  );
+
+  // Re-snap to roads only when new GPS points are added (not every 15s refresh if nothing changed)
+  useEffect(() => {
+    if (gpsPoints.length < 2) { setSnappedPoints([]); return; }
+    if (gpsPoints.length === lastSnapCount.current) return; // no new points
+    let cancelled = false;
+    setSnapping(true);
+    osrmSnap(gpsPoints).then(pts => {
+      if (!cancelled) {
+        setSnappedPoints(pts);
+        setSnapping(false);
+        lastSnapCount.current = gpsPoints.length;
+      }
+    });
+    return () => { cancelled = true; };
+  }, [gpsPoints.length]);
+
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
     : [22.8, 80.0];
@@ -434,11 +462,12 @@ function LiveMap({
           punchOutLng={punchOutLng}
           mapTypeId={mapTypeId}
           autoFollow={autoFollow}
+          snappedPoints={snappedPoints}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
 
-      {/* Top-left: LIVE badge + Follow toggle */}
+      {/* Top-left: LIVE badge + Follow toggle + snapping indicator */}
       <div className="absolute top-2 left-2 z-[1001] flex flex-col gap-1.5">
         {gpsPoints.length > 0 && (
           <div className="flex items-center gap-1.5 bg-white rounded-full shadow px-2.5 py-1 text-[11px] font-semibold text-blue-700 border border-blue-200">
@@ -455,6 +484,11 @@ function LiveMap({
           <Navigation className="w-3 h-3" />
           {autoFollow ? "Following" : "Follow"}
         </button>
+        {snapping && (
+          <div className="flex items-center gap-1.5 bg-white/90 rounded-full shadow px-2.5 py-1 text-[11px] text-blue-700 border border-blue-100">
+            <Loader2 className="w-3 h-3 animate-spin" /> Snapping…
+          </div>
+        )}
       </div>
 
       {/* Map type selector — top-right overlay */}
@@ -470,8 +504,8 @@ function LiveMap({
       {/* Legend — bottom-left */}
       <div className="absolute bottom-10 left-2 z-[1000] bg-white/90 rounded shadow text-[10px] px-2 py-1.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5">
-          <span className="inline-block w-6 h-[3px] rounded bg-blue-700"/>
-          <span>Travelled (GPS)</span>
+          <span className="inline-block w-6 h-[4px] rounded" style={{ background: "#1e3a8a" }}/>
+          <span>Route (Road)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-6 border-t-2 border-dashed border-blue-500" style={{ height: 0 }}/>
