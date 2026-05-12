@@ -565,100 +565,158 @@ function makePersonIcon() {
   });
 }
 
-// Animated playback dot — blue pulsing circle
+// Animated playback dot — pulsing blue circle (reuses rishi-gps-pulse-css already injected)
 function makePlaybackDotIcon() {
   return L.divIcon({
-    html: `<div style="width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,0.25)"></div>`,
+    html: `<div class="rishi-live-dot" style="width:22px;height:22px;border-radius:50%;background:#1d4ed8;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div>`,
     className: "",
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
   });
 }
 
-// Inner layer content — must be inside MapContainer so hooks work
+// Numbered orange stoppage pin (for Playback)
+function makePbStoppageIcon(num: number) {
+  return L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+      <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
+      <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
+      <circle cx="18" cy="14" r="8" fill="white"/>
+      <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="${num > 9 ? 8 : 10}" font-weight="bold" font-family="sans-serif">${num}</text>
+    </svg>`,
+    className: "", iconSize: [36, 44], iconAnchor: [18, 44],
+  });
+}
+
+// Snap GPS points to actual roads via OSRM public API (falls back to raw points on error)
+async function osrmSnap(points: [number, number][]): Promise<[number, number][]> {
+  if (points.length < 2) return points;
+  try {
+    // Sample down to max 100 points (OSRM limit)
+    const step = Math.ceil(points.length / 100);
+    const sample = points.filter((_, i) => i % step === 0 || i === points.length - 1);
+    const coords = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+    const url = `https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return points;
+    const data = await res.json();
+    if (data.code !== "Ok" || !data.matchings?.[0]?.geometry?.coordinates) return points;
+    return (data.matchings[0].geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng]);
+  } catch {
+    return points; // fallback to straight polyline
+  }
+}
+
+// Inner layer — must be inside MapContainer so Leaflet hooks work
 function PlaybackMapInner({
-  routePoints,
+  rawPoints,
+  snappedPoints,
   chkStops,
+  stoppages,
   mapTypeId,
-  routeColor,
   playbackPos,
   onMapReady,
 }: {
-  routePoints: [number, number][];
+  rawPoints: [number, number][];
+  snappedPoints: [number, number][];
   chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
+  stoppages: { pos: [number, number]; num: number; durationStr: string; startTs: string; endTs: string }[];
   mapTypeId: string;
-  routeColor: string;
   playbackPos: [number, number] | null;
   onMapReady: (m: any) => void;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
   const map = useMap();
 
-  // Force Leaflet to recalculate its size once visible (critical inside flex containers)
   useEffect(() => {
     const t = setTimeout(() => map.invalidateSize(), 120);
     return () => clearTimeout(t);
   }, [map]);
 
-  const startIcon = makeCircleIcon("#e11d48", "B", 34);
-  const personIcon = makePersonIcon();
-  const playbackDot = makePlaybackDotIcon();
+  const routeLine = snappedPoints.length > 1 ? snappedPoints : rawPoints;
 
-  const lastPt = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
+  const startIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text></svg>`,
+    className: "", iconSize: [36, 52], iconAnchor: [18, 52],
+  });
+  const endIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text></svg>`,
+    className: "", iconSize: [36, 52], iconAnchor: [18, 52],
+  });
+  const playbackDot = makePlaybackDotIcon();
 
   return (
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
       <MapRefCapture onReady={onMapReady} />
-      <PbBoundsFitter points={routePoints} />
+      <PbBoundsFitter points={routeLine} />
 
-      {/* Route line — orange default, blue in playback mode */}
-      {routePoints.length > 1 && (
-        <Polyline positions={routePoints} pathOptions={{ color: routeColor, weight: 4, opacity: 0.9 }} />
+      {/* Main route — thick navy polyline (road-snapped if available) */}
+      {routeLine.length > 1 && (
+        <Polyline positions={routeLine} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
       )}
 
-      {/* Start marker — red B circle */}
-      {routePoints.length > 0 && (
-        <Marker position={routePoints[0]} icon={startIcon}>
-          <Popup><b>Trip Start</b></Popup>
+      {/* Fallback dashed line using raw GPS if snap failed */}
+      {snappedPoints.length > 1 && rawPoints.length > 1 && rawPoints !== snappedPoints && (
+        <Polyline positions={rawPoints} pathOptions={{ color: "#93c5fd", weight: 2, opacity: 0.5, dashArray: "6 6" }} />
+      )}
+
+      {/* Numbered stoppage orange pins */}
+      {stoppages.map(s => (
+        <Marker key={`pb-stop-${s.num}`} position={s.pos} icon={makePbStoppageIcon(s.num)}>
+          <Popup>
+            <div style={{ fontSize: 13, minWidth: 140 }}>
+              <b style={{ color: "#f97316" }}>⏸ Stoppage #{s.num}</b><br/>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{s.durationStr}</span><br/>
+              <span style={{ fontSize: 11, color: "#666" }}>{s.startTs} – {s.endTs}</span>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {/* Numbered CHK blue circles */}
+      {chkStops.map(stop => (
+        <Marker key={`pb-chk-${stop.num}`} position={stop.pos} icon={makeCircleIcon("#2563eb", String(stop.num), 30)}>
+          <Popup>
+            <div style={{ minWidth: 150, fontSize: 13 }}>
+              <b style={{ color: "#2563eb" }}>CHK {stop.num}</b>
+              {stop.loc && <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{stop.loc}</div>}
+              <table style={{ marginTop: 6, width: "100%" }}>
+                <tbody>
+                  <tr><td style={{ color: "#16a34a", fontWeight: 600, paddingRight: 8 }}>In</td><td style={{ fontWeight: 600 }}>{stop.inTime}</td></tr>
+                  <tr><td style={{ color: "#dc2626", fontWeight: 600, paddingRight: 8 }}>Out</td><td style={{ fontWeight: 600 }}>{stop.outTime}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {/* START marker */}
+      {rawPoints.length > 0 && (
+        <Marker position={rawPoints[0]} icon={startIcon} zIndexOffset={200}>
+          <Popup><b style={{ color: "#15803d" }}>▶ Trip Start</b></Popup>
         </Marker>
       )}
 
-      {/* CHK stop markers — numbered blue circles */}
-      {chkStops.map((stop) => {
-        const icon = makeCircleIcon("#2563eb", String(stop.num), 30);
-        return (
-          <Marker key={stop.num} position={stop.pos} icon={icon}>
-            <Popup>
-              <div style={{ minWidth: 150, fontSize: 13 }}>
-                <b style={{ color: "#2563eb" }}>CHK {stop.num}</b>
-                {stop.loc && <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{stop.loc}</div>}
-                <table style={{ marginTop: 6, width: "100%" }}>
-                  <tbody>
-                    <tr><td style={{ color: "#16a34a", fontWeight: 600, paddingRight: 8 }}>Punch In</td><td style={{ fontWeight: 600 }}>{stop.inTime}</td></tr>
-                    <tr><td style={{ color: "#dc2626", fontWeight: 600, paddingRight: 8 }}>Punch Out</td><td style={{ fontWeight: 600 }}>{stop.outTime}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </Popup>
-          </Marker>
-        );
-      })}
-
-      {/* Person avatar at last known GPS position — always shown */}
-      {lastPt && (
-        <Marker position={lastPt} icon={personIcon}>
-          <Popup><b>Last Known Position</b></Popup>
+      {/* END marker (only if trip has ended — last raw point ≠ start) */}
+      {rawPoints.length > 1 && (
+        <Marker position={rawPoints[rawPoints.length - 1]} icon={endIcon} zIndexOffset={200}>
+          <Popup><b style={{ color: "#dc2626" }}>⬛ Last Position</b></Popup>
         </Marker>
       )}
 
-      {/* Playback mode: moving dot along the route */}
+      {/* Moving playback dot */}
       {playbackPos && (
-        <Marker position={playbackPos} icon={playbackDot} zIndexOffset={1000} />
+        <Marker position={playbackPos} icon={playbackDot} zIndexOffset={1000}>
+          <Popup><b>▶ Playback Position</b></Popup>
+        </Marker>
       )}
     </>
   );
 }
+
+const PB_SPEEDS = [1, 2, 5, 10, 20];
 
 function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   trips: TripWithVisits[];
@@ -668,50 +726,84 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   onMapTypeChange: (t: string) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
-  // altMode=false → default view (orange route, Image 1)
-  // altMode=true  → playback animation view (blue route + bar, Image 2)
-  const [altMode, setAltMode] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [playbackIdx, setPlaybackIdx] = useState(0);
+  const [speedMult, setSpeedMult] = useState(1);
+  const [speedOpen, setSpeedOpen] = useState(false);
+  const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
+  const [snapping, setSnapping] = useState(false);
   const playTimerRef = useRef<any>(null);
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data: locationData, refetch: refetchPlayback, isFetching: pbFetching } = useQuery<{ points: { latitude: string; longitude: string; recordedAt: string }[] }>({
+  const { data: locationData, refetch: refetchPlayback, isFetching: pbFetching } = useQuery<{
+    points: { latitude: string; longitude: string; recordedAt: string; speed?: string | null }[];
+    segments?: { type: string; startTime: string; endTime: string; lat?: number; lng?: number; durationSecs?: number }[];
+  }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
     queryFn: async () => {
       const res = await fetch(`/api/employees/${employeeId}/locations?date=${date}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
       });
-      if (!res.ok) return { points: [] };
+      if (!res.ok) return { points: [], segments: [] };
       return res.json();
     },
     enabled: !!employeeId && !!date,
+    staleTime: 0,
   });
 
   const filtered = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === date);
 
-  // Build route with timestamps for playback
+  // Build timestamped route from GPS points → fallback to waypoints
   const routeWithTime = useMemo(() => {
     const gpsPts = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
       .map(p => ({ pos: [Number(p.latitude), Number(p.longitude)] as [number, number], ts: p.recordedAt }));
     if (gpsPts.length > 0) return gpsPts;
-    const waypoints: { pos: [number, number]; ts: string }[] = [];
+    const wps: { pos: [number, number]; ts: string }[] = [];
     filtered.forEach(trip => {
       if (trip.startLatitude && trip.startLongitude)
-        waypoints.push({ pos: [Number(trip.startLatitude), Number(trip.startLongitude)], ts: trip.startTime as string });
+        wps.push({ pos: [Number(trip.startLatitude), Number(trip.startLongitude)], ts: trip.startTime as string });
       (trip.visits || []).forEach(v => {
         if (v.punchInLatitude && v.punchInLongitude)
-          waypoints.push({ pos: [Number(v.punchInLatitude), Number(v.punchInLongitude)], ts: v.punchInTime as unknown as string });
+          wps.push({ pos: [Number(v.punchInLatitude), Number(v.punchInLongitude)], ts: v.punchInTime as unknown as string });
       });
       if (trip.endLatitude && trip.endLongitude)
-        waypoints.push({ pos: [Number(trip.endLatitude), Number(trip.endLongitude)], ts: trip.endTime as string });
+        wps.push({ pos: [Number(trip.endLatitude), Number(trip.endLongitude)], ts: trip.endTime as string });
     });
-    return waypoints;
+    return wps;
   }, [locationData, filtered]);
 
-  const routePoints = useMemo(() => routeWithTime.map(r => r.pos), [routeWithTime]);
+  const rawPoints = useMemo(() => routeWithTime.map(r => r.pos), [routeWithTime]);
+
+  // Road-snap whenever rawPoints change
+  useEffect(() => {
+    if (rawPoints.length < 2) { setSnappedPoints([]); return; }
+    let cancelled = false;
+    setSnapping(true);
+    osrmSnap(rawPoints).then(pts => {
+      if (!cancelled) { setSnappedPoints(pts); setSnapping(false); }
+    });
+    return () => { cancelled = true; };
+  }, [JSON.stringify(rawPoints)]);
+
+  // Build numbered stoppages from segments
+  const stoppages = useMemo(() => {
+    let num = 1;
+    return (locationData?.segments ?? [])
+      .filter(s => s.type === "stoppage" && s.lat && s.lng)
+      .map(s => {
+        const mins = Math.floor((s.durationSecs || 0) / 60);
+        const secs = Math.round((s.durationSecs || 0) % 60);
+        return {
+          pos: [s.lat!, s.lng!] as [number, number],
+          num: num++,
+          durationStr: `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
+          startTs: new Date(s.startTime).toLocaleTimeString(),
+          endTs: new Date(s.endTime).toLocaleTimeString(),
+        };
+      });
+  }, [locationData]);
 
   // Build CHK stop list
   const chkStops = useMemo(() => {
@@ -727,7 +819,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     );
   }, [filtered]);
 
-  // Playback timer — advances index when playing
+  // Playback timer — interval shrinks as speed increases
   useEffect(() => {
     if (playing) {
       playTimerRef.current = setInterval(() => {
@@ -735,17 +827,17 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           if (prev >= routeWithTime.length - 1) { setPlaying(false); return prev; }
           return prev + 1;
         });
-      }, 180);
+      }, Math.max(50, Math.round(180 / speedMult)));
     } else {
       clearInterval(playTimerRef.current);
     }
     return () => clearInterval(playTimerRef.current);
-  }, [playing, routeWithTime.length]);
+  }, [playing, routeWithTime.length, speedMult]);
 
-  // Reset playback when date or altMode changes
-  useEffect(() => { setPlaybackIdx(0); setPlaying(false); }, [date, altMode]);
+  // Reset playback when date changes
+  useEffect(() => { setPlaybackIdx(0); setPlaying(false); setSnappedPoints([]); }, [date]);
 
-  // Speed between consecutive points (km/h)
+  // Speed at current playback position (km/h)
   const currentSpeedKmh = useMemo(() => {
     if (routeWithTime.length < 2 || playbackIdx === 0) return 0;
     const p1 = routeWithTime[playbackIdx - 1];
@@ -757,27 +849,22 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   }, [routeWithTime, playbackIdx]);
 
   const currentTs = routeWithTime[playbackIdx]?.ts;
-  const tsDisplay = currentTs ? format(new Date(currentTs), "yyyy-MM-dd HH:mm") : "--";
+  const tsDisplay = currentTs ? format(new Date(currentTs), "yyyy-MM-dd HH:mm:ss") : "--";
   const speedDisplay = `${currentSpeedKmh.toFixed(2)} KM/H`;
+  const progress = routeWithTime.length > 1 ? (playbackIdx / (routeWithTime.length - 1)) * 100 : 0;
 
-  // Moving dot position during playback — visible whenever animation has started
-  const playbackPos: [number, number] | null = routeWithTime.length > 0 && playbackIdx > 0
+  const playbackPos: [number, number] | null = routeWithTime.length > 0 && playbackIdx >= 0
     ? routeWithTime[Math.min(playbackIdx, routeWithTime.length - 1)].pos
     : null;
 
-  const defaultCenter: [number, number] = routePoints.length > 0 ? routePoints[0] : [22.8, 80.0];
+  const defaultCenter: [number, number] = rawPoints.length > 0 ? rawPoints[0] : [22.8, 80.0];
 
-  const fitBounds = () => {
+  const fitAll = () => {
     const m = leafletMap.current;
-    if (!m || routePoints.length < 2) return;
-    const bounds = L.latLngBounds(routePoints.map(p => L.latLng(p[0], p[1])));
-    m.fitBounds(bounds, { padding: [40, 40] });
-  };
-
-  // 2nd icon: toggle playback mode + fit bounds
-  const handleLocateToggle = () => {
-    setAltMode(prev => !prev);
-    fitBounds();
+    const pts = snappedPoints.length > 1 ? snappedPoints : rawPoints;
+    if (!m || pts.length < 1) return;
+    if (pts.length === 1) { m.setView(pts[0], 15); return; }
+    m.fitBounds(L.latLngBounds(pts.map(p => L.latLng(p[0], p[1]))), { padding: [50, 50] });
   };
 
   const toggleFullscreen = () => {
@@ -787,7 +874,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
     else document.exitFullscreen?.();
   };
 
-  const ctrlBtn = "w-[34px] h-[34px] bg-white flex items-center justify-center hover:bg-gray-50 cursor-pointer border-b border-gray-200 last:border-b-0";
+  const ctrlBtn = "w-8 h-8 bg-white flex items-center justify-center hover:bg-gray-50 cursor-pointer border-b border-gray-200 last:border-b-0 transition-colors";
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
@@ -799,103 +886,102 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
         zoomControl={false}
       >
         <PlaybackMapInner
-          routePoints={routePoints}
+          rawPoints={rawPoints}
+          snappedPoints={snappedPoints}
           chkStops={chkStops}
+          stoppages={stoppages}
           mapTypeId={mapTypeId}
-          routeColor={"#1d4ed8"}
           playbackPos={playbackPos}
           onMapReady={(m) => { leafletMap.current = m; }}
         />
       </MapContainer>
 
-      {/* ── Right-side control panel ── */}
-      <div className="absolute z-[1001] select-none flex flex-col items-center gap-[6px]" style={{ top: 10, right: 10 }}>
+      {/* ── Top-left: snapping indicator ── */}
+      {snapping && (
+        <div className="absolute top-2 left-2 z-[1001] bg-white/90 rounded-full shadow px-3 py-1 text-[11px] text-blue-700 font-medium flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin" /> Snapping to roads…
+        </div>
+      )}
 
-        {/* 1. Layers / map-type selector */}
+      {/* ── Right-side controls ── */}
+      <div className="absolute z-[1001] select-none flex flex-col items-center gap-1.5" style={{ top: 10, right: 10 }}>
+        {/* Layers / map-type */}
         <div className="relative">
-          <button
-            onClick={() => setLayerOpen(o => !o)}
-            title="Map type"
-            className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-              <polyline points="2 12 12 17 22 12"/>
-              <polyline points="2 17 12 22 22 17"/>
+          <button onClick={() => setLayerOpen(o => !o)} title="Map type"
+            className="w-8 h-8 bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-200">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 12 12 17 22 12"/><polyline points="2 17 12 22 22 17"/>
             </svg>
           </button>
           {layerOpen && (
-            <div className="absolute right-0 top-[38px] bg-white rounded shadow-lg border border-gray-200 py-1 w-[150px] text-[12px] z-[1002]">
+            <div className="absolute right-0 top-9 bg-white rounded shadow-lg border border-gray-200 py-1 w-36 text-[12px] z-[1002]">
               {MAP_TYPES.map(opt => (
-                <button
-                  key={opt.id}
-                  onClick={() => { onMapTypeChange(opt.id); setLayerOpen(false); }}
-                  className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ${mapTypeId === opt.id ? "font-semibold text-blue-600" : "text-gray-700"}`}
-                >
-                  {mapTypeId === opt.id ? <span className="text-blue-600">✓</span> : <span className="w-3"/>}
-                  {opt.label}
+                <button key={opt.id} onClick={() => { onMapTypeChange(opt.id); setLayerOpen(false); }}
+                  className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ${mapTypeId === opt.id ? "font-semibold text-blue-600" : "text-gray-700"}`}>
+                  {mapTypeId === opt.id ? "✓" : <span className="w-3"/>} {opt.label}
                 </button>
               ))}
             </div>
           )}
         </div>
-
-        {/* 2. Target button — toggles orange ↔ blue route */}
-        <button
-          onClick={handleLocateToggle}
-          title={altMode ? "Back to standard view" : "Playback animation mode"}
-          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke={altMode ? "#1a73e8" : "#666"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="7"/>
-            <line x1="12" y1="1" x2="12" y2="5"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="1" y1="12" x2="5" y2="12"/>
-            <line x1="19" y1="12" x2="23" y2="12"/>
+        {/* Fit all */}
+        <button onClick={fitAll} title="Fit route to screen"
+          className="w-8 h-8 bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-200">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#555" strokeWidth="2.2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="5"/>
+            <line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/>
           </svg>
         </button>
-
-        {/* 3+4. Zoom +/− group */}
-        <div className="bg-white rounded shadow-md border border-gray-300 overflow-hidden flex flex-col">
+        {/* Zoom +/- */}
+        <div className="bg-white rounded shadow-md border border-gray-200 overflow-hidden flex flex-col">
           <button onClick={() => leafletMap.current?.zoomIn()} title="Zoom in" className={ctrlBtn}>
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2.5" strokeLinecap="round">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#555" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
           </button>
           <button onClick={() => leafletMap.current?.zoomOut()} title="Zoom out" className={ctrlBtn}>
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2.5" strokeLinecap="round">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#555" strokeWidth="2.5" strokeLinecap="round">
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
           </button>
         </div>
-
-        {/* 5. Fullscreen toggle */}
-        <button
-          onClick={toggleFullscreen}
-          title="Fullscreen"
-          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {/* Fullscreen */}
+        <button onClick={toggleFullscreen} title="Fullscreen"
+          className="w-8 h-8 bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-200">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
             <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
           </svg>
         </button>
-
-        {/* 6. Blue location pin — go to route start */}
-        <button
-          onClick={() => { if (routePoints.length > 0 && leafletMap.current) leafletMap.current.setView(routePoints[0], 15); }}
-          title="Go to start"
-          className="w-[34px] h-[34px] bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-300"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="#1a73e8" stroke="white" strokeWidth="0.5">
+        {/* Go to start */}
+        <button onClick={() => { if (rawPoints.length > 0 && leafletMap.current) leafletMap.current.setView(rawPoints[0], 16); }}
+          title="Go to start" className="w-8 h-8 bg-white rounded shadow-md flex items-center justify-center hover:bg-gray-50 border border-gray-200">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="#1a73e8" stroke="white" strokeWidth="0.5">
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
           </svg>
         </button>
       </div>
 
-      {/* ── Playback bar — always visible at the bottom ── */}
-      <div className="absolute bottom-0 left-0 right-0 z-[1001] bg-white border-t border-gray-200 px-4 py-2.5 flex items-center justify-between shadow-md">
-        <div className="flex items-center gap-5">
+      {/* ── Bottom playback bar (TrackOlap-style) ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-[1001] bg-white border-t border-gray-200 shadow-lg select-none">
+        {/* Progress bar — full width, clickable */}
+        <div
+          className="h-1.5 bg-gray-200 cursor-pointer relative"
+          onClick={e => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            const newIdx = Math.round(pct * (routeWithTime.length - 1));
+            setPlaybackIdx(Math.max(0, Math.min(newIdx, routeWithTime.length - 1)));
+          }}
+        >
+          <div className="h-full bg-blue-700 transition-all" style={{ width: `${progress}%` }} />
+          {/* Scrubber thumb */}
+          <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-blue-700 border-2 border-white shadow"
+            style={{ left: `calc(${progress}% - 6px)` }} />
+        </div>
+
+        {/* Controls row */}
+        <div className="flex items-center gap-3 px-3 py-2">
           {/* Play / Pause */}
           <button
             onClick={() => {
@@ -903,47 +989,73 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
               setPlaying(p => !p);
             }}
             title={playing ? "Pause" : "Play"}
-            className="text-gray-700 hover:text-blue-600 transition-colors"
+            className="text-gray-700 hover:text-blue-700 transition-colors"
+            data-testid="button-pb-play"
           >
             {playing ? (
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
                 <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
             )}
           </button>
+
           {/* Stop / Reset */}
           <button
             onClick={() => { setPlaying(false); setPlaybackIdx(0); }}
             title="Stop & Reset"
-            className="text-gray-700 hover:text-blue-600 transition-colors"
+            className="text-gray-700 hover:text-blue-700 transition-colors"
+            data-testid="button-pb-stop"
           >
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="9"/>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
             </svg>
           </button>
-        </div>
-        {/* Speed + Refresh + Timestamp */}
-        <div className="flex items-center gap-4 text-[13px] font-mono text-gray-700 font-medium">
-          {playbackIdx > 0 && <span>{speedDisplay}</span>}
-          <button
-            onClick={() => { setPlaying(false); setPlaybackIdx(0); refetchPlayback(); }}
-            title="Refresh GPS data"
-            className="text-blue-500 hover:text-blue-700 transition-colors"
-          >
-            <svg
-              viewBox="0 0 24 24" width="18" height="18" fill="none"
-              stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-              className={pbFetching ? "animate-spin" : ""}
+
+          {/* Speed multiplier selector */}
+          <div className="relative">
+            <button
+              onClick={() => setSpeedOpen(o => !o)}
+              className="flex items-center gap-1 border border-gray-300 rounded px-2 py-0.5 text-[12px] font-semibold text-gray-700 hover:border-blue-400 hover:text-blue-700 transition-colors bg-white"
+              data-testid="button-pb-speed"
             >
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-          </button>
-          <span>{tsDisplay}</span>
+              {speedMult}x
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            {speedOpen && (
+              <div className="absolute bottom-8 left-0 bg-white border border-gray-200 rounded shadow-lg py-1 z-[1010]">
+                {PB_SPEEDS.map(s => (
+                  <button key={s} onClick={() => { setSpeedMult(s); setSpeedOpen(false); }}
+                    className={`block w-full text-left px-4 py-1 text-[13px] hover:bg-gray-50 ${speedMult === s ? "font-bold text-blue-600" : "text-gray-700"}`}>
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Spacer + timestamp + speed + refresh */}
+          <div className="flex-1 flex items-center justify-end gap-4 font-mono text-[12px] text-gray-600">
+            <span className="font-semibold text-gray-800" data-testid="text-pb-speed">{speedDisplay}</span>
+            <span className="text-gray-500" data-testid="text-pb-ts">{tsDisplay}</span>
+            <button
+              onClick={() => { setPlaying(false); setPlaybackIdx(0); refetchPlayback(); }}
+              title="Refresh GPS data for this date"
+              className="text-blue-500 hover:text-blue-700 transition-colors"
+              data-testid="button-pb-refresh"
+            >
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2"
+                strokeLinecap="round" strokeLinejoin="round" className={pbFetching ? "animate-spin" : ""}>
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
