@@ -20,6 +20,9 @@
     <!-- Restart tracking after phone reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Android 13+ — required to show the persistent GPS notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Camera for punch-in/out and odometer photos -->
     <uses-permission android:name="android.permission.CAMERA" />
 
@@ -47,7 +50,24 @@
 
         </activity>
 
-        <!-- Background geolocation foreground service -->
+        <!-- ── Rishi native GPS foreground service ── -->
+        <!-- Runs independently of WebView — survives app minimize AND app kill -->
+        <service
+            android:name=".RishiLocationService"
+            android:foregroundServiceType="location"
+            android:exported="false"
+            android:stopWithTask="false" />
+
+        <!-- Restart GPS tracking automatically after device reboot -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- capacitor-community/background-geolocation (kept for compatibility) -->
         <service
             android:name="com.capacitorjs.community.plugin.backgroundgeolocation.BackgroundGeolocationService"
             android:foregroundServiceType="location"

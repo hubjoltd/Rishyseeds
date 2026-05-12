@@ -3,73 +3,30 @@
  *
  * Unified GPS service for Rishi Seeds Field App.
  *
- * - On Android (Capacitor native): uses the BackgroundGeolocation plugin via
- *   Capacitor's registerPlugin() bridge. The plugin code runs natively and
- *   keeps tracking even when the app is minimized or the screen is off.
+ * On Android (Capacitor native):
+ *   Uses RishiLocationService — a true Android foreground service written in
+ *   Kotlin that runs independently of the WebView, survives app close/kill,
+ *   shows a persistent "GPS Tracking Active" notification, and restarts after
+ *   device reboot. Auth token is stored in SharedPreferences so the service
+ *   can POST GPS even when JavaScript is not running.
  *
- * - On browser / WebView fallback: uses navigator.geolocation.watchPosition
- *   with Wake Lock API to keep the screen alive.
- *
- * The @capacitor-community/background-geolocation npm package is NOT imported
- * here because it has no ESM/CJS exports for web bundlers. Instead we use
- * registerPlugin() from @capacitor/core to call the already-installed native
- * plugin through Capacitor's JS bridge.
+ * On browser / WebView fallback:
+ *   Uses navigator.geolocation.watchPosition with Wake Lock API.
  */
 
 import { registerPlugin, Capacitor } from "@capacitor/core";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface BgLocation {
-  latitude: number;
-  longitude: number;
-  accuracy: number | null;
-  speed: number | null;
-  bearing?: number | null;
-  altitude?: number | null;
+interface RishiLocationPlugin {
+  startTracking(options: { token: string; serverUrl: string }): Promise<void>;
+  stopTracking(): Promise<void>;
+  isTracking(): Promise<{ value: boolean }>;
+  saveToken(options: { token: string; serverUrl: string }): Promise<void>;
 }
 
-interface BgGeoError {
-  code: string;
-  message: string;
-}
-
-interface BackgroundGeolocationPlugin {
-  addWatcher(
-    options: {
-      backgroundMessage: string;
-      backgroundTitle: string;
-      requestPermissions: boolean;
-      stale: boolean;
-      distanceFilter: number;
-    },
-    callback: (location: BgLocation | null, error: BgGeoError | null) => void
-  ): Promise<string>;
-  removeWatcher(options: { id: string }): Promise<void>;
-}
-
-// Register the native plugin by name (the native Android/iOS code registers
-// itself into Capacitor at app start; this just gives us a typed handle to it)
-const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
-  "BackgroundGeolocation"
-);
-
-/**
- * Request all location permissions needed for background GPS.
- * Call this once at app startup when running natively.
- * On Android this asks for FINE + COARSE first, then BACKGROUND location.
- */
-export async function requestAllLocationPermissions(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    const { Geolocation } = await import("@capacitor/geolocation");
-    await Geolocation.requestPermissions({ permissions: ["location", "coarseLocation"] });
-    // Background location must be requested separately on Android 11+
-    // The BackgroundGeolocation watcher handles this automatically via requestPermissions:true
-  } catch {}
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
+// Bridge to the native Kotlin LocationPlugin registered in MainActivity
+const RishiLocation = registerPlugin<RishiLocationPlugin>("RishiLocation");
 
 export const isCapacitorNative: boolean = Capacitor.isNativePlatform();
 
@@ -83,13 +40,16 @@ export type GpsOptions = {
 
 type StopFn = () => void;
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Extract Bearer token string from auth headers */
+function extractToken(authHeaders: Record<string, string>): string | null {
+  const auth = authHeaders["Authorization"] || authHeaders["authorization"] || "";
+  return auth.startsWith("Bearer ") ? auth.slice(7) : null;
+}
+
 async function postLocation(
-  payload: {
-    latitude: number;
-    longitude: number;
-    accuracy: number | null;
-    speed: number | null;
-  },
+  payload: { latitude: number; longitude: number; accuracy: number | null; speed: number | null },
   authHeaders: Record<string, string>,
   onStatus: (s: GpsStatus) => void
 ) {
@@ -105,55 +65,50 @@ async function postLocation(
   }
 }
 
-// ── Native (Capacitor) GPS ─────────────────────────────────────────────────
+// ── Native (Capacitor Android) GPS ─────────────────────────────────────────
+// Uses RishiLocationService — a Kotlin foreground service that:
+//   • Shows a persistent notification ("GPS Tracking Active")
+//   • Survives app minimize AND app kill
+//   • Restarts automatically on device reboot
+//   • POSTs GPS directly via HttpURLConnection without needing JS
 
 async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
-  const throttleMs = opts.throttleMs ?? 15000;
   const onStatus = opts.onStatus ?? (() => {});
-  let lastSentAt = 0;
 
-  const watcherId = await BackgroundGeolocation.addWatcher(
-    {
-      backgroundMessage:
-        "Rishi Seeds is recording your location for trip management.",
-      backgroundTitle: "GPS Tracking Active",
-      requestPermissions: true,
-      stale: false,
-      distanceFilter: 20,
-    },
-    (location, error) => {
-      if (error || !location) {
-        onStatus("error");
-        return;
-      }
-      const now = Date.now();
-      if (now - lastSentAt >= throttleMs) {
-        lastSentAt = now;
-        postLocation(
-          {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            accuracy: location.accuracy ?? null,
-            speed: location.speed ?? null,
-          },
-          opts.authHeaders,
-          onStatus
-        );
-      }
-    }
-  );
+  const token = extractToken(opts.authHeaders);
+  if (!token) {
+    onStatus("error");
+    console.warn("[RishiGPS] No auth token — cannot start native GPS");
+    return () => {};
+  }
 
-  return () => {
-    BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => {});
+  const serverUrl = window.location.origin.includes("localhost")
+    ? "https://app.rishihybridseeds.com"
+    : window.location.origin;
+
+  try {
+    await RishiLocation.startTracking({ token, serverUrl });
+    onStatus("active");
+    console.log("[RishiGPS] Native foreground service started");
+  } catch (e) {
+    console.error("[RishiGPS] Failed to start native service:", e);
+    onStatus("error");
+  }
+
+  return async () => {
+    try {
+      await RishiLocation.stopTracking();
+      console.log("[RishiGPS] Native foreground service stopped");
+    } catch {}
   };
 }
 
-// ── Web (browser / basic WebView) GPS ────────────────────────────────────
+// ── Web (browser / basic WebView) GPS ─────────────────────────────────────
 
 function startWebGps(opts: GpsOptions): StopFn {
   const throttleMs = opts.throttleMs ?? 15000;
-  const onStatus = opts.onStatus ?? (() => {});
-  let lastSentAt = 0;
+  const onStatus   = opts.onStatus ?? (() => {});
+  let lastSentAt   = 0;
   let wakeLock: any = null;
 
   const acquireWakeLock = async () => {
@@ -171,10 +126,10 @@ function startWebGps(opts: GpsOptions): StopFn {
       lastSentAt = now;
       postLocation(
         {
-          latitude: pos.coords.latitude,
+          latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy ?? null,
-          speed: pos.coords.speed ?? null,
+          accuracy:  pos.coords.accuracy ?? null,
+          speed:     pos.coords.speed ?? null,
         },
         opts.authHeaders,
         onStatus
@@ -192,19 +147,7 @@ function startWebGps(opts: GpsOptions): StopFn {
     if (document.visibilityState === "visible") {
       acquireWakeLock();
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          lastSentAt = Date.now();
-          postLocation(
-            {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy ?? null,
-              speed: pos.coords.speed ?? null,
-            },
-            opts.authHeaders,
-            onStatus
-          );
-        },
+        (pos) => { lastSentAt = Date.now(); postLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy ?? null, speed: pos.coords.speed ?? null }, opts.authHeaders, onStatus); },
         () => {},
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
       );
@@ -219,13 +162,38 @@ function startWebGps(opts: GpsOptions): StopFn {
   };
 }
 
-// ── Public API ────────────────────────────────────────────────────────────
+// ── Public API ─────────────────────────────────────────────────────────────
+
+/**
+ * Request all location permissions. Call once at app startup on native.
+ */
+export async function requestAllLocationPermissions(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { Geolocation } = await import("@capacitor/geolocation");
+    await Geolocation.requestPermissions({ permissions: ["location", "coarseLocation"] });
+  } catch {}
+}
+
+/**
+ * Save the auth token to native SharedPreferences so the foreground service
+ * can continue posting GPS after the app is closed. Call this right after login.
+ */
+export async function saveTokenToNative(token: string): Promise<void> {
+  if (!isCapacitorNative) return;
+  const serverUrl = "https://app.rishihybridseeds.com";
+  try {
+    await RishiLocation.saveToken({ token, serverUrl });
+  } catch (e) {
+    console.warn("[RishiGPS] saveToken failed:", e);
+  }
+}
 
 /**
  * Start GPS tracking. Returns a stop function.
  *
- * Automatically uses native Capacitor background GPS when running as a native
- * Android/iOS app, and falls back to the web geolocation API otherwise.
+ * On Android native: starts the Kotlin foreground service (persistent, survives
+ * app kill, shows notification). On web: uses watchPosition fallback.
  */
 export async function startGpsTracking(opts: GpsOptions): Promise<StopFn> {
   if (isCapacitorNative) {

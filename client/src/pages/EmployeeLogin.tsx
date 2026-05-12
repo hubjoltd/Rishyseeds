@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { saveTokenToNative } from "@/lib/native-gps";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,24 @@ export default function EmployeeLogin() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Auto-redirect to dashboard if a valid token is already stored (app reopen after close)
+  useEffect(() => {
+    const token = getEmployeeToken();
+    if (!token) return;
+    // Verify the token is still valid before redirecting
+    fetch("/api/employee/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          queryClient.setQueryData(["/api/employee/me"], data);
+          setLocation("/employee-portal");
+        } else {
+          clearEmployeeToken(); // token expired — clear it
+        }
+      })
+      .catch(() => {}); // network error — stay on login page
+  }, []);
+
   const form = useForm<z.infer<typeof employeeLoginSchema>>({
     resolver: zodResolver(employeeLoginSchema),
     defaultValues: {
@@ -59,6 +79,9 @@ export default function EmployeeLogin() {
     onSuccess: (data) => {
       if (data.token) {
         setEmployeeToken(data.token);
+        // Persist token to Android SharedPreferences so the native GPS
+        // foreground service can keep posting even when the app is killed
+        saveTokenToNative(data.token);
       }
       queryClient.setQueryData(["/api/employee/me"], data);
       toast({ title: "Welcome!", description: `Logged in as ${data.fullName}` });
