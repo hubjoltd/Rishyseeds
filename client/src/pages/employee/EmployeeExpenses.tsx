@@ -333,13 +333,15 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     conveyanceFare, postageFare, otherFare, otherRemarks,
   ]);
 
-  const bothPhotosUploaded = !!startOdoFile && !!endOdoFile;
+  const startPhotoReady = !!startOdoFile;
+  const endPhotoReady = !!endOdoFile;
+  const bothPhotosUploaded = startPhotoReady && endPhotoReady;
 
   const isLocalTravel = expenseType === "LOCAL TRAVEL CLAIM";
 
   const startOdoNum = Number(startOdo) || 0;
   const endOdoNum = Number(endOdo) || 0;
-  const totalDistance = bothPhotosUploaded && endOdoNum > startOdoNum ? endOdoNum - startOdoNum : 0;
+  const totalDistance = endOdoNum > startOdoNum && startOdo && endOdo ? endOdoNum - startOdoNum : 0;
   const ratePerKm = Number(amtPerKm) || 1;
   const totalTravelAmt = totalDistance * ratePerKm;
 
@@ -777,9 +779,9 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
               <Gauge className="h-3.5 w-3.5 text-gray-600" />
               <span className="text-xs font-semibold text-gray-600">Odometer</span>
-              {!bothPhotosUploaded && (
+              {!startPhotoReady && (
                 <span className="ml-auto text-[10px] text-amber-600 flex items-center gap-1">
-                  <Lock className="h-3 w-3" /> Upload both photos to enter readings
+                  <Lock className="h-3 w-3" /> Upload start photo first
                 </span>
               )}
             </div>
@@ -817,11 +819,11 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 </div>
               </div>
 
-              {/* Step 2: Enter readings (only after both photos) */}
-              <div className={!bothPhotosUploaded ? "opacity-50 pointer-events-none select-none" : ""}>
+              {/* Step 2: Enter readings — each unlocks when its own photo is ready */}
+              <div className={!startPhotoReady ? "opacity-50 pointer-events-none select-none" : ""}>
                 <p className="text-xs text-gray-500 font-semibold mb-2 flex items-center gap-1">
                   Step 2 — Enter Odometer Readings
-                  {!bothPhotosUploaded && <Lock className="h-3 w-3 text-gray-400" />}
+                  {!startPhotoReady && <Lock className="h-3 w-3 text-gray-400" />}
                 </p>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
@@ -831,19 +833,22 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                       placeholder="e.g. 50000"
                       value={startOdo}
                       onChange={e => setStartOdo(e.target.value)}
-                      disabled={!bothPhotosUploaded}
+                      disabled={!startPhotoReady}
                       className="text-sm h-9"
                       data-testid="input-start-odometer"
                     />
                   </div>
-                  <div>
-                    <label className="text-[10px] text-gray-400 block mb-1">End Reading (km)</label>
+                  <div className={!endPhotoReady ? "opacity-50 pointer-events-none select-none" : ""}>
+                    <label className="text-[10px] text-gray-400 block mb-1 flex items-center gap-1">
+                      End Reading (km)
+                      {!endPhotoReady && <Lock className="h-2.5 w-2.5 text-gray-400" />}
+                    </label>
                     <Input
                       type="number"
                       placeholder="e.g. 50120"
                       value={endOdo}
                       onChange={e => setEndOdo(e.target.value)}
-                      disabled={!bothPhotosUploaded}
+                      disabled={!endPhotoReady}
                       className="text-sm h-9"
                       data-testid="input-end-odometer"
                     />
@@ -857,7 +862,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                       {totalDistance > 0 ? `${totalDistance} km` : "-"}
                     </div>
                   </div>
-                  <div>
+                  <div className={!bothPhotosUploaded ? "opacity-50 pointer-events-none select-none" : ""}>
                     <p className="text-[10px] text-gray-400 mb-1">Amount /Km *</p>
                     <Input
                       type="number"
