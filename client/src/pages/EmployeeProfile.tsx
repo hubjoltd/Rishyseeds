@@ -330,18 +330,15 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {/* Use road-snapped points when available, otherwise raw GPS */}
-      {(snappedPoints.length > 1 ? snappedPoints : gpsPoints).length > 1 && <>
-        {/* White outer border */}
-        <Polyline
-          positions={snappedPoints.length > 1 ? snappedPoints : gpsPoints}
-          pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }}
-        />
-        {/* Blue route fill */}
-        <Polyline
-          positions={snappedPoints.length > 1 ? snappedPoints : gpsPoints}
-          pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}
-        />
+      {/* Raw GPS line: always draw immediately so the track is never invisible */}
+      {gpsPoints.length > 1 && <>
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+      </>}
+      {/* OSRM road-snapped overlay: replaces raw line when snap succeeds */}
+      {snappedPoints.length > 1 && <>
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
@@ -711,15 +708,15 @@ function PlaybackMapInner({
       <PbBoundsFitter points={routeLine} />
 
       {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {routeLine.length > 1 && <>
-        <Polyline
-          positions={routeLine}
-          pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }}
-        />
-        <Polyline
-          positions={routeLine}
-          pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}
-        />
+      {/* Raw GPS line: always draw immediately so track is never invisible */}
+      {rawPoints.length > 1 && <>
+        <Polyline positions={rawPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={rawPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+      </>}
+      {/* OSRM road-snapped overlay: draws on top of raw when snap succeeds */}
+      {snappedPoints.length > 1 && <>
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
 
       {/* Idle/stoppage circles — orange filled, white border */}
