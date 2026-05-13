@@ -930,7 +930,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       </Dialog>
 
       {/* ── Start Odometer Dialog (after punch-in) ── */}
-      <Dialog open={startOdoDialogOpen} onOpenChange={(o) => { if (!o) { setStartOdoDialogOpen(false); setStartOdoFile(null); setStartOdoPreview(null); setStartOdoReading(""); } }}>
+      <Dialog open={startOdoDialogOpen} onOpenChange={(o) => { if (!o) setStartOdoDialogOpen(false); }}>
         <DialogContent className="max-w-sm mx-auto">
           <DialogHeader>
             <div className="bg-green-700 -mx-6 -mt-6 px-5 pt-5 pb-4 rounded-t-lg">
@@ -973,7 +973,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       </Dialog>
 
       {/* ── End Odometer Dialog (after punch-out) ── */}
-      <Dialog open={endOdoDialogOpen} onOpenChange={(o) => { if (!o) { setEndOdoDialogOpen(false); setEndOdoFile(null); setEndOdoPreview(null); setEndOdoReading(""); } }}>
+      <Dialog open={endOdoDialogOpen} onOpenChange={(o) => { if (!o) setEndOdoDialogOpen(false); }}>
         <DialogContent className="max-w-sm mx-auto">
           <DialogHeader>
             <div className="bg-red-600 -mx-6 -mt-6 px-5 pt-5 pb-4 rounded-t-lg">
