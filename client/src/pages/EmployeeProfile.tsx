@@ -628,39 +628,71 @@ function makePbStoppageIcon(_num: number, dur = "") {
 }
 
 // Snap GPS points to actual roads via OSRM public API (falls back to raw points on error)
+/** Fetch road-snapped route from OSRM.
+ *  Strategy:
+ *  - Dense GPS (≥ 15 pts): map-match with /match/v1 (respects actual path taken)
+ *  - Sparse GPS (< 15 pts): route between waypoints with /route/v1 (gives smooth road-following line)
+ *  - If match fails/times out: fall back to /route/v1
+ *  - If route also fails: return raw GPS points
+ */
 async function osrmSnap(points: [number, number][]): Promise<[number, number][]> {
   if (points.length < 2) return points;
-  try {
-    // Sample down to max 100 points (OSRM limit)
-    const step = Math.ceil(points.length / 100);
-    const sample = points.filter((_, i) => i % step === 0 || i === points.length - 1);
-    const coords = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-    const url = `https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-    let res: Response;
+
+  const geoToLeaflet = (coords: [number, number][]): [number, number][] =>
+    coords.map(([lng, lat]) => [lat, lng]);
+
+  const fetchWithTimeout = async (url: string, ms = 10000): Promise<Response> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try { return await fetch(url, { signal: ctrl.signal }); }
+    finally { clearTimeout(t); }
+  };
+
+  // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
+  const tryRoute = async (pts: [number, number][]): Promise<[number, number][] | null> => {
     try {
-      res = await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-    if (!res.ok) return points;
-    const data = await res.json();
-    // OSRM returns multiple `matchings` when there are GPS gaps — concatenate ALL of them
-    if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return points;
-    const allCoords: [number, number][] = [];
-    for (const matching of data.matchings) {
-      const coords = matching?.geometry?.coordinates;
-      if (Array.isArray(coords)) {
-        for (const [lng, lat] of coords) {
-          allCoords.push([lat, lng]);
-        }
+      // Sample to max 25 waypoints (route endpoint works best with fewer, key waypoints)
+      const step = Math.max(1, Math.ceil(pts.length / 25));
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+      const res = await fetchWithTimeout(url, 10000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
+      const snapped = geoToLeaflet(data.routes[0].geometry.coordinates);
+      return snapped.length > 1 ? snapped : null;
+    } catch { return null; }
+  };
+
+  // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
+  const tryMatch = async (pts: [number, number][]): Promise<[number, number][] | null> => {
+    try {
+      const step = Math.ceil(pts.length / 100);
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+      const radiuses = sample.map(() => "50").join(";");
+      const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
+      const res = await fetchWithTimeout(url, 10000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return null;
+      const allCoords: [number, number][] = [];
+      for (const m of data.matchings) {
+        if (Array.isArray(m?.geometry?.coordinates))
+          allCoords.push(...geoToLeaflet(m.geometry.coordinates));
       }
-    }
-    return allCoords.length > 1 ? allCoords : points;
-  } catch {
-    return points; // fallback to straight polyline
+      return allCoords.length > 1 ? allCoords : null;
+    } catch { return null; }
+  };
+
+  // Dense GPS → try match first, fall back to route; Sparse → go straight to route
+  if (points.length >= 15) {
+    const matched = await tryMatch(points);
+    if (matched) return matched;
   }
+  const routed = await tryRoute(points);
+  return routed ?? points;
 }
 
 // Inner layer — must be inside MapContainer so Leaflet hooks work
