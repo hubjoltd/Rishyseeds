@@ -37,6 +37,24 @@ async function sendPushToEmployee(employeeDbId: number, title: string, body: str
   } catch {}
 }
 
+async function sendPushToAll(title: string, body: string, url?: string) {
+  try {
+    const subs = await storage.getAllPushSubscriptions();
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify({ title, body, url: url || "/", tag: `rishi-${Date.now()}` })
+        );
+      } catch (err: any) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          await storage.deletePushSubscription(sub.endpoint);
+        }
+      }
+    }
+  } catch {}
+}
+
 const uploadsDir = path.resolve("uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -3747,6 +3765,12 @@ export async function registerRoutes(
         tripId: activeTripId,
         checkInPhoto,
       });
+      // Notify all subscribed devices about the customer check-in
+      sendPushToAll(
+        `📍 ${emp.fullName} Checked In`,
+        `Customer: ${finalCustomerName}${finalMobile ? ` (${finalMobile})` : ""}`,
+        `/employees/${empId}`
+      ).catch(() => {});
       res.status(201).json(checkin);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to record check-in" });

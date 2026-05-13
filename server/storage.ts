@@ -263,6 +263,7 @@ export interface IStorage {
   // Push Subscriptions
   savePushSubscription(data: { employeeDbId: number; endpoint: string; p256dh: string; auth: string }): Promise<any>;
   getPushSubscriptionsByEmployee(employeeDbId: number): Promise<any[]>;
+  getAllPushSubscriptions(): Promise<any[]>;
   deletePushSubscription(endpoint: string): Promise<void>;
   // Company Settings
   getCompanySetting(key: string): Promise<string | null>;
@@ -1328,6 +1329,10 @@ export class DatabaseStorage implements IStorage {
 
   async getPushSubscriptionsByEmployee(employeeDbId: number): Promise<any[]> {
     return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.employeeDbId, employeeDbId));
+  }
+
+  async getAllPushSubscriptions(): Promise<any[]> {
+    return db.select().from(pushSubscriptions);
   }
 
   async deletePushSubscription(endpoint: string): Promise<void> {

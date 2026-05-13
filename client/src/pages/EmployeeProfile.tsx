@@ -709,6 +709,14 @@ function PlaybackMapInner({
   mapTypeId,
   playbackPos,
   onMapReady,
+  punchInLat,
+  punchInLng,
+  punchInLocation,
+  punchInTime,
+  punchOutLat,
+  punchOutLng,
+  punchOutLocation,
+  punchOutTime,
 }: {
   rawPoints: [number, number][];
   snappedPoints: [number, number][];
@@ -717,6 +725,14 @@ function PlaybackMapInner({
   mapTypeId: string;
   playbackPos: [number, number] | null;
   onMapReady: (m: any) => void;
+  punchInLat?: number | null;
+  punchInLng?: number | null;
+  punchInLocation?: string | null;
+  punchInTime?: string | null;
+  punchOutLat?: number | null;
+  punchOutLng?: number | null;
+  punchOutLocation?: string | null;
+  punchOutTime?: string | null;
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
   const map = useMap();
@@ -792,18 +808,40 @@ function PlaybackMapInner({
         </Marker>
       ))}
 
-      {/* START marker */}
-      {rawPoints.length > 0 && (
-        <Marker position={rawPoints[0]} icon={startIcon} zIndexOffset={200}>
-          <Popup><b style={{ color: "#15803d" }}>▶ Trip Start</b></Popup>
-        </Marker>
+      {/* Punch-In / START marker — uses attendance location, falls back to first GPS point */}
+      {(punchInLat && punchInLng
+        ? <Marker position={[punchInLat, punchInLng]} icon={startIcon} zIndexOffset={200}>
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 140 }}>
+                <b style={{ color: "#15803d" }}>▶ Punch In</b>
+                {punchInTime && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{punchInTime}</div>}
+                {punchInLocation && <div style={{ fontSize: 11, color: "#555" }}>{punchInLocation}</div>}
+              </div>
+            </Popup>
+          </Marker>
+        : rawPoints.length > 0
+          ? <Marker position={rawPoints[0]} icon={startIcon} zIndexOffset={200}>
+              <Popup><b style={{ color: "#15803d" }}>▶ Trip Start</b></Popup>
+            </Marker>
+          : null
       )}
 
-      {/* END marker (only if trip has ended — last raw point ≠ start) */}
-      {rawPoints.length > 1 && (
-        <Marker position={rawPoints[rawPoints.length - 1]} icon={endIcon} zIndexOffset={200}>
-          <Popup><b style={{ color: "#dc2626" }}>⬛ Last Position</b></Popup>
-        </Marker>
+      {/* Punch-Out / END marker — uses attendance location, falls back to last GPS point */}
+      {(punchOutLat && punchOutLng
+        ? <Marker position={[punchOutLat, punchOutLng]} icon={endIcon} zIndexOffset={200}>
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 140 }}>
+                <b style={{ color: "#dc2626" }}>⬛ Punch Out</b>
+                {punchOutTime && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{punchOutTime}</div>}
+                {punchOutLocation && <div style={{ fontSize: 11, color: "#555" }}>{punchOutLocation}</div>}
+              </div>
+            </Popup>
+          </Marker>
+        : rawPoints.length > 1
+          ? <Marker position={rawPoints[rawPoints.length - 1]} icon={endIcon} zIndexOffset={200}>
+              <Popup><b style={{ color: "#dc2626" }}>⬛ Last Position</b></Popup>
+            </Marker>
+          : null
       )}
 
       {/* Moving playback dot */}
@@ -818,12 +856,13 @@ function PlaybackMapInner({
 
 const PB_SPEEDS = [1, 2, 5, 10, 20];
 
-function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
+function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, attendanceRecords }: {
   trips: TripWithVisits[];
   date: string;
   employeeId: number;
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
+  attendanceRecords: any[];
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -835,6 +874,19 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
   const playTimerRef = useRef<any>(null);
   const leafletMap = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Find attendance record for the selected playback date
+  const pbAttendance = useMemo(() =>
+    attendanceRecords.find((r: any) => {
+      if (!r.date) return false;
+      try { return format(new Date(r.date), "yyyy-MM-dd") === date; } catch { return false; }
+    }),
+    [attendanceRecords, date]
+  );
+  const pbPunchInLat = pbAttendance?.checkInLatitude ? Number(pbAttendance.checkInLatitude) : null;
+  const pbPunchInLng = pbAttendance?.checkInLongitude ? Number(pbAttendance.checkInLongitude) : null;
+  const pbPunchOutLat = pbAttendance?.checkOutLatitude ? Number(pbAttendance.checkOutLatitude) : null;
+  const pbPunchOutLng = pbAttendance?.checkOutLongitude ? Number(pbAttendance.checkOutLongitude) : null;
 
   const { data: locationData, refetch: refetchPlayback, isFetching: pbFetching } = useQuery<{
     points: { latitude: string; longitude: string; recordedAt: string; speed?: string | null }[];
@@ -993,6 +1045,14 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange }: {
           mapTypeId={mapTypeId}
           playbackPos={playbackPos}
           onMapReady={(m) => { leafletMap.current = m; }}
+          punchInLat={pbPunchInLat}
+          punchInLng={pbPunchInLng}
+          punchInLocation={pbAttendance?.checkInLocation || null}
+          punchInTime={pbAttendance?.checkIn ? String(pbAttendance.checkIn) : null}
+          punchOutLat={pbPunchOutLat}
+          punchOutLng={pbPunchOutLng}
+          punchOutLocation={pbAttendance?.checkOutLocation || null}
+          punchOutTime={pbAttendance?.checkOut ? String(pbAttendance.checkOut) : null}
         />
       </MapContainer>
 
@@ -1912,6 +1972,7 @@ export default function EmployeeProfile() {
                   employeeId={empId}
                   mapTypeId={sharedMapTypeId}
                   onMapTypeChange={setSharedMapTypeId}
+                  attendanceRecords={attendanceRecords}
                 />
               )}
             </div>
