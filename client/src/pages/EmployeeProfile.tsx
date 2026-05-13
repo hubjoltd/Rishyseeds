@@ -281,14 +281,12 @@ function LiveMapInner({
   }, [gpsPoints, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng, autoFollow]);
 
   // Numbered stoppage icon factory
-  const makeStoppageIcon = (num: number) => L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
-      <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
-      <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
-      <circle cx="18" cy="14" r="8" fill="white"/>
-      <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="${num > 9 ? 8 : 10}" font-weight="bold" font-family="sans-serif">${num}</text>
-    </svg>`,
-    className: "", iconSize: [36, 44], iconAnchor: [18, 44],
+  const makeStoppageIcon = (_num: number, dur = "") => L.divIcon({
+    html: `<div style="width:52px;height:52px;border-radius:50%;background:#f97316;border:3px solid #ffffff;box-shadow:0 0 0 2px #f97316,0 3px 8px rgba(0,0,0,0.35);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
+      <span style="color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;line-height:1;font-family:sans-serif;">IDLE</span>
+      <span style="color:#fff;font-size:${dur.length > 5 ? 8 : 9}px;font-weight:700;line-height:1;font-family:sans-serif;">${dur || "⏸"}</span>
+    </div>`,
+    className: "", iconSize: [52, 52], iconAnchor: [26, 26],
   });
 
   const chkIcon = L.divIcon({
@@ -354,14 +352,15 @@ function LiveMapInner({
 
       {/* Stoppage markers — numbered orange pins */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
-        const mins = Math.floor((s.durationSecs || 0) / 60);
-        const secs = Math.round((s.durationSecs || 0) % 60);
-        const dur = `${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+        const totalMins = Math.floor((s.durationSecs || 0) / 60);
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        const dur = hrs > 0 ? `${hrs}h ${mins}m` : `${totalMins}m`;
         return (
-          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={makeStoppageIcon(i + 1)}>
+          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={makeStoppageIcon(i + 1, dur)}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 130 }}>
-                <b style={{ color: "#f97316" }}>⏸ Stoppage #{i + 1}</b><br/>
+                <b style={{ color: "#f97316" }}>⏸ Idle #{i + 1}</b><br/>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{dur}</span><br/>
                 <span style={{ fontSize: 11, color: "#666" }}>{new Date(s.startTime).toLocaleTimeString()} – {new Date(s.endTime).toLocaleTimeString()}</span>
               </div>
@@ -621,15 +620,13 @@ function makePlaybackDotIcon() {
 }
 
 // Numbered orange stoppage pin (for Playback)
-function makePbStoppageIcon(num: number) {
+function makePbStoppageIcon(_num: number, dur = "") {
   return L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
-      <ellipse cx="18" cy="41" rx="6" ry="3" fill="rgba(0,0,0,0.18)"/>
-      <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 28 14 28S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#f97316" stroke="white" stroke-width="2"/>
-      <circle cx="18" cy="14" r="8" fill="white"/>
-      <text x="18" y="18" text-anchor="middle" fill="#f97316" font-size="${num > 9 ? 8 : 10}" font-weight="bold" font-family="sans-serif">${num}</text>
-    </svg>`,
-    className: "", iconSize: [36, 44], iconAnchor: [18, 44],
+    html: `<div style="width:52px;height:52px;border-radius:50%;background:#f97316;border:3px solid #ffffff;box-shadow:0 0 0 2px #f97316,0 3px 8px rgba(0,0,0,0.35);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
+      <span style="color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;line-height:1;font-family:sans-serif;">IDLE</span>
+      <span style="color:#fff;font-size:${dur.length > 5 ? 8 : 9}px;font-weight:700;line-height:1;font-family:sans-serif;">${dur || "⏸"}</span>
+    </div>`,
+    className: "", iconSize: [52, 52], iconAnchor: [26, 26],
   });
 }
 
@@ -725,12 +722,12 @@ function PlaybackMapInner({
         />
       </>}
 
-      {/* Numbered stoppage orange pins */}
+      {/* Idle/stoppage circles — orange filled, white border */}
       {stoppages.map(s => (
-        <Marker key={`pb-stop-${s.num}`} position={s.pos} icon={makePbStoppageIcon(s.num)}>
+        <Marker key={`pb-stop-${s.num}`} position={s.pos} icon={makePbStoppageIcon(s.num, s.durationStr)}>
           <Popup>
             <div style={{ fontSize: 13, minWidth: 140 }}>
-              <b style={{ color: "#f97316" }}>⏸ Stoppage #{s.num}</b><br/>
+              <b style={{ color: "#f97316" }}>⏸ Idle #{s.num}</b><br/>
               <span style={{ fontSize: 12, fontWeight: 600 }}>{s.durationStr}</span><br/>
               <span style={{ fontSize: 11, color: "#666" }}>{s.startTs} – {s.endTs}</span>
             </div>
