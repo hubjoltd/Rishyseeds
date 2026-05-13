@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl, CircleMarker } from "react-leaflet";
 import L from "leaflet";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -347,14 +347,19 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Stoppage markers — numbered orange pins */}
+      {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
         const totalMins = Math.floor((s.durationSecs || 0) / 60);
         const hrs = Math.floor(totalMins / 60);
         const mins = totalMins % 60;
         const dur = hrs > 0 ? `${hrs}h ${mins}m` : `${totalMins}m`;
         return (
-          <Marker key={`stop-${i}`} position={[s.lat!, s.lng!]} icon={makeStoppageIcon(i + 1, dur)}>
+          <CircleMarker
+            key={`stop-${i}`}
+            center={[s.lat!, s.lng!]}
+            radius={11}
+            pathOptions={{ color: "#ffffff", weight: 4, fillColor: "#f97316", fillOpacity: 1 }}
+          >
             <Popup>
               <div style={{ fontSize: 13, minWidth: 130 }}>
                 <b style={{ color: "#f97316" }}>⏸ Idle #{i + 1}</b><br/>
@@ -362,7 +367,7 @@ function LiveMapInner({
                 <span style={{ fontSize: 11, color: "#666" }}>{new Date(s.startTime).toLocaleTimeString()} – {new Date(s.endTime).toLocaleTimeString()}</span>
               </div>
             </Popup>
-          </Marker>
+          </CircleMarker>
         );
       })}
 
@@ -751,9 +756,14 @@ function PlaybackMapInner({
         <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Idle/stoppage circles — orange filled, white border */}
+      {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {stoppages.map(s => (
-        <Marker key={`pb-stop-${s.num}`} position={s.pos} icon={makePbStoppageIcon(s.num, s.durationStr)}>
+        <CircleMarker
+          key={`pb-stop-${s.num}`}
+          center={s.pos}
+          radius={11}
+          pathOptions={{ color: "#ffffff", weight: 4, fillColor: "#f97316", fillOpacity: 1 }}
+        >
           <Popup>
             <div style={{ fontSize: 13, minWidth: 140 }}>
               <b style={{ color: "#f97316" }}>⏸ Idle #{s.num}</b><br/>
@@ -761,7 +771,7 @@ function PlaybackMapInner({
               <span style={{ fontSize: 11, color: "#666" }}>{s.startTs} – {s.endTs}</span>
             </div>
           </Popup>
-        </Marker>
+        </CircleMarker>
       ))}
 
       {/* Numbered CHK blue circles */}
