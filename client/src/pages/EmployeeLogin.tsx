@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query"; // useQueryClient kept for login onSuccess cache update
 import { useLocation } from "wouter";
 import { saveTokenToNative } from "@/lib/native-gps";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -37,22 +37,13 @@ export default function EmployeeLogin() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Auto-redirect to dashboard if a valid token is already stored (app reopen after close)
+  // Auto-redirect to dashboard if a token is already stored (app reopen after close).
+  // Redirect immediately — don't wait for a network round-trip.
+  // EmployeeLayout's auth guard will redirect back here if the token is truly expired.
   useEffect(() => {
-    const token = getEmployeeToken();
-    if (!token) return;
-    // Verify the token is still valid before redirecting
-    fetch("/api/employee/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          queryClient.setQueryData(["/api/employee/me"], data);
-          setLocation("/employee-portal");
-        } else {
-          clearEmployeeToken(); // token expired — clear it
-        }
-      })
-      .catch(() => {}); // network error — stay on login page
+    if (getEmployeeToken()) {
+      setLocation("/employee-portal");
+    }
   }, []);
 
   const form = useForm<z.infer<typeof employeeLoginSchema>>({
