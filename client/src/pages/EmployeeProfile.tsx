@@ -331,20 +331,26 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* Raw GPS route — always dark navy, always visible as soon as data loads */}
-      {gpsPoints.length > 1 && (
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#1e3a8a", weight: 5, opacity: 0.85 }} />
-      )}
+      {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
+      {/* Use road-snapped points when available, otherwise raw GPS */}
+      {(snappedPoints.length > 1 ? snappedPoints : gpsPoints).length > 1 && <>
+        {/* White outer border */}
+        <Polyline
+          positions={snappedPoints.length > 1 ? snappedPoints : gpsPoints}
+          pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }}
+        />
+        {/* Blue route fill */}
+        <Polyline
+          positions={snappedPoints.length > 1 ? snappedPoints : gpsPoints}
+          pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}
+        />
+      </>}
 
-      {/* Road-snapped route — replaces raw GPS once OSRM responds, same navy colour */}
-      {snappedPoints.length > 1 && (
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.95 }} />
-      )}
-
-      {/* Fallback dashed route — only when there are no GPS points at all */}
-      {gpsPoints.length <= 1 && waypointLine.length > 1 && (
-        <Polyline positions={waypointLine} pathOptions={{ color: "#1d4ed8", weight: 4, opacity: 0.75, dashArray: "10 8" }} />
-      )}
+      {/* Fallback dashed route — only when no GPS points recorded at all */}
+      {gpsPoints.length <= 1 && waypointLine.length > 1 && <>
+        <Polyline positions={waypointLine} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
+      </>}
 
       {/* Stoppage markers — numbered orange pins */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
@@ -707,15 +713,17 @@ function PlaybackMapInner({
       <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={routeLine} />
 
-      {/* Main route — thick navy polyline (road-snapped if available) */}
-      {routeLine.length > 1 && (
-        <Polyline positions={routeLine} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
-      )}
-
-      {/* Fallback dashed line using raw GPS if snap failed */}
-      {snappedPoints.length > 1 && rawPoints.length > 1 && rawPoints !== snappedPoints && (
-        <Polyline positions={rawPoints} pathOptions={{ color: "#93c5fd", weight: 2, opacity: 0.5, dashArray: "6 6" }} />
-      )}
+      {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
+      {routeLine.length > 1 && <>
+        <Polyline
+          positions={routeLine}
+          pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }}
+        />
+        <Polyline
+          positions={routeLine}
+          pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}
+        />
+      </>}
 
       {/* Numbered stoppage orange pins */}
       {stoppages.map(s => (
