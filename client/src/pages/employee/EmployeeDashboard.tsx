@@ -29,6 +29,23 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+// Compress image to max 900px wide at 70% JPEG quality (~80-150 KB)
+function compressImage(dataURL: string, maxWidth = 900, quality = 0.7): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataURL);
+    img.src = dataURL;
+  });
+}
+
 function saveDraftOdo(key: string, preview: string | null, reading: string) {
   if (preview) {
     try { localStorage.setItem(key, JSON.stringify({ preview, reading })); } catch {}
@@ -998,7 +1015,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                 </button>
               )}
               <input ref={startOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setStartOdoFile(f); const r = new FileReader(); r.onload = () => setStartOdoPreview(r.result as string); r.readAsDataURL(f); e.target.value = ""; }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = async () => { const compressed = await compressImage(r.result as string); setStartOdoPreview(compressed); setStartOdoFile(dataURLtoFile(compressed, "start-odo.jpg")); }; r.readAsDataURL(f); e.target.value = ""; }} />
             </div>
             <div>
               <label className="text-xs text-gray-500 font-semibold block mb-1.5">Starting Reading (km)</label>
@@ -1041,7 +1058,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
                 </button>
               )}
               <input ref={endOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setEndOdoFile(f); const r = new FileReader(); r.onload = () => setEndOdoPreview(r.result as string); r.readAsDataURL(f); e.target.value = ""; }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = async () => { const compressed = await compressImage(r.result as string); setEndOdoPreview(compressed); setEndOdoFile(dataURLtoFile(compressed, "end-odo.jpg")); }; r.readAsDataURL(f); e.target.value = ""; }} />
             </div>
             <div>
               <label className="text-xs text-gray-500 font-semibold block mb-1.5">Ending Reading (km)</label>

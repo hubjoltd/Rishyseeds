@@ -27,6 +27,23 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+// Compress image to max 900px wide at 70% JPEG quality (~80-150 KB)
+function compressImage(dataURL: string, maxWidth = 900, quality = 0.7): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataURL); // fallback: keep original
+    img.src = dataURL;
+  });
+}
+
 interface ExpenseDraft {
   view?: string;
   title?: string; expenseType?: string; expenseDate?: string; description?: string;
@@ -361,12 +378,16 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     e: React.ChangeEvent<HTMLInputElement>,
     setFile: (f: File) => void,
     setPreview: (p: string) => void,
+    filename = "photo.jpg",
   ) {
     const f = e.target.files?.[0];
     if (!f) return;
-    setFile(f);
     const reader = new FileReader();
-    reader.onload = () => setPreview(reader.result as string);
+    reader.onload = async () => {
+      const compressed = await compressImage(reader.result as string);
+      setPreview(compressed);
+      setFile(dataURLtoFile(compressed, filename));
+    };
     reader.readAsDataURL(f);
     e.target.value = "";
   }
