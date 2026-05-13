@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,42 @@ function getHeaders() {
   const t = getEmployeeToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
+
+// ── Expense form draft persistence (survives tab navigation) ──────────────
+const EXPENSE_DRAFT_KEY = "rishi_expense_form_draft";
+
+function dataURLtoFile(dataURL: string, filename: string): File {
+  const [header, data] = dataURL.split(",");
+  const mime = header.match(/:(.*?);/)![1];
+  const bstr = atob(data);
+  const u8arr = new Uint8Array(bstr.length);
+  for (let i = 0; i < bstr.length; i++) u8arr[i] = bstr.charCodeAt(i);
+  return new File([u8arr], filename, { type: mime });
+}
+
+interface ExpenseDraft {
+  view?: string;
+  title?: string; expenseType?: string; expenseDate?: string; description?: string;
+  startDate?: string; endDate?: string; modeOfTravel?: string; travellerName?: string;
+  headquarters?: string;
+  startOdo?: string; endOdo?: string; amtPerKm?: string;
+  startOdoPreview?: string; endOdoPreview?: string; billsPreview?: string;
+  busFare?: string; trainAirFare?: string; hotelFare?: string;
+  conveyanceFare?: string; postageFare?: string; otherFare?: string; otherRemarks?: string;
+}
+
+function loadExpenseDraft(): ExpenseDraft {
+  try {
+    const raw = localStorage.getItem(EXPENSE_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveExpenseDraft(draft: ExpenseDraft) {
+  try { localStorage.setItem(EXPENSE_DRAFT_KEY, JSON.stringify(draft)); } catch {}
+}
+
+function clearExpenseDraft() { localStorage.removeItem(EXPENSE_DRAFT_KEY); }
 
 interface EmployeeExpensesProps {
   employee: { id: number; fullName: string; employeeId: string; workLocation?: string };
@@ -213,50 +249,53 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const endOdoPhotoRef = useRef<HTMLInputElement>(null);
   const billsPhotoRef = useRef<HTMLInputElement>(null);
 
+  // Load persisted draft once on mount
+  const _d = loadExpenseDraft();
+
   const [activeTab, setActiveTab] = useState<TabKey>("open");
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>((_d.view as View) || "list");
   const [selected, setSelected] = useState<any | null>(null);
 
-  // Basic fields
-  const [title, setTitle] = useState("");
-  const [expenseType, setExpenseType] = useState("");
+  // Basic fields — restored from draft
+  const [title, setTitle] = useState(_d.title ?? "");
+  const [expenseType, setExpenseType] = useState(_d.expenseType ?? "");
   const [showTypeList, setShowTypeList] = useState(false);
   const [typeSearch, setTypeSearch] = useState("");
-  const [expenseDate, setExpenseDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [description, setDescription] = useState("");
+  const [expenseDate, setExpenseDate] = useState(_d.expenseDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [description, setDescription] = useState(_d.description ?? "");
 
   // LOCAL TRAVEL CLAIM fields
-  const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [modeOfTravel, setModeOfTravel] = useState("");
-  const [travellerName, setTravellerName] = useState(employee.fullName);
+  const [startDate, setStartDate] = useState(_d.startDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [endDate, setEndDate] = useState(_d.endDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [modeOfTravel, setModeOfTravel] = useState(_d.modeOfTravel ?? "");
+  const [travellerName, setTravellerName] = useState(_d.travellerName ?? employee.fullName);
 
-  // Odometer photos (captured first)
-  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(null);
-  const [startOdoFile, setStartOdoFile] = useState<File | null>(null);
-  const [endOdoPreview, setEndOdoPreview] = useState<string | null>(null);
-  const [endOdoFile, setEndOdoFile] = useState<File | null>(null);
+  // Odometer photos — reconstructed from stored base64
+  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(_d.startOdoPreview ?? null);
+  const [startOdoFile, setStartOdoFile] = useState<File | null>(_d.startOdoPreview ? dataURLtoFile(_d.startOdoPreview, "start-odo.jpg") : null);
+  const [endOdoPreview, setEndOdoPreview] = useState<string | null>(_d.endOdoPreview ?? null);
+  const [endOdoFile, setEndOdoFile] = useState<File | null>(_d.endOdoPreview ? dataURLtoFile(_d.endOdoPreview, "end-odo.jpg") : null);
 
-  // Odometer readings (only enabled when both photos uploaded)
-  const [startOdo, setStartOdo] = useState("");
-  const [endOdo, setEndOdo] = useState("");
-  const [amtPerKm, setAmtPerKm] = useState("1");
+  // Odometer readings
+  const [startOdo, setStartOdo] = useState(_d.startOdo ?? "");
+  const [endOdo, setEndOdo] = useState(_d.endOdo ?? "");
+  const [amtPerKm, setAmtPerKm] = useState(_d.amtPerKm ?? "1");
 
   // Bills photo
-  const [billsPreview, setBillsPreview] = useState<string | null>(null);
-  const [billsFile, setBillsFile] = useState<File | null>(null);
+  const [billsPreview, setBillsPreview] = useState<string | null>(_d.billsPreview ?? null);
+  const [billsFile, setBillsFile] = useState<File | null>(_d.billsPreview ? dataURLtoFile(_d.billsPreview, "bills.jpg") : null);
 
   // Headquarters
-  const [headquarters, setHeadquarters] = useState("");
+  const [headquarters, setHeadquarters] = useState(_d.headquarters ?? "");
 
   // Other expense breakdown fares
-  const [busFare, setBusFare] = useState("");
-  const [trainAirFare, setTrainAirFare] = useState("");
-  const [hotelFare, setHotelFare] = useState("");
-  const [conveyanceFare, setConveyanceFare] = useState("");
-  const [postageFare, setPostageFare] = useState("");
-  const [otherFare, setOtherFare] = useState("");
-  const [otherRemarks, setOtherRemarks] = useState("");
+  const [busFare, setBusFare] = useState(_d.busFare ?? "");
+  const [trainAirFare, setTrainAirFare] = useState(_d.trainAirFare ?? "");
+  const [hotelFare, setHotelFare] = useState(_d.hotelFare ?? "");
+  const [conveyanceFare, setConveyanceFare] = useState(_d.conveyanceFare ?? "");
+  const [postageFare, setPostageFare] = useState(_d.postageFare ?? "");
+  const [otherFare, setOtherFare] = useState(_d.otherFare ?? "");
+  const [otherRemarks, setOtherRemarks] = useState(_d.otherRemarks ?? "");
 
   // Fetch company settings (DA fixed rate)
   const { data: companySettings = {} } = useQuery<Record<string, string>>({
@@ -269,6 +308,30 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   });
 
   const daAmount = Number(companySettings["da_rate_per_day"] || "0");
+
+  // Auto-save form draft to localStorage whenever any field changes
+  useEffect(() => {
+    if (view === "create") {
+      saveExpenseDraft({
+        view,
+        title, expenseType, expenseDate, description,
+        startDate, endDate, modeOfTravel, travellerName, headquarters,
+        startOdo, endOdo, amtPerKm,
+        startOdoPreview: startOdoPreview ?? undefined,
+        endOdoPreview: endOdoPreview ?? undefined,
+        billsPreview: billsPreview ?? undefined,
+        busFare, trainAirFare, hotelFare,
+        conveyanceFare, postageFare, otherFare, otherRemarks,
+      });
+    }
+  }, [
+    view, title, expenseType, expenseDate, description,
+    startDate, endDate, modeOfTravel, travellerName, headquarters,
+    startOdo, endOdo, amtPerKm,
+    startOdoPreview, endOdoPreview, billsPreview,
+    busFare, trainAirFare, hotelFare,
+    conveyanceFare, postageFare, otherFare, otherRemarks,
+  ]);
 
   const bothPhotosUploaded = !!startOdoFile && !!endOdoFile;
 
@@ -388,6 +451,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   });
 
   function resetForm() {
+    clearExpenseDraft();
     setTitle(""); setExpenseType(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
     setDescription(""); setHeadquarters("");
     setStartDate(format(new Date(), "yyyy-MM-dd")); setEndDate(format(new Date(), "yyyy-MM-dd"));
