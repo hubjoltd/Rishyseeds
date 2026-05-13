@@ -16,6 +16,39 @@ function getEmployeeAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// ── Odometer draft persistence (survives tab navigation) ─────────────────
+const DRAFT_START_ODO = "rishi_draft_start_odo";
+const DRAFT_END_ODO   = "rishi_draft_end_odo";
+
+function dataURLtoFile(dataURL: string, filename: string): File {
+  const [header, data] = dataURL.split(",");
+  const mime = header.match(/:(.*?);/)![1];
+  const bstr = atob(data);
+  const u8arr = new Uint8Array(bstr.length);
+  for (let i = 0; i < bstr.length; i++) u8arr[i] = bstr.charCodeAt(i);
+  return new File([u8arr], filename, { type: mime });
+}
+
+function saveDraftOdo(key: string, preview: string | null, reading: string) {
+  if (preview) {
+    try { localStorage.setItem(key, JSON.stringify({ preview, reading })); } catch {}
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+
+function loadDraftOdo(key: string): { preview: string; reading: string; file: File } | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { preview, reading } = JSON.parse(raw);
+    if (!preview) return null;
+    return { preview, reading: reading ?? "", file: dataURLtoFile(preview, key === DRAFT_START_ODO ? "start-odo.jpg" : "end-odo.jpg") };
+  } catch { return null; }
+}
+
+function clearDraftOdo(key: string) { localStorage.removeItem(key); }
+
 async function requestLocationPermission(): Promise<boolean> {
   try {
     if (!navigator.geolocation) return false;
@@ -143,21 +176,27 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   const [expensePeriod, setExpensePeriod] = useState<"today" | "month" | "all">("today");
 
-  // Odometer dialog state
+  // Odometer dialog state — initialised from localStorage so data survives tab navigation
   const [startOdoDialogOpen, setStartOdoDialogOpen] = useState(false);
   const [endOdoDialogOpen, setEndOdoDialogOpen] = useState(false);
   const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
-  const [startOdoFile, setStartOdoFile] = useState<File | null>(null);
-  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(null);
-  const [startOdoReading, setStartOdoReading] = useState("");
-  const [endOdoFile, setEndOdoFile] = useState<File | null>(null);
-  const [endOdoPreview, setEndOdoPreview] = useState<string | null>(null);
-  const [endOdoReading, setEndOdoReading] = useState("");
+  const _startDraft = loadDraftOdo(DRAFT_START_ODO);
+  const _endDraft   = loadDraftOdo(DRAFT_END_ODO);
+  const [startOdoFile, setStartOdoFile]       = useState<File | null>(_startDraft?.file ?? null);
+  const [startOdoPreview, setStartOdoPreview] = useState<string | null>(_startDraft?.preview ?? null);
+  const [startOdoReading, setStartOdoReading] = useState(_startDraft?.reading ?? "");
+  const [endOdoFile, setEndOdoFile]           = useState<File | null>(_endDraft?.file ?? null);
+  const [endOdoPreview, setEndOdoPreview]     = useState<string | null>(_endDraft?.preview ?? null);
+  const [endOdoReading, setEndOdoReading]     = useState(_endDraft?.reading ?? "");
   const startOdoPhotoRef = useRef<HTMLInputElement>(null);
   const endOdoPhotoRef = useRef<HTMLInputElement>(null);
   const pendingOdoRef = useRef<"start" | "end" | null>(null);
 
   useEffect(() => { requestLocationPermission().then(setLocationGranted); }, []);
+
+  // Auto-save odometer drafts to localStorage whenever they change
+  useEffect(() => { saveDraftOdo(DRAFT_START_ODO, startOdoPreview, startOdoReading); }, [startOdoPreview, startOdoReading]);
+  useEffect(() => { saveDraftOdo(DRAFT_END_ODO, endOdoPreview, endOdoReading); }, [endOdoPreview, endOdoReading]);
 
   const handleAuthError = (res: Response) => {
     if (res.status === 401) { clearEmployeeToken(); queryClient.clear(); setLocation("/employee-login"); return true; }
@@ -325,6 +364,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       return res.json();
     },
     onSuccess: () => {
+      clearDraftOdo(DRAFT_START_ODO);
       setStartOdoDialogOpen(false);
       setStartOdoFile(null); setStartOdoPreview(null); setStartOdoReading("");
       queryClient.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
@@ -348,6 +388,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       return res.json();
     },
     onSuccess: () => {
+      clearDraftOdo(DRAFT_END_ODO);
       setEndOdoDialogOpen(false);
       setEndOdoFile(null); setEndOdoPreview(null); setEndOdoReading(""); setOpenExpenseId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
