@@ -331,19 +331,19 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* Raw GPS underlay — always visible immediately (light blue, thin) */}
+      {/* Raw GPS route — always dark navy, always visible as soon as data loads */}
       {gpsPoints.length > 1 && (
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#93c5fd", weight: 3, opacity: 0.7 }} />
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#1e3a8a", weight: 5, opacity: 0.85 }} />
       )}
 
-      {/* Road-snapped route on top — drawn once OSRM responds (thick navy) */}
+      {/* Road-snapped route — replaces raw GPS once OSRM responds, same navy colour */}
       {snappedPoints.length > 1 && (
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.95 }} />
       )}
 
-      {/* Fallback dashed route — connects punch-in/visits/punch-out when GPS points unavailable */}
+      {/* Fallback dashed route — only when there are no GPS points at all */}
       {gpsPoints.length <= 1 && waypointLine.length > 1 && (
-        <Polyline positions={waypointLine} pathOptions={{ color: "#1d4ed8", weight: 4, opacity: 0.7, dashArray: "10 8" }} />
+        <Polyline positions={waypointLine} pathOptions={{ color: "#1d4ed8", weight: 4, opacity: 0.75, dashArray: "10 8" }} />
       )}
 
       {/* Stoppage markers — numbered orange pins */}
