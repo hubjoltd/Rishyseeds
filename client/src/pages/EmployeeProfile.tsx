@@ -331,9 +331,14 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* Main route — road-snapped (or raw GPS fallback) */}
-      {routeLine.length > 1 && (
-        <Polyline positions={routeLine} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
+      {/* Raw GPS underlay — always visible immediately (light blue, thin) */}
+      {gpsPoints.length > 1 && (
+        <Polyline positions={gpsPoints} pathOptions={{ color: "#93c5fd", weight: 3, opacity: 0.7 }} />
+      )}
+
+      {/* Road-snapped route on top — drawn once OSRM responds (thick navy) */}
+      {snappedPoints.length > 1 && (
+        <Polyline positions={snappedPoints} pathOptions={{ color: "#1e3a8a", weight: 6, opacity: 0.92 }} />
       )}
 
       {/* Fallback dashed route — connects punch-in/visits/punch-out when GPS points unavailable */}
@@ -631,11 +636,28 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
     const sample = points.filter((_, i) => i % step === 0 || i === points.length - 1);
     const coords = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
     const url = `https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) return points;
     const data = await res.json();
-    if (data.code !== "Ok" || !data.matchings?.[0]?.geometry?.coordinates) return points;
-    return (data.matchings[0].geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng]);
+    // OSRM returns multiple `matchings` when there are GPS gaps — concatenate ALL of them
+    if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return points;
+    const allCoords: [number, number][] = [];
+    for (const matching of data.matchings) {
+      const coords = matching?.geometry?.coordinates;
+      if (Array.isArray(coords)) {
+        for (const [lng, lat] of coords) {
+          allCoords.push([lat, lng]);
+        }
+      }
+    }
+    return allCoords.length > 1 ? allCoords : points;
   } catch {
     return points; // fallback to straight polyline
   }
