@@ -1596,13 +1596,10 @@ export default function EmployeeProfile() {
           const acc: number | null = latest?.accuracy != null ? Math.round(Number(latest.accuracy)) : null;
           const lastSeen: Date | null = latest?.recordedAt ? new Date(latest.recordedAt) : null;
 
-          // Today's attendance record for punch status
           const todayAtt = attendanceRecords.find((r: any) => {
             try { return format(new Date(r.date), "yyyy-MM-dd") === deviceTodayStr; } catch { return false; }
           });
-          const punchedIn = !!todayAtt?.checkIn;
-          const punchedOut = !!todayAtt?.checkOut;
-          const punchStatus = punchedOut ? "out" : punchedIn ? "in" : "none";
+          const punchStatus = todayAtt?.checkOut ? "out" : todayAtt?.checkIn ? "in" : "none";
 
           const lastSeenLabel = lastSeen
             ? (() => {
@@ -1615,75 +1612,103 @@ export default function EmployeeProfile() {
               })()
             : null;
 
+          // Signal bars: 4 bars, filled count based on network type
+          const signalBars = !net || net === "none" ? 0 : net === "2g" ? 1 : net === "3g" ? 2 : net === "4g" ? 3 : net === "5g" || net === "wifi" ? 4 : 2;
+          const signalColor = signalBars === 0 ? "#ef4444" : signalBars <= 1 ? "#f97316" : signalBars <= 2 ? "#eab308" : "#22c55e";
+
+          // Battery fill color
+          const batColor = bat === null ? "#9ca3af" : bat <= 20 ? "#ef4444" : bat <= 50 ? "#f59e0b" : "#22c55e";
+
           return (
-            <div className="mt-3 flex items-center gap-2 flex-wrap" data-testid="div-device-status-bar">
-              {/* Punch status pill */}
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
-                punchStatus === "in"
-                  ? "bg-green-50 border-green-200 text-green-700"
-                  : punchStatus === "out"
-                    ? "bg-gray-100 border-gray-200 text-gray-600"
-                    : "bg-yellow-50 border-yellow-200 text-yellow-700"
+            <div className="mt-3 flex items-center gap-3 flex-wrap" data-testid="div-device-status-bar">
+
+              {/* ── Punch status ── */}
+              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold border ${
+                punchStatus === "in"  ? "bg-green-50 border-green-200 text-green-700"
+                : punchStatus === "out" ? "bg-gray-100 border-gray-200 text-gray-500"
+                : "bg-amber-50 border-amber-200 text-amber-700"
               }`}>
-                {punchStatus === "in"
-                  ? <><LogIn className="h-3 w-3" /> Punched In {todayAtt?.checkIn}</>
-                  : punchStatus === "out"
-                    ? <><LogOut className="h-3 w-3" /> Punched Out {todayAtt?.checkOut}</>
-                    : <><Clock className="h-3 w-3" /> Not Punched</>
-                }
+                {punchStatus === "in"  ? <LogIn className="h-3 w-3" /> : punchStatus === "out" ? <LogOut className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                {punchStatus === "in" ? `Punched In · ${todayAtt?.checkIn}` : punchStatus === "out" ? `Punched Out · ${todayAtt?.checkOut}` : "Not Punched"}
               </div>
 
-              {/* Battery */}
+              {/* ── Divider ── */}
+              {(bat !== null || net) && <div className="w-px h-5 bg-border" />}
+
+              {/* ── Signal bars (phone-style) ── */}
+              {net !== null && (
+                <div className="flex items-center gap-1.5">
+                  {/* 4 stacked bars */}
+                  <svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {[0,1,2,3].map(i => (
+                      <rect
+                        key={i}
+                        x={i * 4.5}
+                        y={14 - (i + 1) * 3}
+                        width="3.5"
+                        height={(i + 1) * 3}
+                        rx="0.8"
+                        fill={i < signalBars ? signalColor : "#d1d5db"}
+                      />
+                    ))}
+                  </svg>
+                  <span className="text-[11px] font-semibold text-gray-700">
+                    {net === "wifi" ? "WiFi" : net === "none" ? "No Signal" : net.toUpperCase()}
+                  </span>
+                </div>
+              )}
+
+              {/* ── Battery (phone-style) ── */}
               {bat !== null && (
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border ${
-                  bat <= 20 ? "bg-red-50 border-red-200 text-red-700"
-                  : bat <= 50 ? "bg-yellow-50 border-yellow-200 text-yellow-700"
-                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                }`}>
-                  {charging
-                    ? <BatteryCharging className="h-3 w-3" />
-                    : bat <= 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />
-                  }
-                  {bat}%{charging && <Zap className="h-2.5 w-2.5" />}
+                <div className="flex items-center gap-1.5">
+                  {/* Battery body SVG */}
+                  <div className="relative flex items-center">
+                    <svg width="26" height="13" viewBox="0 0 26 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* outer shell */}
+                      <rect x="0.5" y="0.5" width="22" height="12" rx="2.5" stroke="#6b7280" strokeWidth="1"/>
+                      {/* nub */}
+                      <rect x="23" y="4" width="2.5" height="5" rx="1" fill="#6b7280"/>
+                      {/* fill */}
+                      <rect x="2" y="2" width={Math.round((bat / 100) * 18)} height="9" rx="1.5" fill={batColor}/>
+                      {/* charging bolt */}
+                      {charging && (
+                        <text x="11" y="10" fontSize="8" textAnchor="middle" fill="white" fontWeight="bold">⚡</text>
+                      )}
+                    </svg>
+                  </div>
+                  <span className={`text-[11px] font-semibold ${bat <= 20 ? "text-red-600" : bat <= 50 ? "text-amber-600" : "text-gray-700"}`}>
+                    {bat}%
+                  </span>
                 </div>
               )}
 
-              {/* Network */}
-              {net && (
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border ${
-                  net === "none" ? "bg-red-50 border-red-200 text-red-600"
-                  : net === "wifi" ? "bg-blue-50 border-blue-200 text-blue-700"
-                  : net === "4g" || net === "5g" ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                  : "bg-orange-50 border-orange-200 text-orange-700"
-                }`}>
-                  {net === "wifi" ? <Wifi className="h-3 w-3" />
-                    : net === "none" ? <Signal className="h-3 w-3" />
-                    : <Radio className="h-3 w-3" />}
-                  {net === "wifi" ? "WiFi" : net.toUpperCase()}
-                </div>
-              )}
-
-              {/* GPS accuracy */}
+              {/* ── GPS accuracy ── */}
               {acc !== null && (
-                <div className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border bg-purple-50 border-purple-200 text-purple-700">
-                  <Navigation className="h-3 w-3" />
-                  ±{acc}m GPS
-                </div>
+                <>
+                  <div className="w-px h-5 bg-border" />
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                    <Navigation className="h-3 w-3 text-primary" />
+                    <span>±{acc}m</span>
+                  </div>
+                </>
               )}
 
-              {/* Last seen */}
+              {/* ── Last seen ── */}
               {lastSeenLabel && (
-                <div className="flex items-center gap-1 text-[11px] text-muted-foreground ml-1">
-                  <Clock className="h-3 w-3" />
-                  {lastSeenLabel}
-                </div>
+                <>
+                  <div className="w-px h-5 bg-border" />
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    {lastSeenLabel}
+                  </div>
+                </>
               )}
 
-              {/* No signal at all */}
-              {!latest && (
-                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Signal className="h-3 w-3 text-gray-300" />
-                  <span className="text-gray-400">No signal today</span>
+              {/* No data yet */}
+              {!latest && !todayAtt && (
+                <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                  <Signal className="h-3 w-3" />
+                  No device data today
                 </div>
               )}
             </div>
