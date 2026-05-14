@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
-import { stopGpsTracking } from "@/lib/native-gps";
+import { stopGpsTracking, isCapacitorNative } from "@/lib/native-gps";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -281,10 +281,52 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     return () => clearInterval(iv);
   }, [isPunchedIn, todayAttendance?.checkIn]);
 
-  const openCameraForPunch = (type: "in" | "out") => {
+  const openCameraForPunch = async (type: "in" | "out") => {
     pendingPunchType.current = type;
     pendingLocationRef.current = captureLocation();
-    if (cameraInputRef.current) { cameraInputRef.current.value = ""; cameraInputRef.current.click(); }
+
+    if (isCapacitorNative) {
+      // On Android: use native Camera plugin — bypasses Google Photos picker entirely
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 70,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          width: 900,
+        });
+        if (!photo.dataUrl) return;
+        // Convert dataUrl → File and reuse existing handlePhotoCapture logic
+        const res = await fetch(photo.dataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `punch-${type}-${Date.now()}.jpg`, { type: "image/jpeg" });
+        // Trigger the same flow as the file input onChange
+        const reader = new FileReader();
+        reader.onload = () => setEmployeePhoto(reader.result as string);
+        reader.readAsDataURL(file);
+        setIsUploading(true);
+        toast({ title: "Processing...", description: "Capturing location and uploading photo..." });
+        const locationPromise = pendingLocationRef.current || captureLocation();
+        pendingLocationRef.current = null;
+        const uploadPromise = uploadPhotoToServer(file);
+        const [location, serverUrl] = await Promise.all([locationPromise, uploadPromise]);
+        setPhotoServerUrl(serverUrl);
+        if (location) setPunchLocation(location.locationName);
+        setIsUploading(false);
+        punchMutation.mutate({ type, location });
+      } catch (err: any) {
+        // User cancelled camera — reset state silently
+        pendingPunchType.current = null;
+        pendingLocationRef.current = null;
+        if (err?.message && !err.message.toLowerCase().includes("cancel")) {
+          toast({ title: "Camera Error", description: err.message, variant: "destructive" });
+        }
+      }
+    } else {
+      // On web: use hidden file input as before
+      if (cameraInputRef.current) { cameraInputRef.current.value = ""; cameraInputRef.current.click(); }
+    }
   };
 
   const uploadPhotoToServer = async (file: File): Promise<string | null> => {
