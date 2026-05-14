@@ -36,6 +36,13 @@ import {
   ChevronDown,
   Circle,
   Loader2,
+  Battery,
+  BatteryCharging,
+  BatteryLow,
+  Wifi,
+  Signal,
+  Radio,
+  Activity,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -782,6 +789,143 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
   );
 }
 
+interface LiveLocation {
+  employeeId: number;
+  employeeName: string;
+  employeeCode: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  speed: number | null;
+  batteryLevel: number | null;
+  isCharging: boolean | null;
+  networkType: string | null;
+  recordedAt: string;
+}
+
+function BatteryIcon({ level, charging }: { level: number | null; charging: boolean | null }) {
+  if (level === null) return <Battery className="h-3.5 w-3.5 text-muted-foreground" />;
+  if (charging) return <BatteryCharging className="h-3.5 w-3.5 text-green-500" />;
+  if (level <= 20) return <BatteryLow className="h-3.5 w-3.5 text-red-500" />;
+  return <Battery className="h-3.5 w-3.5 text-emerald-500" />;
+}
+
+function NetworkIcon({ type }: { type: string | null }) {
+  if (!type || type === "none") return <Signal className="h-3.5 w-3.5 text-red-400" />;
+  if (type === "wifi") return <Wifi className="h-3.5 w-3.5 text-blue-500" />;
+  if (type === "5g") return <Activity className="h-3.5 w-3.5 text-violet-500" />;
+  if (type === "4g") return <Signal className="h-3.5 w-3.5 text-emerald-500" />;
+  if (type === "3g") return <Signal className="h-3.5 w-3.5 text-yellow-500" />;
+  return <Radio className="h-3.5 w-3.5 text-orange-400" />;
+}
+
+function networkLabel(type: string | null) {
+  if (!type) return "–";
+  if (type === "wifi") return "WiFi";
+  return type.toUpperCase();
+}
+
+function batteryColor(level: number | null) {
+  if (level === null) return "text-muted-foreground";
+  if (level <= 20) return "text-red-500 font-semibold";
+  if (level <= 50) return "text-yellow-600";
+  return "text-emerald-600";
+}
+
+function minutesAgo(dt: string) {
+  const diff = Math.floor((Date.now() - new Date(dt).getTime()) / 60000);
+  if (diff < 1) return "just now";
+  if (diff === 1) return "1 min ago";
+  return `${diff} min ago`;
+}
+
+function LiveEmployeeStatus() {
+  const { data: locs, isLoading } = useQuery<LiveLocation[]>({
+    queryKey: ["/api/employees/live-locations"],
+    refetchInterval: 30000,
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="border shadow-sm">
+        <CardContent className="p-4 flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading live employee status…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!locs || locs.length === 0) {
+    return (
+      <Card className="border shadow-sm">
+        <CardContent className="p-4 text-center text-muted-foreground text-sm py-6">
+          <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          No employees are reporting GPS right now.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border shadow-sm">
+      <CardHeader className="px-4 py-3 border-b flex flex-row items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
+        <span className="font-semibold text-sm">Live Employee Status</span>
+        <span className="text-xs text-muted-foreground ml-1">— {locs.length} active · refreshes every 30s</span>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-0 divide-y sm:divide-y-0 sm:divide-x">
+          {locs.map((loc) => (
+            <div key={loc.employeeId} className="p-3 flex flex-col gap-1.5" data-testid={`card-live-${loc.employeeId}`}>
+              <div className="flex items-center gap-2 mb-0.5">
+                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                  {loc.employeeName.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate" data-testid={`text-live-name-${loc.employeeId}`}>{loc.employeeName}</p>
+                  <p className="text-xs text-muted-foreground">{loc.employeeCode}</p>
+                </div>
+              </div>
+
+              {/* Battery */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <BatteryIcon level={loc.batteryLevel} charging={loc.isCharging} />
+                <span className={batteryColor(loc.batteryLevel)} data-testid={`text-battery-${loc.employeeId}`}>
+                  {loc.batteryLevel !== null ? `${loc.batteryLevel}%` : "–"}
+                </span>
+                {loc.isCharging && <span className="text-green-500 text-[10px]">charging</span>}
+              </div>
+
+              {/* Network */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <NetworkIcon type={loc.networkType} />
+                <span className="text-foreground" data-testid={`text-network-${loc.employeeId}`}>
+                  {networkLabel(loc.networkType)}
+                </span>
+              </div>
+
+              {/* GPS accuracy */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-muted-foreground" data-testid={`text-gps-${loc.employeeId}`}>
+                  {loc.accuracy !== null ? `±${Math.round(loc.accuracy)}m` : "GPS active"}
+                  {loc.speed !== null && loc.speed > 0.5 ? ` · ${(loc.speed * 3.6).toFixed(0)} km/h` : ""}
+                </span>
+              </div>
+
+              {/* Last seen */}
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
+                <Clock className="h-3 w-3 shrink-0" />
+                <span data-testid={`text-lastseen-${loc.employeeId}`}>{minutesAgo(loc.recordedAt)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Trips() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -830,6 +974,8 @@ export default function Trips() {
           </div>
         </div>
       </div>
+
+      <LiveEmployeeStatus />
 
       <div className="border-b">
         <div className="flex items-center gap-1 overflow-x-auto">

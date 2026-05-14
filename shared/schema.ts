@@ -549,6 +549,9 @@ export const employeeLocations = pgTable("employee_locations", {
   longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
   accuracy: decimal("accuracy"),
   speed: decimal("speed"),
+  batteryLevel: integer("battery_level"),     // 0-100 percent
+  isCharging: boolean("is_charging"),          // true = plugged in
+  networkType: text("network_type"),           // wifi | 4g | 3g | 2g | none | unknown
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 });
 

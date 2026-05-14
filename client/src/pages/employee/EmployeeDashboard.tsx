@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
+import { stopGpsTracking } from "@/lib/native-gps";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -320,6 +321,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
       if (type === "in") {
         pendingOdoRef.current = "start";
       } else if (type === "out") {
+        stopGpsTracking().catch(() => {});
         // Check for open expense to complete
         fetch("/api/employee/expenses/open-trip", { headers: getEmployeeAuthHeaders() })
           .then(r => r.ok ? r.json() : null)

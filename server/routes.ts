@@ -3784,7 +3784,7 @@ export async function registerRoutes(
     try {
       const empId = req.employeeId;
       if (!empId) return res.status(401).json({ message: "Not authenticated" });
-      const { latitude, longitude, accuracy, speed } = req.body;
+      const { latitude, longitude, accuracy, speed, batteryLevel, isCharging, networkType } = req.body;
       if (!latitude || !longitude) return res.status(400).json({ message: "latitude and longitude required" });
       const loc = await storage.addEmployeeLocation({
         employeeId: empId,
@@ -3792,6 +3792,9 @@ export async function registerRoutes(
         longitude: String(longitude),
         accuracy: accuracy != null ? String(accuracy) : null,
         speed: speed != null ? String(speed) : null,
+        batteryLevel: batteryLevel != null ? Math.round(Number(batteryLevel)) : null,
+        isCharging: isCharging != null ? Boolean(isCharging) : null,
+        networkType: networkType || null,
         recordedAt: new Date(),
       });
       res.json(loc);
@@ -3815,6 +3818,9 @@ export async function registerRoutes(
         longitude: parseFloat(l.longitude),
         accuracy: l.accuracy ? parseFloat(l.accuracy) : null,
         speed: l.speed ? parseFloat(l.speed) : null,
+        batteryLevel: l.batteryLevel ?? null,
+        isCharging: l.isCharging ?? null,
+        networkType: l.networkType ?? null,
         recordedAt: l.recordedAt,
       }));
       res.json(result);

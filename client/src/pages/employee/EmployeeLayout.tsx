@@ -3,7 +3,7 @@ import { useLocation, Route, Switch } from "wouter";
 import { EmployeeSidebar } from "@/components/EmployeeSidebar";
 import { Loader2 } from "lucide-react";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { registerPushNotifications } from "@/lib/pushNotifications";
 import { requestAllLocationPermissions, startGpsTracking, isCapacitorNative } from "@/lib/native-gps";
 import { useToast } from "@/hooks/use-toast";
@@ -41,14 +41,18 @@ export default function EmployeeLayout() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Ref-latch: GPS starts once when isPunchedIn becomes true.
+  // We do NOT stop it on re-render / query flaps — only on component unmount (logout).
+  // On native Android the module-level flag in native-gps.ts additionally
+  // prevents the foreground service from being double-started.
+  const gpsStartedRef = useRef(false);
+  const webGpsStopRef = useRef<(() => void) | null>(null);
+
   const { data: employee, isLoading } = useQuery({
     queryKey: ["/api/employee/me"],
     queryFn: async () => {
       const token = getEmployeeToken();
-      if (!token) {
-        setLocation("/employee-login");
-        return null;
-      }
+      if (!token) { setLocation("/employee-login"); return null; }
       const res = await fetch("/api/employee/me", { headers: getEmployeeAuthHeaders() });
       if (res.status === 401) {
         clearEmployeeToken();
@@ -70,7 +74,7 @@ export default function EmployeeLayout() {
     enabled: !!employee,
   });
 
-  // Today's attendance — used to decide when to start/stop GPS
+  // Today's attendance — drives GPS start
   const { data: todayAttendance } = useQuery({
     queryKey: ["/api/employee/attendance/today"],
     queryFn: async () => {
@@ -89,27 +93,29 @@ export default function EmployeeLayout() {
     }
   }, [employee?.id]);
 
-  // ── GPS tracking: runs for the ENTIRE punched-in period ──────────────────
-  // Kept here in EmployeeLayout (not Dashboard) so it is NEVER stopped by
-  // page navigation.  On Android native this starts RishiLocationService
-  // (foreground service); on web it uses watchPosition fallback.
-  // Stops cleanly only when the employee punches out (isPunchedIn → false).
+  // ── GPS tracking ─────────────────────────────────────────────────────────
+  // Start once when the employee is punched in. Use gpsStartedRef to avoid
+  // restarting on every query refetch or re-render.
+  // On native Android: the foreground service runs independently — the cleanup
+  // returned from startGpsTracking() is a no-op. Only stopGpsTracking()
+  // (called from punch-out in EmployeeDashboard) actually stops the service.
+  // On web: we store the real stop function and call it on unmount.
   const isPunchedIn = !!(todayAttendance?.checkIn && !todayAttendance?.checkOut);
 
   useEffect(() => {
-    if (!isPunchedIn) return;
+    if (!isPunchedIn || gpsStartedRef.current) return;
 
-    let stopped = false;
-    let stopFn: (() => void) | null = null;
+    gpsStartedRef.current = true;
 
     startGpsTracking({
       authHeaders: getEmployeeAuthHeaders(),
       throttleMs: 15000,
       onStatus: () => {},
     }).then((stop) => {
-      if (stopped) { stop(); return; }
-      stopFn = stop;
+      // On native this is a no-op; on web this is the real watchPosition stop.
+      webGpsStopRef.current = stop;
     }).catch(() => {
+      gpsStartedRef.current = false; // allow retry
       if (!isCapacitorNative) {
         toast({
           title: "Location Permission Denied",
@@ -118,12 +124,18 @@ export default function EmployeeLayout() {
         });
       }
     });
-
-    return () => {
-      stopped = true;
-      stopFn?.();
-    };
   }, [isPunchedIn]);
+
+  // On unmount (logout / app close): stop web GPS
+  useEffect(() => {
+    return () => {
+      if (webGpsStopRef.current) {
+        webGpsStopRef.current();
+        webGpsStopRef.current = null;
+      }
+      gpsStartedRef.current = false;
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -145,9 +157,7 @@ export default function EmployeeLayout() {
     );
   }
 
-  if (!employee) {
-    return null;
-  }
+  if (!employee) return null;
 
   const permissions = permissionsData?.permissions || {};
   const isDashboard = currentPath === "/employee-portal" || currentPath === "/employee-portal/";
