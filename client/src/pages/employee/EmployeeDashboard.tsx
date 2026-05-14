@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { format, differenceInSeconds } from "date-fns";
 import { useLocation } from "wouter";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
-import { startGpsTracking, isCapacitorNative } from "@/lib/native-gps";
 
 function getEmployeeAuthHeaders(): Record<string, string> {
   const token = getEmployeeToken();
@@ -166,7 +165,6 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const [isUploading, setIsUploading] = useState(false);
   const [punchLocation, setPunchLocation] = useState<string | null>(null);
   const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
-  const [gpsStatus, setGpsStatus] = useState<'idle' | 'active' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pendingPunchType = useRef<"in" | "out" | null>(null);
@@ -263,39 +261,9 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const isPunchedIn = todayAttendance?.checkIn && !todayAttendance?.checkOut;
   const isPunchedOut = todayAttendance?.checkIn && todayAttendance?.checkOut;
 
-  // GPS tracking: native Capacitor background GPS on Android, web watchPosition fallback in browser
-  useEffect(() => {
-    if (!isPunchedIn) {
-      setGpsStatus('idle');
-      return;
-    }
-
-    let stopped = false;
-    let stopFn: (() => void) | null = null;
-
-    startGpsTracking({
-      authHeaders: getEmployeeAuthHeaders(),
-      throttleMs: 15000,
-      onStatus: (s) => { if (!stopped) setGpsStatus(s); },
-    }).then((stop) => {
-      if (stopped) { stop(); return; }
-      stopFn = stop;
-    }).catch(() => {
-      if (!stopped) setGpsStatus('error');
-      if (!isCapacitorNative) {
-        toast({
-          title: "Location Permission Denied",
-          description: "Enable location access in your device settings for GPS tracking.",
-          variant: "destructive",
-        });
-      }
-    });
-
-    return () => {
-      stopped = true;
-      stopFn?.();
-    };
-  }, [isPunchedIn]);
+  // GPS tracking is managed in EmployeeLayout so it persists across all page navigation.
+  // Derive a local display status from punch state only.
+  const gpsStatus = isPunchedIn ? 'active' : 'idle';
 
   useEffect(() => {
     if (!isPunchedIn || !todayAttendance?.checkIn) { setElapsedSeconds(0); return; }
@@ -549,7 +517,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <input type="file" accept="image/*" capture="user" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
+      <input type="file" accept="image/*" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
       <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
       <input type="file" accept="image/*" capture="environment" ref={checkInPhotoRef} className="hidden"
         onChange={(e) => {

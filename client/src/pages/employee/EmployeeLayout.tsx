@@ -5,7 +5,8 @@ import { Loader2 } from "lucide-react";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
 import { useEffect } from "react";
 import { registerPushNotifications } from "@/lib/pushNotifications";
-import { requestAllLocationPermissions } from "@/lib/native-gps";
+import { requestAllLocationPermissions, startGpsTracking, isCapacitorNative } from "@/lib/native-gps";
+import { useToast } from "@/hooks/use-toast";
 import EmployeeDashboard from "./EmployeeDashboard";
 import EmployeeAttendance from "./EmployeeAttendance";
 import EmployeePayslips from "./EmployeePayslips";
@@ -38,6 +39,7 @@ export function hasPermission(permissions: EmployeePermissions, resource: string
 export default function EmployeeLayout() {
   const [currentPath, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: employee, isLoading } = useQuery({
     queryKey: ["/api/employee/me"],
@@ -68,12 +70,60 @@ export default function EmployeeLayout() {
     enabled: !!employee,
   });
 
+  // Today's attendance — used to decide when to start/stop GPS
+  const { data: todayAttendance } = useQuery({
+    queryKey: ["/api/employee/attendance/today"],
+    queryFn: async () => {
+      const res = await fetch("/api/employee/attendance/today", { headers: getEmployeeAuthHeaders() });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!employee,
+    refetchInterval: 30000,
+  });
+
   useEffect(() => {
     if (employee) {
       registerPushNotifications().catch(() => {});
       requestAllLocationPermissions().catch(() => {});
     }
   }, [employee?.id]);
+
+  // ── GPS tracking: runs for the ENTIRE punched-in period ──────────────────
+  // Kept here in EmployeeLayout (not Dashboard) so it is NEVER stopped by
+  // page navigation.  On Android native this starts RishiLocationService
+  // (foreground service); on web it uses watchPosition fallback.
+  // Stops cleanly only when the employee punches out (isPunchedIn → false).
+  const isPunchedIn = !!(todayAttendance?.checkIn && !todayAttendance?.checkOut);
+
+  useEffect(() => {
+    if (!isPunchedIn) return;
+
+    let stopped = false;
+    let stopFn: (() => void) | null = null;
+
+    startGpsTracking({
+      authHeaders: getEmployeeAuthHeaders(),
+      throttleMs: 15000,
+      onStatus: () => {},
+    }).then((stop) => {
+      if (stopped) { stop(); return; }
+      stopFn = stop;
+    }).catch(() => {
+      if (!isCapacitorNative) {
+        toast({
+          title: "Location Permission Denied",
+          description: "Enable location access in device settings for GPS tracking.",
+          variant: "destructive",
+        });
+      }
+    });
+
+    return () => {
+      stopped = true;
+      stopFn?.();
+    };
+  }, [isPunchedIn]);
 
   const handleLogout = async () => {
     try {
