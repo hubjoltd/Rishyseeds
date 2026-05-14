@@ -2780,15 +2780,17 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         let d = 0;
         for (let k = 1; k < pts.length; k++) {
-          // Skip points with very poor GPS accuracy (> 150 m)
-          const accPrev = pts[k-1].accuracy != null ? Number(pts[k-1].accuracy) : 0;
-          const accCurr = pts[k].accuracy != null ? Number(pts[k].accuracy) : 0;
-          if (accPrev > 150 || accCurr > 150) continue;
+          // Skip points with known poor GPS accuracy (> 100 m)
+          const accPrev = pts[k-1].accuracy != null ? Number(pts[k-1].accuracy) : null;
+          const accCurr = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
+          if ((accPrev !== null && accPrev > 100) || (accCurr !== null && accCurr > 100)) continue;
           const distM = haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude));
-          // Skip GPS noise jumps — anything implying > 150 km/h is unrealistic road travel
+          // Skip micro-drift: hops under 25 m are GPS jitter, not real movement
+          if (distM < 25) continue;
+          // Skip impossible speed jumps (> 120 km/h for road travel)
           const timeSecs = (new Date(pts[k].recordedAt).getTime() - new Date(pts[k-1].recordedAt).getTime()) / 1000;
           const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
-          if (speedKmh <= 150) d += distM / 1000;
+          if (speedKmh <= 120) d += distM / 1000;
         }
         return d;
       }
@@ -3911,15 +3913,17 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         let d = 0;
         for (let i = 1; i < pts.length; i++) {
-          // Skip points with very poor GPS accuracy (> 150 m)
-          const accPrev = pts[i-1].accuracy != null ? Number(pts[i-1].accuracy) : 0;
-          const accCurr = pts[i].accuracy != null ? Number(pts[i].accuracy) : 0;
-          if (accPrev > 150 || accCurr > 150) continue;
+          // Skip points with known poor GPS accuracy (> 100 m)
+          const accPrev = pts[i-1].accuracy != null ? Number(pts[i-1].accuracy) : null;
+          const accCurr = pts[i].accuracy != null ? Number(pts[i].accuracy) : null;
+          if ((accPrev !== null && accPrev > 100) || (accCurr !== null && accCurr > 100)) continue;
           const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude));
-          // Skip GPS noise jumps — anything implying > 150 km/h is unrealistic road travel
+          // Skip micro-drift: hops under 25 m are GPS jitter, not real movement
+          if (distM < 25) continue;
+          // Skip impossible speed jumps (> 120 km/h for road travel)
           const timeSecs = (new Date(pts[i].recordedAt).getTime() - new Date(pts[i-1].recordedAt).getTime()) / 1000;
           const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
-          if (speedKmh <= 150) d += distM / 1000;
+          if (speedKmh <= 120) d += distM / 1000;
         }
         return d;
       }

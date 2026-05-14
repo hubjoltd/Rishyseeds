@@ -62,7 +62,7 @@ public class RishiLocationService extends Service {
 
     private static final String TAG              = "RishiGPS";
     private static final long   MIN_INTERVAL_MS  = 15_000L;
-    private static final float  MIN_DISTANCE_M   = 20f;
+    private static final float  MIN_DISTANCE_M   = 50f;
     private static final long   WAKE_LOCK_MAX_MS = 10L * 60 * 60 * 1000; // 10 hours
 
     private LocationManager          locationManager;
