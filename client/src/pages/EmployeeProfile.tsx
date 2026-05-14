@@ -50,6 +50,12 @@ import {
   BatteryLow,
   Signal,
   Zap,
+  Play,
+  ClipboardList,
+  CalendarDays,
+  FileText,
+  Rss,
+  ScrollText,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -1513,15 +1519,15 @@ export default function EmployeeProfile() {
   const speedViolations = (playbackLocationData?.points ?? []).filter(p => p.speed && Number(p.speed) * 3.6 > speedLimitKm).length;
   const playbackStoppages = playbackLocationData?.stoppageCount ?? 0;
 
-  const tabs: { key: ProfileTab; label: string; icon?: React.ReactNode }[] = [
-    { key: "live", label: "Live" },
-    { key: "playback", label: "Playback" },
-    { key: "task", label: "Task" },
-    { key: "attendance", label: "All Attendance" },
-    { key: "details", label: "Details" },
-    { key: "feeds", label: "Feeds" },
-    { key: "expense", label: "Expense" },
-    { key: "audit", label: "Audit History" },
+  const tabs: { key: ProfileTab; label: string; icon: React.ReactNode }[] = [
+    { key: "live",       label: "Live",           icon: <Radio className="h-3.5 w-3.5" /> },
+    { key: "playback",   label: "Playback",        icon: <Play className="h-3.5 w-3.5" /> },
+    { key: "task",       label: "Task",            icon: <ClipboardList className="h-3.5 w-3.5" /> },
+    { key: "attendance", label: "All Attendance",  icon: <CalendarDays className="h-3.5 w-3.5" /> },
+    { key: "details",    label: "Details",         icon: <FileText className="h-3.5 w-3.5" /> },
+    { key: "feeds",      label: "Feeds",           icon: <Rss className="h-3.5 w-3.5" /> },
+    { key: "expense",    label: "Expense",         icon: <IndianRupee className="h-3.5 w-3.5" /> },
+    { key: "audit",      label: "Audit History",   icon: <ScrollText className="h-3.5 w-3.5" /> },
   ];
 
   return (
@@ -1662,16 +1668,17 @@ export default function EmployeeProfile() {
       </div>
 
       <div className="bg-card border-b px-6 overflow-x-auto">
-        <div className="flex items-center gap-1 min-w-max">
-          {tabs.map(({ key, label }) => (
+        <div className="flex items-center gap-0 min-w-max">
+          {tabs.map(({ key, label, icon }) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 transition-colors ${
                 activeTab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
               data-testid={`tab-emp-${key}`}
             >
+              {icon}
               {label}
             </button>
           ))}
