@@ -23,6 +23,8 @@ interface RishiLocationPlugin {
   stopTracking(): Promise<void>;
   isTracking(): Promise<{ value: boolean }>;
   saveToken(options: { token: string; serverUrl: string }): Promise<void>;
+  requestBackgroundPermission(): Promise<{ granted: boolean }>;
+  checkBackgroundPermission(): Promise<{ granted: boolean }>;
 }
 
 // Bridge to the native Kotlin LocationPlugin registered in MainActivity
@@ -166,13 +168,26 @@ function startWebGps(opts: GpsOptions): StopFn {
 
 /**
  * Request all location permissions. Call once at app startup on native.
+ *
+ * On Android 10+ (API 29+), background location must be requested SEPARATELY
+ * after foreground location is granted — Android will reject the combined request.
+ * We request foreground first, then background with a small delay.
  */
 export async function requestAllLocationPermissions(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     const { Geolocation } = await import("@capacitor/geolocation");
+    // Step 1: foreground location (ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION)
     await Geolocation.requestPermissions({ permissions: ["location", "coarseLocation"] });
   } catch {}
+
+  // Step 2: background location (ACCESS_BACKGROUND_LOCATION) — Android 10+ only
+  // Must come after foreground is granted; Android 11+ requires showing rationale first
+  try {
+    await RishiLocation.requestBackgroundPermission();
+  } catch {
+    // Plugin not available on web / older Android — safe to ignore
+  }
 }
 
 /**
