@@ -1532,138 +1532,134 @@ export default function EmployeeProfile() {
 
   return (
     <div className="space-y-0 -m-4 md:-m-8 animate-in fade-in">
-      <div className="bg-card border-b px-6 py-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+      <div className="bg-card border-b px-4 py-3">
+        {/* breadcrumb */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
           <button onClick={() => navigate("/employees")} className="flex items-center gap-1 hover:text-primary transition-colors" data-testid="link-back-employees">
-            <ArrowLeft className="h-4 w-4" /> Employees
+            <ArrowLeft className="h-3.5 w-3.5" /> Employees
           </button>
           <span>/</span>
           <span className="text-foreground font-medium">{employee.fullName}</span>
         </div>
 
-        <div className="flex items-start gap-4 flex-wrap">
+        {/* ── Main header row ── */}
+        <div className="flex items-center gap-3">
+
+          {/* Avatar */}
           <div
-            className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold shrink-0"
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white text-lg font-bold shrink-0"
             style={{ backgroundColor: avatarColor(employee.fullName) }}
             data-testid="avatar-employee"
           >
             {employee.fullName.charAt(0).toUpperCase()}
           </div>
 
+          {/* Name + role + 2 info rows */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold" data-testid="text-employee-name">{employee.fullName}</h1>
-              <Badge variant={employee.status === "active" ? "default" : "secondary"} className="text-xs" data-testid="badge-employee-status">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base font-bold leading-tight" data-testid="text-employee-name">{employee.fullName}</h1>
+              <Badge variant={employee.status === "active" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0" data-testid="badge-employee-status">
                 {employee.status === "active" ? "Active" : employee.status}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground capitalize">{employee.role || "Employee"}</p>
+            <p className="text-[11px] text-muted-foreground capitalize leading-tight">{employee.role || "Employee"}</p>
 
-            {/* ── Single info row: ID · phone · email · location | device status ── */}
+            {/* Row 1: ID · email · join date */}
+            <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1"><User className="h-3 w-3 shrink-0" />{employee.employeeId}</span>
+              {employee.email && <><span className="text-gray-300">|</span><span className="flex items-center gap-1"><Mail className="h-3 w-3 shrink-0" />{employee.email}</span></>}
+              {employee.joinDate && <><span className="text-gray-300">|</span><span className="flex items-center gap-1"><Calendar className="h-3 w-3 shrink-0" />{formatDate(employee.joinDate)}</span></>}
+            </div>
+
+            {/* Row 2: phone · location · punch status */}
             {(() => {
-              const pts = deviceStatusData?.points ?? [];
-              const latest = pts.length > 0 ? pts[pts.length - 1] : null;
-              const bat: number | null = latest?.batteryLevel ?? null;
-              const charging: boolean = !!(latest?.isCharging);
-              const net: string | null = latest?.networkType ?? null;
-              const acc: number | null = latest?.accuracy != null ? Math.round(Number(latest.accuracy)) : null;
-              const lastSeen: Date | null = latest?.recordedAt ? new Date(latest.recordedAt) : null;
-
               const todayAtt = attendanceRecords.find((r: any) => {
                 try { return format(new Date(r.date), "yyyy-MM-dd") === deviceTodayStr; } catch { return false; }
               });
               const punchStatus = todayAtt?.checkOut ? "out" : todayAtt?.checkIn ? "in" : "none";
-
-              const lastSeenLabel = lastSeen
-                ? (() => {
-                    const diff = Math.floor((Date.now() - lastSeen.getTime()) / 60000);
-                    if (diff < 1) return "just now";
-                    if (diff === 1) return "1 min ago";
-                    if (diff < 60) return `${diff} min ago`;
-                    const h = Math.floor(diff / 60);
-                    return `${h}h ${diff % 60}m ago`;
-                  })()
-                : null;
-
-              const signalBars = !net || net === "none" ? 0 : net === "2g" ? 1 : net === "3g" ? 2 : net === "4g" ? 3 : 4;
-              const signalColor = signalBars === 0 ? "#ef4444" : signalBars <= 1 ? "#f97316" : signalBars <= 2 ? "#eab308" : "#22c55e";
-              const batColor = bat === null ? "#9ca3af" : bat <= 20 ? "#ef4444" : bat <= 50 ? "#f59e0b" : "#22c55e";
-
-              const sep = <span className="text-gray-300 select-none">|</span>;
-
               return (
-                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground flex-wrap" data-testid="div-device-status-bar">
-
-                  {/* Employee meta */}
-                  <span className="flex items-center gap-1"><User className="h-3 w-3" />{employee.employeeId}</span>
-                  {employee.phone && <>{sep}<span className="flex items-center gap-1"><Phone className="h-3 w-3" />{employee.phone}</span></>}
-                  {employee.email && <>{sep}<span className="flex items-center gap-1"><Mail className="h-3 w-3" />{employee.email}</span></>}
-                  {employee.workLocation && <>{sep}<span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{employee.workLocation}</span></>}
-                  {employee.joinDate && <>{sep}<span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(employee.joinDate)}</span></>}
-
-                  {/* ── device section separator ── */}
-                  {sep}
-
-                  {/* Punch status */}
-                  <span className={`flex items-center gap-1 font-semibold ${
-                    punchStatus === "in" ? "text-green-600" : punchStatus === "out" ? "text-gray-500" : "text-amber-600"
-                  }`}>
-                    {punchStatus === "in"
-                      ? <><LogIn className="h-3 w-3" /> Punched In {todayAtt?.checkIn}</>
-                      : punchStatus === "out"
-                        ? <><LogOut className="h-3 w-3" /> Punched Out {todayAtt?.checkOut}</>
-                        : <><Clock className="h-3 w-3" /> Not Punched</>}
+                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
+                  {employee.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3 shrink-0" />{employee.phone}</span>}
+                  {employee.workLocation && <><span className="text-gray-300">|</span><span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{employee.workLocation}</span></>}
+                  <span className="text-gray-300">|</span>
+                  <span className={`flex items-center gap-1 font-semibold ${punchStatus === "in" ? "text-green-600" : punchStatus === "out" ? "text-gray-400" : "text-amber-600"}`}>
+                    {punchStatus === "in"  ? <><LogIn  className="h-3 w-3" />Punched In {todayAtt?.checkIn}</> :
+                     punchStatus === "out" ? <><LogOut className="h-3 w-3" />Punched Out {todayAtt?.checkOut}</> :
+                                            <><Clock  className="h-3 w-3" />Not Punched</>}
                   </span>
-
-                  {/* Signal bars */}
-                  {net !== null && (
-                    <>{sep}
-                      <span className="flex items-center gap-1">
-                        <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-                          {[0,1,2,3].map(i => (
-                            <rect key={i} x={i*4} y={12-(i+1)*3} width="3" height={(i+1)*3} rx="0.6" fill={i < signalBars ? signalColor : "#d1d5db"} />
-                          ))}
-                        </svg>
-                        <span className="font-medium text-gray-700">{net === "wifi" ? "WiFi" : net === "none" ? "No Signal" : net.toUpperCase()}</span>
-                      </span>
-                    </>
-                  )}
-
-                  {/* Battery */}
-                  {bat !== null && (
-                    <>{sep}
-                      <span className="flex items-center gap-1">
-                        <svg width="24" height="12" viewBox="0 0 24 12" fill="none">
-                          <rect x="0.5" y="0.5" width="20" height="11" rx="2" stroke="#9ca3af" strokeWidth="1"/>
-                          <rect x="21" y="3.5" width="2" height="5" rx="1" fill="#9ca3af"/>
-                          <rect x="2" y="2" width={Math.max(1, Math.round((bat/100)*16))} height="8" rx="1" fill={batColor}/>
-                          {charging && <text x="10" y="9" fontSize="7" textAnchor="middle" fill="white" fontWeight="bold">⚡</text>}
-                        </svg>
-                        <span className={`font-semibold ${bat <= 20 ? "text-red-600" : bat <= 50 ? "text-amber-600" : "text-gray-700"}`}>{bat}%</span>
-                        {charging && <Zap className="h-2.5 w-2.5 text-green-500" />}
-                      </span>
-                    </>
-                  )}
-
-                  {/* GPS */}
-                  {acc !== null && (
-                    <>{sep}<span className="flex items-center gap-1"><Navigation className="h-3 w-3 text-primary" />±{acc}m</span></>
-                  )}
-
-                  {/* Last seen */}
-                  {lastSeenLabel && (
-                    <>{sep}<span className="flex items-center gap-1"><Clock className="h-3 w-3" />{lastSeenLabel}</span></>
-                  )}
                 </div>
               );
             })()}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate("/employees")} data-testid="button-back-emp">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back
-            </Button>
-          </div>
+          {/* ── Device status right column ── */}
+          {(() => {
+            const pts = deviceStatusData?.points ?? [];
+            const latest = pts.length > 0 ? pts[pts.length - 1] : null;
+            const bat: number | null = latest?.batteryLevel ?? null;
+            const charging: boolean = !!(latest?.isCharging);
+            const net: string | null = latest?.networkType ?? null;
+            const acc: number | null = latest?.accuracy != null ? Math.round(Number(latest.accuracy)) : null;
+            const lastSeen: Date | null = latest?.recordedAt ? new Date(latest.recordedAt) : null;
+
+            const lastSeenLabel = lastSeen
+              ? (() => {
+                  const diff = Math.floor((Date.now() - lastSeen.getTime()) / 60000);
+                  if (diff < 1) return "just now";
+                  if (diff === 1) return "1 min ago";
+                  if (diff < 60) return `${diff} min ago`;
+                  const h = Math.floor(diff / 60);
+                  return `${h}h ${diff % 60}m ago`;
+                })()
+              : null;
+
+            const signalBars = !net || net === "none" ? 0 : net === "2g" ? 1 : net === "3g" ? 2 : net === "4g" ? 3 : 4;
+            const signalColor = signalBars === 0 ? "#ef4444" : signalBars <= 1 ? "#f97316" : signalBars <= 2 ? "#eab308" : "#22c55e";
+            const batColor = bat === null ? "#9ca3af" : bat <= 20 ? "#ef4444" : bat <= 50 ? "#f59e0b" : "#22c55e";
+
+            if (!latest) return null;
+
+            return (
+              <div className="flex flex-col items-end gap-1 border-l pl-4 shrink-0 text-[11px]" data-testid="div-device-status-bar">
+                {/* Signal bars + label */}
+                {net !== null && (
+                  <div className="flex items-center gap-1.5">
+                    <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+                      {[0,1,2,3].map(i => (
+                        <rect key={i} x={i*4.5} y={14-(i+1)*3} width="3.5" height={(i+1)*3} rx="0.7" fill={i < signalBars ? signalColor : "#e5e7eb"} />
+                      ))}
+                    </svg>
+                    <span className="font-semibold text-gray-700">{net === "wifi" ? "WiFi" : net === "none" ? "No Signal" : net.toUpperCase()}</span>
+                  </div>
+                )}
+
+                {/* Battery gauge + % */}
+                {bat !== null && (
+                  <div className="flex items-center gap-1.5">
+                    <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+                      <rect x="0.5" y="0.5" width="24" height="13" rx="2.5" stroke="#9ca3af" strokeWidth="1"/>
+                      <rect x="25" y="4" width="2.5" height="6" rx="1" fill="#9ca3af"/>
+                      <rect x="2" y="2" width={Math.max(2, Math.round((bat/100)*20))} height="10" rx="1.5" fill={batColor}/>
+                      {charging && <text x="12" y="10.5" fontSize="8" textAnchor="middle" fill="white" fontWeight="bold">⚡</text>}
+                    </svg>
+                    <span className={`font-bold ${bat <= 20 ? "text-red-600" : bat <= 50 ? "text-amber-600" : "text-gray-700"}`}>{bat}%</span>
+                    {charging && <Zap className="h-3 w-3 text-green-500" />}
+                  </div>
+                )}
+
+                {/* GPS + Last seen */}
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  {acc !== null && <span className="flex items-center gap-1"><Navigation className="h-3 w-3 text-primary" />±{acc}m</span>}
+                  {lastSeenLabel && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{lastSeenLabel}</span>}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Back button */}
+          <Button variant="outline" size="sm" onClick={() => navigate("/employees")} className="shrink-0" data-testid="button-back-emp">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+          </Button>
         </div>
       </div>
 
