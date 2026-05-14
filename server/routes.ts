@@ -2779,7 +2779,17 @@ export async function registerRoutes(
       }
       function totalDistKm(pts: typeof points): number {
         let d = 0;
-        for (let k = 1; k < pts.length; k++) d += haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude)) / 1000;
+        for (let k = 1; k < pts.length; k++) {
+          // Skip points with very poor GPS accuracy (> 150 m)
+          const accPrev = pts[k-1].accuracy != null ? Number(pts[k-1].accuracy) : 0;
+          const accCurr = pts[k].accuracy != null ? Number(pts[k].accuracy) : 0;
+          if (accPrev > 150 || accCurr > 150) continue;
+          const distM = haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude));
+          // Skip GPS noise jumps — anything implying > 150 km/h is unrealistic road travel
+          const timeSecs = (new Date(pts[k].recordedAt).getTime() - new Date(pts[k-1].recordedAt).getTime()) / 1000;
+          const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
+          if (speedKmh <= 150) d += distM / 1000;
+        }
         return d;
       }
       type GpsSeg =
@@ -3901,7 +3911,15 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         let d = 0;
         for (let i = 1; i < pts.length; i++) {
-          d += haversineM(Number(pts[i - 1].latitude), Number(pts[i - 1].longitude), Number(pts[i].latitude), Number(pts[i].longitude)) / 1000;
+          // Skip points with very poor GPS accuracy (> 150 m)
+          const accPrev = pts[i-1].accuracy != null ? Number(pts[i-1].accuracy) : 0;
+          const accCurr = pts[i].accuracy != null ? Number(pts[i].accuracy) : 0;
+          if (accPrev > 150 || accCurr > 150) continue;
+          const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude));
+          // Skip GPS noise jumps — anything implying > 150 km/h is unrealistic road travel
+          const timeSecs = (new Date(pts[i].recordedAt).getTime() - new Date(pts[i-1].recordedAt).getTime()) / 1000;
+          const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
+          if (speedKmh <= 150) d += distM / 1000;
         }
         return d;
       }
