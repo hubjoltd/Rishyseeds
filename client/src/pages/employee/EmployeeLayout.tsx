@@ -93,6 +93,25 @@ export default function EmployeeLayout() {
     }
   }, [employee?.id]);
 
+  // Fix: Capacitor Android blank screen when returning from camera.
+  // When the WebView resumes after the camera/file-picker closes, force a repaint.
+  useEffect(() => {
+    if (!isCapacitorNative) return;
+    const repaint = () => {
+      // Dispatch resize so React and the browser reflow the layout
+      window.dispatchEvent(new Event("resize"));
+      // Also nudge document body to force GPU layer flush
+      document.body.style.opacity = "0.99";
+      requestAnimationFrame(() => { document.body.style.opacity = ""; });
+    };
+    document.addEventListener("visibilitychange", repaint);
+    document.addEventListener("resume", repaint);
+    return () => {
+      document.removeEventListener("visibilitychange", repaint);
+      document.removeEventListener("resume", repaint);
+    };
+  }, []);
+
   // ── GPS tracking ─────────────────────────────────────────────────────────
   // Start once when the employee is punched in. Use gpsStartedRef to avoid
   // restarting on every query refetch or re-render.

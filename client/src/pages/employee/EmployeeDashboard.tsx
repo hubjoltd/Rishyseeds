@@ -519,7 +519,7 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <input type="file" accept="image/*" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
+      <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
       <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
       <input type="file" accept="image/*" capture="environment" ref={checkInPhotoRef} className="hidden"
         onChange={(e) => {
