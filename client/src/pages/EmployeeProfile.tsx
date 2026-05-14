@@ -45,6 +45,11 @@ import {
   BanknoteIcon,
   CreditCard,
   IndianRupee,
+  Battery,
+  BatteryCharging,
+  BatteryLow,
+  Signal,
+  Zap,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -1615,6 +1620,82 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
+
+                {/* ── Device status strip (battery · network · GPS) ── */}
+                {(() => {
+                  const pts = locationData?.points ?? [];
+                  const latest = pts.length > 0 ? pts[pts.length - 1] : null;
+                  const bat: number | null = latest?.batteryLevel ?? null;
+                  const charging: boolean | null = latest?.isCharging ?? null;
+                  const net: string | null = latest?.networkType ?? null;
+                  const acc: number | null = latest?.accuracy != null ? Math.round(Number(latest.accuracy)) : null;
+                  const speed: number | null = latest?.speed != null ? parseFloat(latest.speed) : null;
+                  const lastSeen: string | null = latest?.recordedAt ?? null;
+
+                  if (!latest) return null;
+
+                  return (
+                    <div className="mt-1.5 rounded-lg border border-gray-100 bg-gray-50/80 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                      {/* Battery */}
+                      <div className="flex items-center gap-1 text-[10px]">
+                        {charging
+                          ? <BatteryCharging className="h-3 w-3 text-green-500 shrink-0" />
+                          : bat !== null && bat <= 20
+                            ? <BatteryLow className="h-3 w-3 text-red-500 shrink-0" />
+                            : <Battery className="h-3 w-3 text-emerald-500 shrink-0" />
+                        }
+                        <span className={
+                          bat === null ? "text-gray-400"
+                          : bat <= 20 ? "text-red-600 font-semibold"
+                          : bat <= 50 ? "text-yellow-600"
+                          : "text-emerald-700"
+                        }>
+                          {bat !== null ? `${bat}%` : "–"}
+                        </span>
+                        {charging && <Zap className="h-2.5 w-2.5 text-green-500" />}
+                      </div>
+
+                      {/* Network */}
+                      <div className="flex items-center gap-1 text-[10px]">
+                        {!net || net === "none"
+                          ? <Signal className="h-3 w-3 text-red-400 shrink-0" />
+                          : net === "wifi"
+                            ? <Wifi className="h-3 w-3 text-blue-500 shrink-0" />
+                            : net === "4g" || net === "5g"
+                              ? <Signal className="h-3 w-3 text-emerald-500 shrink-0" />
+                              : <Radio className="h-3 w-3 text-orange-400 shrink-0" />
+                        }
+                        <span className="text-gray-700">
+                          {!net ? "–" : net === "wifi" ? "WiFi" : net.toUpperCase()}
+                        </span>
+                      </div>
+
+                      {/* GPS accuracy */}
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <MapPin className="h-3 w-3 text-primary shrink-0" />
+                        <span className="text-gray-700">
+                          {acc !== null ? `±${acc}m` : "GPS"}
+                          {speed !== null && speed > 0.5 ? ` · ${(speed * 3.6).toFixed(0)}km/h` : ""}
+                        </span>
+                      </div>
+
+                      {/* Last seen */}
+                      {lastSeen && (
+                        <div className="flex items-center gap-1 text-[10px] w-full mt-0.5">
+                          <Clock className="h-2.5 w-2.5 text-gray-400 shrink-0" />
+                          <span className="text-gray-400">
+                            {(() => {
+                              const diff = Math.floor((Date.now() - new Date(lastSeen).getTime()) / 60000);
+                              if (diff < 1) return "just now";
+                              if (diff === 1) return "1 min ago";
+                              return `${diff} min ago`;
+                            })()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Timeline scroll area */}
