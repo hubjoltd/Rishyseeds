@@ -1303,6 +1303,19 @@ export default function EmployeeProfile() {
     refetchInterval: 30000,
   });
 
+  // Always-on query for today's device telemetry (battery / network / GPS) — shown in header
+  const deviceTodayStr = format(new Date(), "yyyy-MM-dd");
+  const { data: deviceStatusData } = useQuery<{ points: any[] }>({
+    queryKey: ["/api/employees", empId, "device-status", deviceTodayStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${empId}/locations?date=${deviceTodayStr}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId,
+    refetchInterval: 30000,
+  });
+
   const { data: attendanceRecords = [], isLoading: attLoading } = useQuery<any[]>({
     queryKey: ["/api/employees", empId, "attendance"],
     queryFn: async () => {
@@ -1572,6 +1585,110 @@ export default function EmployeeProfile() {
             </Button>
           </div>
         </div>
+
+        {/* ── Device & punch status bar ── */}
+        {(() => {
+          const pts = deviceStatusData?.points ?? [];
+          const latest = pts.length > 0 ? pts[pts.length - 1] : null;
+          const bat: number | null = latest?.batteryLevel ?? null;
+          const charging: boolean = !!(latest?.isCharging);
+          const net: string | null = latest?.networkType ?? null;
+          const acc: number | null = latest?.accuracy != null ? Math.round(Number(latest.accuracy)) : null;
+          const lastSeen: Date | null = latest?.recordedAt ? new Date(latest.recordedAt) : null;
+
+          // Today's attendance record for punch status
+          const todayAtt = attendanceRecords.find((r: any) => {
+            try { return format(new Date(r.date), "yyyy-MM-dd") === deviceTodayStr; } catch { return false; }
+          });
+          const punchedIn = !!todayAtt?.checkIn;
+          const punchedOut = !!todayAtt?.checkOut;
+          const punchStatus = punchedOut ? "out" : punchedIn ? "in" : "none";
+
+          const lastSeenLabel = lastSeen
+            ? (() => {
+                const diff = Math.floor((Date.now() - lastSeen.getTime()) / 60000);
+                if (diff < 1) return "just now";
+                if (diff === 1) return "1 min ago";
+                if (diff < 60) return `${diff} min ago`;
+                const h = Math.floor(diff / 60);
+                return `${h}h ${diff % 60}m ago`;
+              })()
+            : null;
+
+          return (
+            <div className="mt-3 flex items-center gap-2 flex-wrap" data-testid="div-device-status-bar">
+              {/* Punch status pill */}
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                punchStatus === "in"
+                  ? "bg-green-50 border-green-200 text-green-700"
+                  : punchStatus === "out"
+                    ? "bg-gray-100 border-gray-200 text-gray-600"
+                    : "bg-yellow-50 border-yellow-200 text-yellow-700"
+              }`}>
+                {punchStatus === "in"
+                  ? <><LogIn className="h-3 w-3" /> Punched In {todayAtt?.checkIn}</>
+                  : punchStatus === "out"
+                    ? <><LogOut className="h-3 w-3" /> Punched Out {todayAtt?.checkOut}</>
+                    : <><Clock className="h-3 w-3" /> Not Punched</>
+                }
+              </div>
+
+              {/* Battery */}
+              {bat !== null && (
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border ${
+                  bat <= 20 ? "bg-red-50 border-red-200 text-red-700"
+                  : bat <= 50 ? "bg-yellow-50 border-yellow-200 text-yellow-700"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                }`}>
+                  {charging
+                    ? <BatteryCharging className="h-3 w-3" />
+                    : bat <= 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />
+                  }
+                  {bat}%{charging && <Zap className="h-2.5 w-2.5" />}
+                </div>
+              )}
+
+              {/* Network */}
+              {net && (
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border ${
+                  net === "none" ? "bg-red-50 border-red-200 text-red-600"
+                  : net === "wifi" ? "bg-blue-50 border-blue-200 text-blue-700"
+                  : net === "4g" || net === "5g" ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-orange-50 border-orange-200 text-orange-700"
+                }`}>
+                  {net === "wifi" ? <Wifi className="h-3 w-3" />
+                    : net === "none" ? <Signal className="h-3 w-3" />
+                    : <Radio className="h-3 w-3" />}
+                  {net === "wifi" ? "WiFi" : net.toUpperCase()}
+                </div>
+              )}
+
+              {/* GPS accuracy */}
+              {acc !== null && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border bg-purple-50 border-purple-200 text-purple-700">
+                  <Navigation className="h-3 w-3" />
+                  ±{acc}m GPS
+                </div>
+              )}
+
+              {/* Last seen */}
+              {lastSeenLabel && (
+                <div className="flex items-center gap-1 text-[11px] text-muted-foreground ml-1">
+                  <Clock className="h-3 w-3" />
+                  {lastSeenLabel}
+                </div>
+              )}
+
+              {/* No signal at all */}
+              {!latest && (
+                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Signal className="h-3 w-3 text-gray-300" />
+                  <span className="text-gray-400">No signal today</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="bg-card border-b px-6 overflow-x-auto">
