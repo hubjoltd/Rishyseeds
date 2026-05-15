@@ -1294,7 +1294,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId && activeTab === "live",
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 
   const { data: playbackLocationData } = useQuery<{

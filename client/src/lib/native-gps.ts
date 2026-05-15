@@ -165,10 +165,11 @@ async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
 // ── Web (browser / basic WebView) GPS ─────────────────────────────────────
 
 function startWebGps(opts: GpsOptions): StopFn {
-  const throttleMs = opts.throttleMs ?? 10000;
+  const intervalMs = opts.throttleMs ?? 10000;
   const onStatus   = opts.onStatus ?? (() => {});
   let lastSentAt   = 0;
   let wakeLock: any = null;
+  let stopped = false;
 
   const acquireWakeLock = async () => {
     try {
@@ -179,50 +180,46 @@ function startWebGps(opts: GpsOptions): StopFn {
   };
   acquireWakeLock();
 
-  const sendPos = (pos: GeolocationPosition) => {
+  const sendPayload = (lat: number, lng: number, accuracy: number | null, speed: number | null) => {
     const now = Date.now();
-    if (now - lastSentAt >= throttleMs) {
-      lastSentAt = now;
-      postLocation(
-        {
-          latitude:  pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy:  pos.coords.accuracy ?? null,
-          speed:     pos.coords.speed ?? null,
-        },
-        opts.authHeaders,
-        onStatus
-      );
-    }
+    if (now - lastSentAt < intervalMs - 2000) return; // allow 2s early tolerance
+    lastSentAt = now;
+    postLocation({ latitude: lat, longitude: lng, accuracy, speed }, opts.authHeaders, onStatus);
   };
 
+  // watchPosition — fires on movement events (fast, but throttled by browser when backgrounded)
   const watchId = navigator.geolocation.watchPosition(
-    sendPos,
+    (pos) => sendPayload(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? null, pos.coords.speed ?? null),
     () => onStatus("error"),
-    { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
+    { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 }
   );
+
+  // setInterval fallback — forces a ping every intervalMs even if watchPosition stalls
+  // This is the primary guarantee of regular pings (works even when screen dims)
+  const forcePing = () => {
+    if (stopped) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => sendPayload(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? null, pos.coords.speed ?? null),
+      () => {},
+      { enableHighAccuracy: true, timeout: intervalMs - 1000, maximumAge: 5000 }
+    );
+  };
+  const intervalId = setInterval(forcePing, intervalMs);
+  // Send an immediate first ping so the admin sees the employee right away
+  setTimeout(forcePing, 1000);
 
   const onVisible = () => {
     if (document.visibilityState === "visible") {
       acquireWakeLock();
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          lastSentAt = Date.now();
-          postLocation(
-            { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy ?? null, speed: pos.coords.speed ?? null },
-            opts.authHeaders,
-            onStatus
-          );
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-      );
+      forcePing();
     }
   };
   document.addEventListener("visibilitychange", onVisible);
 
   return () => {
+    stopped = true;
     navigator.geolocation.clearWatch(watchId);
+    clearInterval(intervalId);
     document.removeEventListener("visibilitychange", onVisible);
     if (wakeLock) wakeLock.release().catch(() => {});
   };
