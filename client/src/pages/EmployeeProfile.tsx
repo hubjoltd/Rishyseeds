@@ -433,6 +433,7 @@ function LiveMap({
   punchOutLng,
   mapTypeId,
   onMapTypeChange,
+  onSnappedKm,
 }: {
   locationPoints?: any[];
   segments?: LiveMapSegment[];
@@ -443,6 +444,7 @@ function LiveMap({
   punchOutLng?: number | null;
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
+  onSnappedKm?: (km: number) => void;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
@@ -467,6 +469,12 @@ function LiveMap({
         setSnappedPoints(pts);
         setSnapping(false);
         lastSnapCount.current = gpsPoints.length;
+        // Compute road distance from snapped polyline (more accurate than raw GPS haversine)
+        if (pts.length > 1 && onSnappedKm) {
+          let km = 0;
+          for (let i = 1; i < pts.length; i++) km += haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+          onSnappedKm(km);
+        }
       }
     });
     return () => { cancelled = true; };
@@ -1268,6 +1276,8 @@ export default function EmployeeProfile() {
     enabled: !!empId,
   });
 
+  const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
+
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
     points: any[];
     segments: Array<
@@ -1748,7 +1758,8 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  <span className="font-bold text-gray-900">{(liveSnappedKm ?? locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  {liveSnappedKm != null && <span className="text-[9px] text-blue-500 font-medium">(road)</span>}
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
 
@@ -2029,6 +2040,7 @@ export default function EmployeeProfile() {
                     punchOutLng={punchOutEvent?.lng ?? null}
                     mapTypeId={sharedMapTypeId}
                     onMapTypeChange={setSharedMapTypeId}
+                    onSnappedKm={setLiveSnappedKm}
                   />
                 )}
               </div>
