@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { getEmployeeToken, clearEmployeeToken } from "../EmployeeLogin";
 import { useEffect, useRef } from "react";
 import { registerPushNotifications } from "@/lib/pushNotifications";
-import { requestAllLocationPermissions, startGpsTracking, isCapacitorNative } from "@/lib/native-gps";
+import { requestAllLocationPermissions, startGpsTracking, stopGpsTracking, isCapacitorNative } from "@/lib/native-gps";
 import { useToast } from "@/hooks/use-toast";
 import EmployeeDashboard from "./EmployeeDashboard";
 import EmployeeAttendance from "./EmployeeAttendance";
@@ -112,40 +112,54 @@ export default function EmployeeLayout() {
     };
   }, []);
 
-  // ── GPS tracking ─────────────────────────────────────────────────────────
-  // Start once when the employee is punched in. Use gpsStartedRef to avoid
-  // restarting on every query refetch or re-render.
-  // On native Android: the foreground service runs independently — the cleanup
-  // returned from startGpsTracking() is a no-op. Only stopGpsTracking()
-  // (called from punch-out in EmployeeDashboard) actually stops the service.
-  // On web: we store the real stop function and call it on unmount.
+  // ── GPS tracking — strictly tied to punch-in / punch-out ─────────────────
+  // GPS starts ONLY when isPunchedIn becomes true.
+  // GPS stops as soon as isPunchedIn becomes false (punch-out or day end).
+  // EmployeeDashboard also calls stopGpsTracking() on punch-out as a first
+  // responder; this effect is the safety-net that catches any missed stops
+  // and resets the latch so GPS can restart on the next punch-in.
   const isPunchedIn = !!(todayAttendance?.checkIn && !todayAttendance?.checkOut);
+  const prevPunchedInRef = useRef<boolean | null>(null);
 
   useEffect(() => {
-    if (!isPunchedIn || gpsStartedRef.current) return;
+    // Skip until attendance data has loaded (null = not yet fetched)
+    if (todayAttendance === undefined) return;
 
-    gpsStartedRef.current = true;
+    const prev = prevPunchedInRef.current;
+    prevPunchedInRef.current = isPunchedIn;
 
-    startGpsTracking({
-      authHeaders: getEmployeeAuthHeaders(),
-      throttleMs: 15000,
-      onStatus: () => {},
-    }).then((stop) => {
-      // On native this is a no-op; on web this is the real watchPosition stop.
-      webGpsStopRef.current = stop;
-    }).catch(() => {
-      gpsStartedRef.current = false; // allow retry
-      if (!isCapacitorNative) {
-        toast({
-          title: "Location Permission Denied",
-          description: "Enable location access in device settings for GPS tracking.",
-          variant: "destructive",
-        });
+    if (isPunchedIn && !gpsStartedRef.current) {
+      // ── Punch-in detected → start GPS ──────────────────────────────────
+      gpsStartedRef.current = true;
+      startGpsTracking({
+        authHeaders: getEmployeeAuthHeaders(),
+        throttleMs: 15000,
+        onStatus: () => {},
+      }).then((stop) => {
+        webGpsStopRef.current = stop; // no-op on native; real stop fn on web
+      }).catch(() => {
+        gpsStartedRef.current = false; // allow retry on next render
+        if (!isCapacitorNative) {
+          toast({
+            title: "Location Permission Denied",
+            description: "Enable location access in device settings for GPS tracking.",
+            variant: "destructive",
+          });
+        }
+      });
+    } else if (!isPunchedIn && prev === true) {
+      // ── Punch-out detected → stop GPS (safety-net) ─────────────────────
+      gpsStartedRef.current = false;
+      if (webGpsStopRef.current) {
+        webGpsStopRef.current();
+        webGpsStopRef.current = null;
       }
-    });
-  }, [isPunchedIn]);
+      // Native: stop the foreground service in case Dashboard call was missed
+      stopGpsTracking().catch(() => {});
+    }
+  }, [isPunchedIn, todayAttendance]);
 
-  // On unmount (logout / app close): stop web GPS
+  // On unmount (logout): always stop GPS and clean up
   useEffect(() => {
     return () => {
       if (webGpsStopRef.current) {
@@ -153,6 +167,7 @@ export default function EmployeeLayout() {
         webGpsStopRef.current = null;
       }
       gpsStartedRef.current = false;
+      stopGpsTracking().catch(() => {});
     };
   }, []);
 
