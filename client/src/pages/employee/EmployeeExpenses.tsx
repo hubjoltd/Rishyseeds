@@ -266,11 +266,28 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const endOdoPhotoRef = useRef<HTMLInputElement>(null);
   const billsPhotoRef = useRef<HTMLInputElement>(null);
   const detailEndOdoPhotoRef = useRef<HTMLInputElement>(null);
+  const detailBillsPhotoRef = useRef<HTMLInputElement>(null);
 
   // State for completing an "open" expense from the detail view
   const [detailEndOdo, setDetailEndOdo] = useState("");
   const [detailEndOdoFile, setDetailEndOdoFile] = useState<File | null>(null);
   const [detailEndOdoPreview, setDetailEndOdoPreview] = useState<string | null>(null);
+  const [detailAmtPerKm, setDetailAmtPerKm] = useState("1");
+  const [detailHeadquarters, setDetailHeadquarters] = useState("");
+  const [detailDescription, setDetailDescription] = useState("");
+  const [detailModeOfTravel, setDetailModeOfTravel] = useState("");
+  const [detailTravellerName, setDetailTravellerName] = useState(employee.fullName);
+  const [detailStartDate, setDetailStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [detailEndDate, setDetailEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [detailBusFare, setDetailBusFare] = useState("");
+  const [detailTrainAirFare, setDetailTrainAirFare] = useState("");
+  const [detailHotelFare, setDetailHotelFare] = useState("");
+  const [detailConveyanceFare, setDetailConveyanceFare] = useState("");
+  const [detailPostageFare, setDetailPostageFare] = useState("");
+  const [detailOtherFare, setDetailOtherFare] = useState("");
+  const [detailOtherRemarks, setDetailOtherRemarks] = useState("");
+  const [detailBillsFile, setDetailBillsFile] = useState<File | null>(null);
+  const [detailBillsPreview, setDetailBillsPreview] = useState<string | null>(null);
 
   // Load persisted draft once on mount
   const _d = loadExpenseDraft();
@@ -411,10 +428,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     mutationFn: async () => {
       if (!expenseType) throw new Error("Please select an expense type");
       if (!startOdoFile) throw new Error("Starting odometer photo is required");
-      // End odometer is optional at creation — expense saved as "open", to be completed later
       if (!startOdo) throw new Error("Please enter the starting odometer reading");
       if (endOdoFile && !endOdo) throw new Error("Please enter the end odometer reading");
-      if (!startOdoFile && finalAmount <= 0) throw new Error("Please enter odometer readings or at least one fare amount");
 
       const fd = new FormData();
       fd.append("title", title.trim() || `${expenseType} - ${employee.fullName}`);
@@ -423,16 +438,14 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       fd.append("expenseDate", expenseDate);
       if (description) fd.append("description", description);
       if (employee.workLocation) fd.append("workLocation", employee.workLocation);
+      if (headquarters) fd.append("headquarters", headquarters);
 
       // Odometer fields
-      if (startOdo) fd.append("startingOdometer", startOdo);
+      fd.append("startingOdometer", startOdo);
       if (endOdo) fd.append("endOdometer", endOdo);
       if (totalDistance > 0) fd.append("totalDistance", String(totalDistance));
       fd.append("amountPerKm", amtPerKm || "1");
       if (totalTravelAmt > 0) fd.append("totalTravelAmount", String(totalTravelAmt));
-
-      // Headquarters
-      if (headquarters) fd.append("headquarters", headquarters);
 
       // Other expense breakdowns
       if (busFare) fd.append("busFare", busFare);
@@ -457,7 +470,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
 
       // Photos
       fd.append("startingOdometerPhoto", startOdoFile);
-      fd.append("endOdometerPhoto", endOdoFile);
+      if (endOdoFile) fd.append("endOdometerPhoto", endOdoFile);
       if (billsFile) fd.append("billsTicketPhoto", billsFile);
 
       const res = await fetch("/api/employee/expenses", {
@@ -471,12 +484,20 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
       resetForm();
-      setView("list");
-      setActiveTab("pending");
-      toast({ title: "Expense submitted successfully" });
+      // If no end odo was provided, go to the detail view so they can complete later
+      if (!endOdo) {
+        setView("detail");
+        setSelected(created);
+        setActiveTab("open");
+        toast({ title: "Starting odometer saved!", description: "Add end odometer details after your trip." });
+      } else {
+        setView("list");
+        setActiveTab("pending");
+        toast({ title: "Expense submitted successfully" });
+      }
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -488,6 +509,22 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       const fd = new FormData();
       fd.append("endOdometer", detailEndOdo);
       fd.append("endOdometerPhoto", detailEndOdoFile);
+      fd.append("amountPerKm", detailAmtPerKm || "1");
+      if (detailHeadquarters) fd.append("headquarters", detailHeadquarters);
+      if (detailDescription) fd.append("description", detailDescription);
+      if (detailModeOfTravel) fd.append("modeOfTravel", detailModeOfTravel);
+      if (detailTravellerName) fd.append("travellerName", detailTravellerName);
+      if (detailStartDate) fd.append("startDate", detailStartDate);
+      if (detailEndDate) fd.append("endDate", detailEndDate);
+      if (detailBusFare) fd.append("busFare", detailBusFare);
+      if (detailTrainAirFare) fd.append("trainAirFare", detailTrainAirFare);
+      if (detailHotelFare) fd.append("hotelFare", detailHotelFare);
+      if (daAmount > 0) fd.append("daAmount", String(daAmount));
+      if (detailConveyanceFare) fd.append("conveyanceFare", detailConveyanceFare);
+      if (detailPostageFare) fd.append("postageFare", detailPostageFare);
+      if (detailOtherFare) fd.append("otherFare", detailOtherFare);
+      if (detailOtherRemarks) fd.append("otherRemarks", detailOtherRemarks);
+      if (detailBillsFile) fd.append("billsTicketPhoto", detailBillsFile);
       const res = await fetch(`/api/employee/expenses/${expenseId}/complete-trip`, {
         method: "PATCH",
         headers: getHeaders(),
@@ -502,9 +539,13 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
       setSelected(updated);
-      setDetailEndOdo("");
-      setDetailEndOdoFile(null);
-      setDetailEndOdoPreview(null);
+      setDetailEndOdo(""); setDetailEndOdoFile(null); setDetailEndOdoPreview(null);
+      setDetailAmtPerKm("1"); setDetailHeadquarters(""); setDetailDescription("");
+      setDetailModeOfTravel(""); setDetailTravellerName(employee.fullName);
+      setDetailStartDate(format(new Date(), "yyyy-MM-dd")); setDetailEndDate(format(new Date(), "yyyy-MM-dd"));
+      setDetailBusFare(""); setDetailTrainAirFare(""); setDetailHotelFare("");
+      setDetailConveyanceFare(""); setDetailPostageFare(""); setDetailOtherFare(""); setDetailOtherRemarks("");
+      setDetailBillsFile(null); setDetailBillsPreview(null);
       setActiveTab("pending");
       toast({ title: "Expense submitted for approval!" });
     },
@@ -1119,9 +1160,9 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             </div>
           )}
           {startOdoFile && !endOdoFile && (
-            <div className="flex items-start gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-md">
-              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">Please capture the end odometer photo to unlock readings entry.</p>
+            <div className="flex items-start gap-2 px-3 py-2.5 border border-blue-100 bg-blue-50 rounded-md">
+              <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700">End odometer photo is optional — you can add it later after your trip.</p>
             </div>
           )}
         </div>
@@ -1129,12 +1170,12 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         <div className="pt-3 border-t">
           <Button
             className="w-full bg-green-700 hover:bg-green-800 font-bold py-3"
-            disabled={!expenseType || !startOdoFile || !endOdoFile || createMutation.isPending || finalAmount <= 0}
+            disabled={!expenseType || !startOdoFile || !startOdo || createMutation.isPending}
             onClick={() => createMutation.mutate()}
             data-testid="button-submit-expense"
           >
             {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            SUBMIT
+            {endOdoFile ? "SUBMIT" : "SAVE (Complete later)"}
           </Button>
         </div>
       </div>

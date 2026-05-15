@@ -3534,9 +3534,10 @@ export async function registerRoutes(
     }
   });
 
-  // Complete an open trip expense by adding end odometer (called at punch-out)
+  // Complete an open trip expense — employee adds end odo + all other details
   app.patch("/api/employee/expenses/:id/complete-trip", upload.fields([
     { name: "endOdometerPhoto", maxCount: 1 },
+    { name: "billsTicketPhoto", maxCount: 1 },
   ]), async (req: any, res) => {
     try {
       const empId = req.employeeId;
@@ -3547,21 +3548,51 @@ export async function registerRoutes(
       if (expense.status !== "open") return res.status(400).json({ message: "Expense is not open" });
       const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
       const endPhotoPath = files.endOdometerPhoto?.[0] ? `/uploads/${files.endOdometerPhoto[0].filename}` : undefined;
+      const billsPhotoPath = files.billsTicketPhoto?.[0] ? `/uploads/${files.billsTicketPhoto[0].filename}` : undefined;
+
       const endOdo = req.body.endOdometer ? parseFloat(req.body.endOdometer) : null;
       const startOdo = expense.startingOdometer ? parseFloat(expense.startingOdometer) : null;
       const totalDistance = endOdo && startOdo && endOdo > startOdo ? endOdo - startOdo : null;
-      const amtPerKm = expense.amountPerKm ? parseFloat(expense.amountPerKm) : 1;
+      const amtPerKm = req.body.amountPerKm ? parseFloat(req.body.amountPerKm) : (expense.amountPerKm ? parseFloat(expense.amountPerKm) : 1);
       const totalTravelAmt = totalDistance ? totalDistance * amtPerKm : null;
+
+      // Sum other fares
+      const busFare = parseFloat(req.body.busFare || "0") || 0;
+      const trainAirFare = parseFloat(req.body.trainAirFare || "0") || 0;
+      const hotelFare = parseFloat(req.body.hotelFare || "0") || 0;
+      const daAmount = parseFloat(req.body.daAmount || "0") || 0;
+      const conveyanceFare = parseFloat(req.body.conveyanceFare || "0") || 0;
+      const postageFare = parseFloat(req.body.postageFare || "0") || 0;
+      const otherFare = parseFloat(req.body.otherFare || "0") || 0;
+      const otherExpensesTotal = busFare + trainAirFare + hotelFare + daAmount + conveyanceFare + postageFare + otherFare;
+      const finalTotal = (totalTravelAmt || 0) + otherExpensesTotal;
+
       const updated = await storage.updateExpense(expense.id, {
         status: "pending",
         ...(endOdo !== null ? { endOdometer: String(endOdo) } : {}),
         ...(endPhotoPath ? { endOdometerPhoto: endPhotoPath } : {}),
+        ...(billsPhotoPath ? { billsTicketPhoto: billsPhotoPath } : {}),
         ...(totalDistance !== null ? { totalDistance: String(totalDistance) } : {}),
-        ...(totalTravelAmt !== null ? {
-          totalTravelAmount: String(totalTravelAmt),
-          amount: String(totalTravelAmt),
-          finalAmount: String(totalTravelAmt),
-        } : {}),
+        amountPerKm: String(amtPerKm),
+        ...(totalTravelAmt !== null ? { totalTravelAmount: String(totalTravelAmt) } : {}),
+        amount: String(finalTotal),
+        finalAmount: String(finalTotal),
+        // Other fare fields
+        ...(req.body.busFare ? { busFare: req.body.busFare } : {}),
+        ...(req.body.trainAirFare ? { trainAirFare: req.body.trainAirFare } : {}),
+        ...(req.body.hotelFare ? { hotelFare: req.body.hotelFare } : {}),
+        ...(req.body.daAmount ? { daAmount: req.body.daAmount } : {}),
+        ...(req.body.conveyanceFare ? { conveyanceFare: req.body.conveyanceFare } : {}),
+        ...(req.body.postageFare ? { postageFare: req.body.postageFare } : {}),
+        ...(req.body.otherFare ? { otherFare: req.body.otherFare } : {}),
+        ...(req.body.otherRemarks ? { otherRemarks: req.body.otherRemarks } : {}),
+        // Trip / travel fields
+        ...(req.body.headquarters ? { headquarters: req.body.headquarters } : {}),
+        ...(req.body.description ? { description: req.body.description } : {}),
+        ...(req.body.modeOfTravel ? { modeOfTravel: req.body.modeOfTravel } : {}),
+        ...(req.body.travellerName ? { travellerName: req.body.travellerName } : {}),
+        ...(req.body.startDate ? { startDate: req.body.startDate } : {}),
+        ...(req.body.endDate ? { endDate: req.body.endDate } : {}),
       });
       const emp = await storage.getEmployee(empId);
       if (emp) {
@@ -3570,7 +3601,7 @@ export async function registerRoutes(
           fromStatus: "open",
           toStatus: "pending",
           changedByName: emp.fullName,
-          notes: "Trip completed via punch-out",
+          notes: "Trip completed — end odometer and details added",
         });
       }
       res.json(updated);
