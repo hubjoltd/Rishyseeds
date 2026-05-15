@@ -242,7 +242,7 @@ function LiveMapInner({
   punchOutLng,
   mapTypeId,
   autoFollow,
-  snappedPoints,
+  snappedSegments,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
