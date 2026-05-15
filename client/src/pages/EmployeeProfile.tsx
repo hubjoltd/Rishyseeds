@@ -1758,8 +1758,7 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900">{(liveSnappedKm ?? locationData?.totalKm ?? 0).toFixed(2)} Km</span>
-                  {liveSnappedKm != null && <span className="text-[9px] text-blue-500 font-medium">(road)</span>}
+                  <span className="font-bold text-gray-900">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
 
@@ -1879,12 +1878,27 @@ export default function EmployeeProfile() {
                       /* ── GAP TRAVEL (synthesised gap between events) ── */
                       if (seg.type === "gap_travel") {
                         const gapEndT = new Date((seg as any).endTime);
+                        // Compute distance from any GPS points that fall inside this gap
+                        const gapStart = startT.getTime();
+                        const gapEnd   = gapEndT.getTime();
+                        const gapPts   = (locationData?.points ?? [])
+                          .filter((p: any) => {
+                            const t = new Date(p.recordedAt).getTime();
+                            return t >= gapStart && t <= gapEnd && p.latitude && p.longitude;
+                          })
+                          .map((p: any) => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+                        let gapKm = 0;
+                        for (let gi = 1; gi < gapPts.length; gi++)
+                          gapKm += haversineKm(gapPts[gi-1][0], gapPts[gi-1][1], gapPts[gi][0], gapPts[gi][1]);
+                        const gapLabel = gapKm >= 1 ? `${gapKm.toFixed(2)} Km` : gapKm > 0 ? `${(gapKm * 1000).toFixed(0)} m` : null;
                         return (
                           <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                             {dot("bg-orange-400", <Navigation className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
-                                <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled</p>
+                                <p className="text-[11px] font-semibold text-orange-700 leading-tight">
+                                  {gapLabel ? `Travelled (${gapLabel})` : "Travelled"}
+                                </p>
                                 {dur(formatDuration(startT, gapEndT))}
                               </div>
                               {timeRow(startT, gapEndT)}
