@@ -1313,6 +1313,16 @@ export default function EmployeeProfile() {
     refetchInterval: 30000,
   });
 
+  const { data: playbackCheckins = [] } = useQuery<any[]>({
+    queryKey: ["/api/employees", empId, "checkins", playbackDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/employees/${empId}/checkins?date=${playbackDate}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!empId && activeTab === "playback",
+  });
+
   // Always-on query for today's device telemetry (battery / network / GPS) — shown in header
   const deviceTodayStr = format(new Date(), "yyyy-MM-dd");
   const { data: deviceStatusData } = useQuery<{ points: any[] }>({
@@ -1518,8 +1528,8 @@ export default function EmployeeProfile() {
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
   const playbackKm = playbackLocationData?.totalKm ?? playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
-  const playbackCheckIns = playbackDateTrips.reduce((s, t) => s + (t.visits || []).filter(v => v.punchInTime).length, 0);
-  const playbackCheckOuts = playbackDateTrips.reduce((s, t) => s + (t.visits || []).filter(v => v.punchOutTime).length, 0);
+  const playbackCheckIns = playbackCheckins.filter((c: any) => c.checkedInAt).length;
+  const playbackCheckOuts = playbackCheckins.filter((c: any) => c.checkedOutAt).length;
   const speedViolations = (playbackLocationData?.points ?? []).filter(p => p.speed && Number(p.speed) * 3.6 > speedLimitKm).length;
   const playbackStoppages = playbackLocationData?.stoppageCount ?? 0;
 
