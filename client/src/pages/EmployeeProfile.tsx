@@ -1837,7 +1837,7 @@ export default function EmployeeProfile() {
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
                     <Timer className="h-10 w-10 opacity-20" />
                     <p className="font-medium">No activity recorded</p>
-                    <p className="text-[10px] opacity-70">GPS pings are sent every 30 seconds</p>
+                    <p className="text-[10px] opacity-70">GPS pings are sent every 10 seconds</p>
                   </div>
                 ) : (
                   /* ── TrackClap-style timeline: icon circles ON the vertical line ── */
@@ -2099,7 +2099,7 @@ export default function EmployeeProfile() {
                     <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2 px-4 text-center">
                       <Timer className="h-10 w-10 opacity-20" />
                       <p className="font-medium">No activity recorded</p>
-                      <p className="text-[10px] opacity-70">GPS pings are sent every 60 seconds</p>
+                      <p className="text-[10px] opacity-70">GPS pings are sent every 10 seconds</p>
                     </div>
                   );
 

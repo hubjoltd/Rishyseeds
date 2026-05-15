@@ -165,7 +165,7 @@ async function startNativeBackgroundGps(opts: GpsOptions): Promise<StopFn> {
 // ── Web (browser / basic WebView) GPS ─────────────────────────────────────
 
 function startWebGps(opts: GpsOptions): StopFn {
-  const throttleMs = opts.throttleMs ?? 15000;
+  const throttleMs = opts.throttleMs ?? 10000;
   const onStatus   = opts.onStatus ?? (() => {});
   let lastSentAt   = 0;
   let wakeLock: any = null;

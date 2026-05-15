@@ -2780,17 +2780,17 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         let d = 0;
         for (let k = 1; k < pts.length; k++) {
-          // Skip points with known poor GPS accuracy (> 100 m)
+          // Skip points with very poor GPS accuracy (> 500 m) — cellular GPS is often 100-300 m
           const accPrev = pts[k-1].accuracy != null ? Number(pts[k-1].accuracy) : null;
           const accCurr = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
-          if ((accPrev !== null && accPrev > 100) || (accCurr !== null && accCurr > 100)) continue;
+          if ((accPrev !== null && accPrev > 500) || (accCurr !== null && accCurr > 500)) continue;
           const distM = haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude));
-          // Skip micro-drift: hops under 25 m are GPS jitter, not real movement
-          if (distM < 25) continue;
-          // Skip impossible speed jumps (> 120 km/h for road travel)
+          // Skip micro-drift: hops under 10 m are GPS jitter, not real movement
+          if (distM < 10) continue;
+          // Skip impossible speed jumps (> 150 km/h for road travel)
           const timeSecs = (new Date(pts[k].recordedAt).getTime() - new Date(pts[k-1].recordedAt).getTime()) / 1000;
           const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
-          if (speedKmh <= 120) d += distM / 1000;
+          if (speedKmh <= 150) d += distM / 1000;
         }
         return d;
       }
@@ -3947,17 +3947,17 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         let d = 0;
         for (let i = 1; i < pts.length; i++) {
-          // Skip points with known poor GPS accuracy (> 100 m)
+          // Skip points with very poor GPS accuracy (> 500 m) — cellular GPS is often 100-300 m
           const accPrev = pts[i-1].accuracy != null ? Number(pts[i-1].accuracy) : null;
           const accCurr = pts[i].accuracy != null ? Number(pts[i].accuracy) : null;
-          if ((accPrev !== null && accPrev > 100) || (accCurr !== null && accCurr > 100)) continue;
+          if ((accPrev !== null && accPrev > 500) || (accCurr !== null && accCurr > 500)) continue;
           const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude));
-          // Skip micro-drift: hops under 25 m are GPS jitter, not real movement
-          if (distM < 25) continue;
-          // Skip impossible speed jumps (> 120 km/h for road travel)
+          // Skip micro-drift: hops under 10 m are GPS jitter, not real movement
+          if (distM < 10) continue;
+          // Skip impossible speed jumps (> 150 km/h for road travel)
           const timeSecs = (new Date(pts[i].recordedAt).getTime() - new Date(pts[i-1].recordedAt).getTime()) / 1000;
           const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 999;
-          if (speedKmh <= 120) d += distM / 1000;
+          if (speedKmh <= 150) d += distM / 1000;
         }
         return d;
       }

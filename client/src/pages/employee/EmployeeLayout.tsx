@@ -133,7 +133,7 @@ export default function EmployeeLayout() {
       gpsStartedRef.current = true;
       startGpsTracking({
         authHeaders: getEmployeeAuthHeaders(),
-        throttleMs: 15000,
+        throttleMs: 10000,
         onStatus: () => {},
       }).then((stop) => {
         webGpsStopRef.current = stop; // no-op on native; real stop fn on web
