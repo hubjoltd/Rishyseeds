@@ -253,7 +253,7 @@ function LiveMapInner({
   punchOutLng?: number | null;
   mapTypeId: string;
   autoFollow: boolean;
-  snappedPoints: [number, number][];
+  snappedSegments: [number, number][][];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -265,14 +265,19 @@ function LiveMapInner({
     return () => clearTimeout(t);
   }, [map]);
 
-  const gpsPoints = useMemo(() =>
-    locationPoints.filter(p => p.latitude && p.longitude)
-      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
+  const gpsWithTime = useMemo(() =>
+    locationPoints
+      .filter(p => p.latitude && p.longitude && p.recordedAt)
+      .map(p => ({ pos: [Number(p.latitude), Number(p.longitude)] as [number, number], ts: new Date(p.recordedAt) })),
     [locationPoints]
   );
+  const gpsPoints = useMemo(() => gpsWithTime.map(g => g.pos), [gpsWithTime]);
+  const gpsTimes   = useMemo(() => gpsWithTime.map(g => g.ts),  [gpsWithTime]);
 
-  // Use road-snapped route when available, fallback to raw GPS
-  const routeLine = snappedPoints.length > 1 ? snappedPoints : gpsPoints;
+  // Flatten all snapped segments into one array for bounds-fitting / auto-follow
+  const allSnappedPts = snappedSegments.flat();
+  // For bounds fitting and auto-follow, use snapped pts if available, else raw GPS
+  const routeLineFlat = allSnappedPts.length > 1 ? allSnappedPts : gpsPoints;
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
@@ -345,16 +350,22 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {/* While OSRM snap is pending: show raw GPS so track is never invisible */}
-      {gpsPoints.length > 1 && snappedPoints.length <= 1 && <>
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
-      {/* Once OSRM returns: show ONLY the road-snapped line (hides the raw GPS line above) */}
-      {snappedPoints.length > 1 && <>
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
+      {/* While OSRM snap is pending: show raw GPS split by speed-gap so track is never invisible */}
+      {snappedSegments.length === 0 && gpsPoints.length > 1 &&
+        splitTrackAtGaps(gpsPoints, gpsTimes).flatMap((seg, si) =>
+          seg.length > 1 ? [
+            <Polyline key={`raw-${si}-o`} positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />,
+            <Polyline key={`raw-${si}-i`} positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />,
+          ] : []
+        )
+      }
+      {/* Once OSRM returns: render each road-snapped segment separately — no highway lines across GPS gaps */}
+      {snappedSegments.flatMap((seg, si) =>
+        seg.length > 1 ? [
+          <Polyline key={`snap-${si}-o`} positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />,
+          <Polyline key={`snap-${si}-i`} positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />,
+        ] : []
+      )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
       {gpsPoints.length <= 1 && waypointLine.length > 1 && <>
@@ -447,38 +458,38 @@ function LiveMap({
   onSnappedKm?: (km: number) => void;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
-  const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
+  const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
-  const gpsPoints = useMemo(() =>
+  // GPS points with timestamps — needed for speed-based gap splitting
+  const gpsWithTime = useMemo(() =>
     locationPoints
-      .filter(p => p.latitude && p.longitude)
-      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
+      .filter(p => p.latitude && p.longitude && p.recordedAt)
+      .map(p => ({ pos: [Number(p.latitude), Number(p.longitude)] as [number, number], ts: new Date(p.recordedAt) })),
     [locationPoints]
   );
+  const gpsPoints = useMemo(() => gpsWithTime.map(g => g.pos), [gpsWithTime]);
 
-  // Re-snap to roads only when new GPS points are added (not every 15s refresh if nothing changed)
+  // Re-snap to roads only when new GPS points are added (not every 5s refresh if nothing changed)
   useEffect(() => {
-    if (gpsPoints.length < 2) { setSnappedPoints([]); return; }
-    if (gpsPoints.length === lastSnapCount.current) return; // no new points
+    if (gpsWithTime.length < 2) { setSnappedSegments([]); return; }
+    if (gpsWithTime.length === lastSnapCount.current) return; // no new points
     let cancelled = false;
     setSnapping(true);
-    osrmSnap(gpsPoints).then(pts => {
-      if (!cancelled) {
-        setSnappedPoints(pts);
-        setSnapping(false);
-        lastSnapCount.current = gpsPoints.length;
-        // Compute road distance from snapped polyline (more accurate than raw GPS haversine)
-        if (pts.length > 1 && onSnappedKm) {
-          let km = 0;
-          for (let i = 1; i < pts.length; i++) km += haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
-          onSnappedKm(km);
+    // Split track at impossible-speed gaps FIRST, then road-snap each segment independently.
+    // This prevents OSRM routing a 600 km highway when the phone was off during travel.
+    const rawSegs = splitTrackAtGaps(gpsWithTime.map(g => g.pos), gpsWithTime.map(g => g.ts));
+    Promise.all(rawSegs.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve(seg)))
+      .then(snapped => {
+        if (!cancelled) {
+          setSnappedSegments(snapped.filter(s => s.length > 0));
+          setSnapping(false);
+          lastSnapCount.current = gpsWithTime.length;
         }
-      }
-    });
+      });
     return () => { cancelled = true; };
-  }, [gpsPoints.length]);
+  }, [gpsWithTime.length]);
 
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
@@ -497,7 +508,7 @@ function LiveMap({
           punchOutLng={punchOutLng}
           mapTypeId={mapTypeId}
           autoFollow={autoFollow}
-          snappedPoints={snappedPoints}
+          snappedSegments={snappedSegments}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -653,6 +664,34 @@ function makePbStoppageIcon(_num: number, dur = "") {
     </div>`,
     className: "", iconSize: [52, 52], iconAnchor: [26, 26],
   });
+}
+
+// ── GPS track splitting at impossible-speed gaps ──────────────────────────
+// Splits a GPS track into continuous segments. A new segment starts whenever
+// consecutive points imply speed > 150 km/h (impossible by road vehicle).
+// This prevents OSRM from routing across GPS teleports (e.g. phone off during
+// a 600 km journey — OSRM would otherwise draw the full highway route).
+function splitTrackAtGaps(
+  pts: [number, number][],
+  times: Date[],
+  maxKmh = 150
+): [number, number][][] {
+  if (pts.length === 0) return [];
+  const segs: [number, number][][] = [];
+  let cur: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const distKm = haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+    const secs = (times[i].getTime() - times[i-1].getTime()) / 1000;
+    const kmh = secs > 0 ? distKm / (secs / 3600) : 9999;
+    if (kmh > maxKmh) {
+      if (cur.length > 0) segs.push(cur);
+      cur = [pts[i]];
+    } else {
+      cur.push(pts[i]);
+    }
+  }
+  if (cur.length > 0) segs.push(cur);
+  return segs;
 }
 
 // Snap GPS points to actual roads via OSRM public API (falls back to raw points on error)
