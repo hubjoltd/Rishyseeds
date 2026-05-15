@@ -2779,15 +2779,8 @@ export async function registerRoutes(
       }
       function totalDistKm(pts: typeof points): number {
         let d = 0;
-        for (let k = 1; k < pts.length; k++) {
-          const distM = haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude));
-          // Skip micro-drift under 5 m (pure GPS jitter while stationary)
-          if (distM < 5) continue;
-          // Skip impossible teleports — speed filter is the only guard needed
-          const timeSecs = (new Date(pts[k].recordedAt).getTime() - new Date(pts[k-1].recordedAt).getTime()) / 1000;
-          const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 9999;
-          if (speedKmh <= 150) d += distM / 1000;
-        }
+        for (let k = 1; k < pts.length; k++)
+          d += haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude)) / 1000;
         return d;
       }
       type GpsSeg =
@@ -3942,15 +3935,8 @@ export async function registerRoutes(
 
       function totalDistKm(pts: typeof points): number {
         let d = 0;
-        for (let i = 1; i < pts.length; i++) {
-          const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude));
-          // Skip micro-drift under 5 m (pure GPS jitter while stationary)
-          if (distM < 5) continue;
-          // Skip impossible teleports — speed filter is the only guard needed
-          const timeSecs = (new Date(pts[i].recordedAt).getTime() - new Date(pts[i-1].recordedAt).getTime()) / 1000;
-          const speedKmh = timeSecs > 0 ? (distM / 1000) / (timeSecs / 3600) : 9999;
-          if (speedKmh <= 150) d += distM / 1000;
-        }
+        for (let i = 1; i < pts.length; i++)
+          d += haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude)) / 1000;
         return d;
       }
 
