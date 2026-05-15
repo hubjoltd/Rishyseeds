@@ -605,11 +605,8 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                     onChange={e => handlePhotoChange(e, setDetailEndOdoFile, setDetailEndOdoPreview, "end-odo.jpg")}
                   />
                 </div>
-                <div className={!detailEndOdoFile ? "opacity-50 pointer-events-none select-none" : ""}>
-                  <p className="text-xs text-gray-500 font-semibold mb-2 flex items-center gap-1">
-                    Step 2 — Enter End Reading
-                    {!detailEndOdoFile && <Lock className="h-3 w-3 text-gray-400" />}
-                  </p>
+                <div>
+                  <p className="text-xs text-gray-500 font-semibold mb-2">Step 2 — Enter End Reading</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] text-gray-400 block mb-1">Starting (km)</label>
@@ -622,7 +619,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                         placeholder="e.g. 50120"
                         value={detailEndOdo}
                         onChange={e => setDetailEndOdo(e.target.value)}
-                        disabled={!detailEndOdoFile}
                         className="text-sm h-9"
                         data-testid="input-detail-end-odometer"
                       />
