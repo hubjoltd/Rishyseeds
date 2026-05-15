@@ -265,6 +265,12 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const startOdoPhotoRef = useRef<HTMLInputElement>(null);
   const endOdoPhotoRef = useRef<HTMLInputElement>(null);
   const billsPhotoRef = useRef<HTMLInputElement>(null);
+  const detailEndOdoPhotoRef = useRef<HTMLInputElement>(null);
+
+  // State for completing an "open" expense from the detail view
+  const [detailEndOdo, setDetailEndOdo] = useState("");
+  const [detailEndOdoFile, setDetailEndOdoFile] = useState<File | null>(null);
+  const [detailEndOdoPreview, setDetailEndOdoPreview] = useState<string | null>(null);
 
   // Load persisted draft once on mount
   const _d = loadExpenseDraft();
@@ -405,8 +411,10 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     mutationFn: async () => {
       if (!expenseType) throw new Error("Please select an expense type");
       if (!startOdoFile) throw new Error("Starting odometer photo is required");
-      if (!endOdoFile) throw new Error("End odometer photo is required");
-      if (finalAmount <= 0) throw new Error("Please enter odometer readings or at least one fare amount");
+      // End odometer is optional at creation — expense saved as "open", to be completed later
+      if (!startOdo) throw new Error("Please enter the starting odometer reading");
+      if (endOdoFile && !endOdo) throw new Error("Please enter the end odometer reading");
+      if (!startOdoFile && finalAmount <= 0) throw new Error("Please enter odometer readings or at least one fare amount");
 
       const fd = new FormData();
       fd.append("title", title.trim() || `${expenseType} - ${employee.fullName}`);
@@ -473,6 +481,36 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const completeTripMutation = useMutation({
+    mutationFn: async (expenseId: number) => {
+      if (!detailEndOdo) throw new Error("Please enter the ending odometer reading");
+      if (!detailEndOdoFile) throw new Error("Ending odometer photo is required");
+      const fd = new FormData();
+      fd.append("endOdometer", detailEndOdo);
+      fd.append("endOdometerPhoto", detailEndOdoFile);
+      const res = await fetch(`/api/employee/expenses/${expenseId}/complete-trip`, {
+        method: "PATCH",
+        headers: getHeaders(),
+        body: fd,
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message || "Failed to complete expense");
+      }
+      return res.json();
+    },
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ["/api/employee/expenses"] });
+      setSelected(updated);
+      setDetailEndOdo("");
+      setDetailEndOdoFile(null);
+      setDetailEndOdoPreview(null);
+      setActiveTab("pending");
+      toast({ title: "Expense submitted for approval!" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   function resetForm() {
     clearExpenseDraft();
     setTitle(""); setExpenseType(""); setExpenseDate(format(new Date(), "yyyy-MM-dd"));
@@ -517,11 +555,102 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         </div>
 
         {exp.status === "open" && (
-          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-md px-3 py-2.5 mb-3">
-            <Gauge className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-semibold text-blue-700">Trip In Progress</p>
-              <p className="text-[11px] text-blue-600 mt-0.5">This expense is still open. The end odometer will be captured when you punch out.</p>
+          <div className="mb-3 space-y-3">
+            {/* Status banner */}
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-md px-3 py-2.5">
+              <Gauge className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-blue-700">Trip In Progress — Add Ending Odometer</p>
+                <p className="text-[11px] text-blue-600 mt-0.5">Starting odometer saved. Fill ending odometer details below to submit for approval.</p>
+              </div>
+            </div>
+
+            {/* Starting odo — read-only display */}
+            <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                <Gauge className="h-3.5 w-3.5 text-gray-500" />
+                <span className="text-xs font-semibold text-gray-600">Saved Starting Odometer</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 px-3 py-3 items-start">
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-0.5">Reading (km)</p>
+                  <p className="text-base font-bold text-gray-700">{exp.startingOdometer || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Photo</p>
+                  {exp.startingOdometerPhoto
+                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-24 h-16 object-cover rounded border border-gray-200" />
+                    : <div className="w-24 h-16 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
+                </div>
+              </div>
+            </div>
+
+            {/* Ending odo — editable */}
+            <div className="border border-green-200 rounded-md bg-white overflow-hidden">
+              <div className="px-3 py-2 bg-green-700 text-white flex items-center gap-2">
+                <Gauge className="h-3.5 w-3.5" />
+                <span className="text-xs font-semibold">Add Ending Odometer <span className="text-green-200 font-normal">(required to submit)</span></span>
+              </div>
+              <div className="px-3 py-3 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 font-semibold mb-2">Step 1 — Capture End Odometer Photo <span className="text-red-500">*</span></p>
+                  <PhotoBox
+                    label="End Odometer Photo"
+                    mandatory
+                    preview={detailEndOdoPreview}
+                    onCapture={() => detailEndOdoPhotoRef.current?.click()}
+                    onClear={() => { setDetailEndOdoFile(null); setDetailEndOdoPreview(null); }}
+                  />
+                  <input ref={detailEndOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={e => handlePhotoChange(e, setDetailEndOdoFile, setDetailEndOdoPreview, "end-odo.jpg")}
+                  />
+                </div>
+                <div className={!detailEndOdoFile ? "opacity-50 pointer-events-none select-none" : ""}>
+                  <p className="text-xs text-gray-500 font-semibold mb-2 flex items-center gap-1">
+                    Step 2 — Enter End Reading
+                    {!detailEndOdoFile && <Lock className="h-3 w-3 text-gray-400" />}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Starting (km)</label>
+                      <div className="bg-gray-50 rounded px-3 py-2 text-sm font-bold text-gray-600">{exp.startingOdometer || "-"}</div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Ending (km) *</label>
+                      <Input
+                        type="number"
+                        placeholder="e.g. 50120"
+                        value={detailEndOdo}
+                        onChange={e => setDetailEndOdo(e.target.value)}
+                        disabled={!detailEndOdoFile}
+                        className="text-sm h-9"
+                        data-testid="input-detail-end-odometer"
+                      />
+                    </div>
+                  </div>
+                  {detailEndOdo && exp.startingOdometer && Number(detailEndOdo) > Number(exp.startingOdometer) && (
+                    <div className="mt-2 bg-green-50 border border-green-200 rounded px-3 py-2 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Total Distance</span>
+                      <span className="text-sm font-bold text-green-700">
+                        {(Number(detailEndOdo) - Number(exp.startingOdometer)).toFixed(0)} km
+                        {exp.amountPerKm && ` · ₹${((Number(detailEndOdo) - Number(exp.startingOdometer)) * Number(exp.amountPerKm)).toFixed(0)}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <Button
+                  onClick={() => completeTripMutation.mutate(exp.id)}
+                  disabled={!detailEndOdoFile || !detailEndOdo || completeTripMutation.isPending}
+                  className="w-full bg-green-700 hover:bg-green-800 text-white h-10"
+                  data-testid="button-complete-expense"
+                >
+                  {completeTripMutation.isPending
+                    ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Submitting...</>
+                    : <><CheckCircle className="h-4 w-4 mr-2" />Complete & Submit for Approval</>
+                  }
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -829,11 +958,11 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                   <div>
                     <PhotoBox
                       label="End Odometer Photo"
-                      mandatory
                       preview={endOdoPreview}
                       onCapture={() => endOdoPhotoRef.current?.click()}
                       onClear={() => { setEndOdoFile(null); setEndOdoPreview(null); setEndOdo(""); }}
                     />
+                    <p className="text-[9px] text-gray-400 mt-1 text-center">Optional — add later</p>
                     <input ref={endOdoPhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
                       onChange={e => handlePhotoChange(e, setEndOdoFile, setEndOdoPreview)} />
                   </div>

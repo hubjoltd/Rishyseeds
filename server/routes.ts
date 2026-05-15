@@ -3608,12 +3608,15 @@ export async function registerRoutes(
       const startPhotoPath = files.startingOdometerPhoto?.[0] ? `/uploads/${files.startingOdometerPhoto[0].filename}` : undefined;
       const endPhotoPath = files.endOdometerPhoto?.[0] ? `/uploads/${files.endOdometerPhoto[0].filename}` : undefined;
       const billsPhotoPath = files.billsTicketPhoto?.[0] ? `/uploads/${files.billsTicketPhoto[0].filename}` : undefined;
+      // If no end odometer provided, save as "open" (employee will complete later)
+      const hasEndOdo = endPhotoPath || req.body.endOdometer;
+      const initialStatus = hasEndOdo ? "pending" : "open";
       const expense = await storage.createExpense({
         ...req.body,
         employeeDbId: empId,
         expenseCode,
         title,
-        status: "pending",
+        status: initialStatus,
         ...(startPhotoPath ? { startingOdometerPhoto: startPhotoPath } : {}),
         ...(endPhotoPath ? { endOdometerPhoto: endPhotoPath } : {}),
         ...(billsPhotoPath ? { billsTicketPhoto: billsPhotoPath } : {}),
@@ -3621,9 +3624,9 @@ export async function registerRoutes(
       await storage.createExpenseAudit({
         expenseId: expense.id,
         fromStatus: null,
-        toStatus: "pending",
+        toStatus: initialStatus,
         changedByName: emp.fullName,
-        notes: "Expense submitted",
+        notes: initialStatus === "open" ? "Expense created (trip in progress)" : "Expense submitted",
       });
       res.status(201).json(expense);
     } catch (e: any) {
