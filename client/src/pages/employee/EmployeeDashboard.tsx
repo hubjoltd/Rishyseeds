@@ -171,6 +171,64 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
   const pendingPunchType = useRef<"in" | "out" | null>(null);
   const pendingLocationRef = useRef<Promise<{ latitude: string; longitude: string; locationName: string } | null> | null>(null);
 
+  // In-app camera overlay (getUserMedia fallback — works on any Android WebView)
+  const [cameraOverlayOpen, setCameraOverlayOpen] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const onCaptureRef = useRef<((file: File) => void) | null>(null);
+
+  const stopStream = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  };
+
+  const openInAppCamera = (onCapture: (file: File) => void): Promise<void> => {
+    return new Promise(async (resolve) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        streamRef.current = stream;
+        onCaptureRef.current = (file: File) => { onCapture(file); resolve(); };
+        setCameraFacing("environment");
+        setCameraOverlayOpen(true);
+        // Attach stream to video element after next render
+        setTimeout(() => {
+          if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+        }, 100);
+      } catch {
+        resolve(); // getUserMedia denied/unavailable — caller falls back to file input
+      }
+    });
+  };
+
+  const captureFromCamera = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 900;
+    canvas.height = video.videoHeight || 675;
+    canvas.getContext("2d")!.drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `punch-${Date.now()}.jpg`, { type: "image/jpeg" });
+      stopStream();
+      setCameraOverlayOpen(false);
+      onCaptureRef.current?.(file);
+      onCaptureRef.current = null;
+    }, "image/jpeg", 0.75);
+  };
+
+  const cancelCamera = () => {
+    stopStream();
+    setCameraOverlayOpen(false);
+    onCaptureRef.current = null;
+    pendingPunchType.current = null;
+    pendingLocationRef.current = null;
+  };
+
   // Customer check-in state
   const [checkInDialogOpen, setCheckInDialogOpen] = useState(false);
   const [checkInStep, setCheckInStep] = useState<"select" | "new" | "photo">("select");
@@ -285,8 +343,25 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
     pendingPunchType.current = type;
     pendingLocationRef.current = captureLocation();
 
+    // Shared handler once a photo File is obtained from any source
+    const processPhotoFile = async (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => setEmployeePhoto(reader.result as string);
+      reader.readAsDataURL(file);
+      setIsUploading(true);
+      toast({ title: "Processing...", description: "Capturing location and uploading photo..." });
+      const locationPromise = pendingLocationRef.current || captureLocation();
+      pendingLocationRef.current = null;
+      const uploadPromise = uploadPhotoToServer(file);
+      const [location, serverUrl] = await Promise.all([locationPromise, uploadPromise]);
+      setPhotoServerUrl(serverUrl);
+      if (location) setPunchLocation(location.locationName);
+      setIsUploading(false);
+      punchMutation.mutate({ type, location });
+    };
+
+    // ── Step 1: Try @capacitor/camera plugin (requires new APK) ─────────────
     if (isCapacitorNative) {
-      // On Android: use native Camera plugin — bypasses Google Photos picker entirely
       try {
         const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
         const photo = await Camera.getPhoto({
@@ -296,37 +371,36 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
           source: CameraSource.Camera,
           width: 900,
         });
-        if (!photo.dataUrl) return;
-        // Convert dataUrl → File and reuse existing handlePhotoCapture logic
+        if (!photo.dataUrl) throw new Error("no data");
         const res = await fetch(photo.dataUrl);
         const blob = await res.blob();
-        const file = new File([blob], `punch-${type}-${Date.now()}.jpg`, { type: "image/jpeg" });
-        // Trigger the same flow as the file input onChange
-        const reader = new FileReader();
-        reader.onload = () => setEmployeePhoto(reader.result as string);
-        reader.readAsDataURL(file);
-        setIsUploading(true);
-        toast({ title: "Processing...", description: "Capturing location and uploading photo..." });
-        const locationPromise = pendingLocationRef.current || captureLocation();
-        pendingLocationRef.current = null;
-        const uploadPromise = uploadPhotoToServer(file);
-        const [location, serverUrl] = await Promise.all([locationPromise, uploadPromise]);
-        setPhotoServerUrl(serverUrl);
-        if (location) setPunchLocation(location.locationName);
-        setIsUploading(false);
-        punchMutation.mutate({ type, location });
+        await processPhotoFile(new File([blob], `punch-${type}-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        return;
       } catch (err: any) {
-        // User cancelled camera — reset state silently
-        pendingPunchType.current = null;
-        pendingLocationRef.current = null;
-        if (err?.message && !err.message.toLowerCase().includes("cancel")) {
-          toast({ title: "Camera Error", description: err.message, variant: "destructive" });
+        const msg = (err?.message || "").toLowerCase();
+        if (msg.includes("cancel") || msg.includes("user cancelled")) {
+          // Genuinely cancelled — reset silently
+          pendingPunchType.current = null;
+          pendingLocationRef.current = null;
+          return;
         }
+        // Plugin not available (old APK) — fall through to getUserMedia
       }
-    } else {
-      // On web: use hidden file input as before
-      if (cameraInputRef.current) { cameraInputRef.current.value = ""; cameraInputRef.current.click(); }
     }
+
+    // ── Step 2: getUserMedia in-app camera (works on any Android WebView) ───
+    if (navigator.mediaDevices?.getUserMedia) {
+      let captured = false;
+      await openInAppCamera(async (file: File) => {
+        captured = true;
+        await processPhotoFile(file);
+      });
+      if (captured || cameraOverlayOpen) return; // either captured or overlay is open
+      // If openInAppCamera resolved without capture it means getUserMedia failed
+    }
+
+    // ── Step 3: Fallback to hidden file input ───────────────────────────────
+    if (cameraInputRef.current) { cameraInputRef.current.value = ""; cameraInputRef.current.click(); }
   };
 
   const uploadPhotoToServer = async (file: File): Promise<string | null> => {
@@ -561,6 +635,58 @@ export default function EmployeeDashboard({ employee }: EmployeeDashboardProps) 
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* ── In-app camera overlay (getUserMedia) ────────────────────────────── */}
+      {cameraOverlayOpen && (
+        <div className="fixed inset-0 z-[999] bg-black flex flex-col" data-testid="div-camera-overlay">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="flex-1 w-full object-cover"
+            style={{ transform: cameraFacing === "user" ? "scaleX(-1)" : "none" }}
+          />
+          {/* Controls */}
+          <div className="absolute bottom-0 left-0 right-0 pb-10 pt-4 flex items-center justify-around bg-gradient-to-t from-black/70 to-transparent">
+            {/* Cancel */}
+            <button
+              onClick={cancelCamera}
+              className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center"
+              data-testid="button-camera-cancel"
+            >
+              <X className="w-7 h-7 text-white" />
+            </button>
+            {/* Shutter */}
+            <button
+              onClick={captureFromCamera}
+              className="w-20 h-20 rounded-full bg-white border-4 border-gray-300 active:scale-95 transition-transform"
+              data-testid="button-camera-capture"
+            />
+            {/* Flip camera */}
+            <button
+              onClick={async () => {
+                const next = cameraFacing === "environment" ? "user" : "environment";
+                stopStream();
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next }, audio: false });
+                  streamRef.current = stream;
+                  if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+                  setCameraFacing(next);
+                } catch {}
+              }}
+              className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center"
+              data-testid="button-camera-flip"
+            >
+              <RefreshCw className="w-6 h-6 text-white" />
+            </button>
+          </div>
+          {/* Hint */}
+          <div className="absolute top-4 left-0 right-0 text-center">
+            <span className="text-white text-sm bg-black/40 px-3 py-1 rounded-full">Take your selfie / photo to punch</span>
+          </div>
+        </div>
+      )}
+
       <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handlePhotoCapture} className="hidden" data-testid="input-camera" />
       <input type="file" accept="image/*" capture="environment" ref={warrantyPhotoRef} onChange={handleWarrantyPhotoChange} className="hidden" />
       <input type="file" accept="image/*" capture="environment" ref={checkInPhotoRef} className="hidden"
