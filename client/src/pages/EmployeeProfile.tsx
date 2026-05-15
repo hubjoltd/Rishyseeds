@@ -350,9 +350,9 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {/* While OSRM snap is pending: show raw GPS split by speed-gap so track is never invisible */}
-      {snappedSegments.length === 0 && gpsPoints.length > 1 &&
-        splitTrackAtGaps(gpsPoints, gpsTimes).flatMap((seg, si) =>
+      {/* While OSRM snap is pending or produced no drawable segments: show raw GPS split by distance-gap */}
+      {snappedSegments.flat().length <= 1 && gpsPoints.length > 1 &&
+        splitTrackAtGaps(gpsPoints).flatMap((seg, si) =>
           seg.length > 1 ? [
             <Polyline key={`raw-${si}-o`} positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />,
             <Polyline key={`raw-${si}-i`} positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />,
@@ -483,7 +483,7 @@ function LiveMap({
     Promise.all(rawSegs.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve(seg)))
       .then(snapped => {
         if (!cancelled) {
-          setSnappedSegments(snapped.filter(s => s.length > 0));
+          setSnappedSegments(snapped.filter(s => s.length >= 2));
           setSnapping(false);
           lastSnapCount.current = gpsWithTime.length;
         }
@@ -671,19 +671,21 @@ function makePbStoppageIcon(_num: number, dur = "") {
 // consecutive points imply speed > 150 km/h (impossible by road vehicle).
 // This prevents OSRM from routing across GPS teleports (e.g. phone off during
 // a 600 km journey — OSRM would otherwise draw the full highway route).
+// Split track only where there is a straight-line gap > maxDistKm (default 50 km).
+// Uses distance only — NOT speed — so it works correctly even when GPS pings
+// are batched and arrive at the server with identical recordedAt timestamps.
 function splitTrackAtGaps(
   pts: [number, number][],
-  times: Date[],
-  maxKmh = 150
+  _times?: Date[],
+  _maxKmh?: number,
+  maxDistKm = 50
 ): [number, number][][] {
   if (pts.length === 0) return [];
   const segs: [number, number][][] = [];
   let cur: [number, number][] = [pts[0]];
   for (let i = 1; i < pts.length; i++) {
     const distKm = haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
-    const secs = (times[i].getTime() - times[i-1].getTime()) / 1000;
-    const kmh = secs > 0 ? distKm / (secs / 3600) : 9999;
-    if (kmh > maxKmh) {
+    if (distKm > maxDistKm) {
       if (cur.length > 0) segs.push(cur);
       cur = [pts[i]];
     } else {
