@@ -2780,15 +2780,14 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
-        // All field phones report 80–90 m GPS accuracy (network/cell-tower mode),
-        // so accuracy-based filtering rejects every point.  Instead we use:
-        //   • 30 m minimum-movement gate  — skips micro-jitter between pings
-        //   • 200 km/h max-speed gate     — discards GPS teleport jumps (e.g. 206 km in 71 min)
-        // Stationary drift is primarily handled by the 200 m STOPPAGE_RADIUS above,
-        // which keeps oscillating points inside the stoppage cluster so they are
-        // never passed to this function as "travel" in the first place.
+        // Trackolap-style calculation:
+        //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
+        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 30 m
+        //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
+        // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
         const MIN_DIST_M = 30;
-        const MAX_SPEED_MS = 55.6; // 200 km/h
+        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
+        const MIN_GPS_SPEED_MS = 0.5; // 1.8 km/h — minimum Doppler speed to count movement
         if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
@@ -2798,9 +2797,14 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          const speedMs = dtSec > 0 ? distM / dtSec : 0;
-          if (speedMs > MAX_SPEED_MS) continue; // GPS teleport — skip without advancing last
-          if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+          const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
+          if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
+          // Use GPS Doppler speed as primary movement indicator (like Trackolap)
+          const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
+          const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
+            ? true          // satellite GPS confirms movement
+            : distM >= MIN_DIST_M; // network GPS fallback: require ≥ 30 m displacement
+          if (moving) { d += distM / 1000; last = k; }
         }
         return d;
       }
@@ -3955,13 +3959,14 @@ export async function registerRoutes(
       }
 
       function totalDistKm(pts: typeof points): number {
-        // All field phones report 80–90 m GPS accuracy (network/cell-tower mode),
-        // so accuracy-based filtering rejects every point.  Instead we use:
-        //   • 30 m minimum-movement gate  — skips micro-jitter between pings
-        //   • 200 km/h max-speed gate     — discards GPS teleport jumps (e.g. 206 km in 71 min)
-        // Stationary drift is primarily handled by the 200 m STOPPAGE_RADIUS above.
+        // Trackolap-style calculation:
+        //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
+        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 30 m
+        //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
+        // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
         const MIN_DIST_M = 30;
-        const MAX_SPEED_MS = 55.6; // 200 km/h
+        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
+        const MIN_GPS_SPEED_MS = 0.5; // 1.8 km/h — minimum Doppler speed to count movement
         if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
@@ -3971,9 +3976,14 @@ export async function registerRoutes(
             Number(pts[i].latitude),    Number(pts[i].longitude)
           );
           const dtSec = (new Date(pts[i].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          const speedMs = dtSec > 0 ? distM / dtSec : 0;
-          if (speedMs > MAX_SPEED_MS) continue; // GPS teleport — skip without advancing last
-          if (distM >= MIN_DIST_M) { d += distM / 1000; last = i; }
+          const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
+          if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
+          // Use GPS Doppler speed as primary movement indicator (like Trackolap)
+          const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
+          const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
+            ? true          // satellite GPS confirms movement
+            : distM >= MIN_DIST_M; // network GPS fallback: require ≥ 30 m displacement
+          if (moving) { d += distM / 1000; last = i; }
         }
         return d;
       }
