@@ -2778,19 +2778,22 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
-        // Use last-accepted-point filter: only count a GPS reading if the phone
-        // moved ≥ MIN_DIST_M from the last accepted position.
-        // Eliminates GPS jitter (drift 10–25 m while stationary) while counting
-        // all real vehicle movement (20 km/h = 56 m per 10 s ping).
+        // Primary gate: GPS-reported speed (Doppler, accurate to ±0.2 m/s).
+        // If speed >= 1 m/s (3.6 km/h) the phone is genuinely moving.
+        // Fallback when speed is null (web GPS): 30 m last-accepted-point filter.
+        // This prevents GPS positional drift (10–100 m while stationary) from
+        // inflating distance, without needing unreliable arrival timestamps.
         const MIN_DIST_M = 30;
         let d = 0;
         let last = 0;
         for (let k = 1; k < pts.length; k++) {
+          const speedMs = pts[k].speed != null ? Number(pts[k].speed) : null;
           const distM = haversineM(
             Number(pts[last].latitude), Number(pts[last].longitude),
             Number(pts[k].latitude), Number(pts[k].longitude)
           );
-          if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+          const moving = speedMs != null ? speedMs >= 1.0 : distM >= MIN_DIST_M;
+          if (moving) { d += distM / 1000; last = k; }
         }
         return d;
       }
@@ -3949,11 +3952,13 @@ export async function registerRoutes(
         let d = 0;
         let last = 0;
         for (let i = 1; i < pts.length; i++) {
+          const speedMs = pts[i].speed != null ? Number(pts[i].speed) : null;
           const distM = haversineM(
             Number(pts[last].latitude), Number(pts[last].longitude),
             Number(pts[i].latitude), Number(pts[i].longitude)
           );
-          if (distM >= MIN_DIST_M) { d += distM / 1000; last = i; }
+          const moving = speedMs != null ? speedMs >= 1.0 : distM >= MIN_DIST_M;
+          if (moving) { d += distM / 1000; last = i; }
         }
         return d;
       }
