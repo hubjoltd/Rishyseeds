@@ -2782,12 +2782,14 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         // Trackolap-style calculation:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
-        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 30 m
+        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
+        //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
+        //       drift while stationary — raising from 30 m eliminates most false "travel")
         //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
         // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
-        const MIN_DIST_M = 30;
-        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
-        const MIN_GPS_SPEED_MS = 0.5; // 1.8 km/h — minimum Doppler speed to count movement
+        const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
+        const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
+        const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
         if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
@@ -2802,8 +2804,8 @@ export async function registerRoutes(
           // Use GPS Doppler speed as primary movement indicator (like Trackolap)
           const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
           const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
-            ? true          // satellite GPS confirms movement
-            : distM >= MIN_DIST_M; // network GPS fallback: require ≥ 30 m displacement
+            ? true                          // satellite GPS confirms movement
+            : distM >= MIN_DIST_NO_SPEED_M; // network GPS fallback: require ≥ 50 m displacement
           if (moving) { d += distM / 1000; last = k; }
         }
         return d;
@@ -2811,15 +2813,28 @@ export async function registerRoutes(
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
+      // Centroid-based stoppage detection:
+      // Each new ping is compared to the ROLLING CENTROID of the growing cluster,
+      // not to the first ping.  This prevents GPS random walk from slowly drifting
+      // the cluster out of the radius even when the employee is fully stationary.
       const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
       let ci = 0;
       while (ci < points.length) {
-        const anchor = points[ci];
+        let sumLat = Number(points[ci].latitude);
+        let sumLng = Number(points[ci].longitude);
+        let cnt = 1;
         let cj = ci + 1;
-        while (cj < points.length && haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) cj++;
-        const durSecs = cj > ci + 1 ? (new Date(points[cj-1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000 : 0;
+        while (cj < points.length) {
+          const centLat = sumLat / cnt;
+          const centLng = sumLng / cnt;
+          if (haversineM(centLat, centLng, Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) {
+            sumLat += Number(points[cj].latitude); sumLng += Number(points[cj].longitude); cnt++;
+            cj++;
+          } else { break; }
+        }
+        const durSecs = cj > ci + 1 ? (new Date(points[cj-1].recordedAt).getTime() - new Date(points[ci].recordedAt).getTime()) / 1000 : 0;
         if (cj > ci + 1 && durSecs >= STOPPAGE_MIN_SECS) {
-          clusters.push({ startIdx: ci, endIdx: cj - 1, lat: Number(anchor.latitude), lng: Number(anchor.longitude), durationSecs: durSecs });
+          clusters.push({ startIdx: ci, endIdx: cj - 1, lat: sumLat / cnt, lng: sumLng / cnt, durationSecs: durSecs });
           ci = cj;
         } else { ci++; }
       }
@@ -3961,12 +3976,14 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         // Trackolap-style calculation:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
-        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 30 m
+        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
+        //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
+        //       drift while stationary — raising from 30 m eliminates most false "travel")
         //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
         // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
-        const MIN_DIST_M = 30;
-        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
-        const MIN_GPS_SPEED_MS = 0.5; // 1.8 km/h — minimum Doppler speed to count movement
+        const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
+        const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
+        const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
         if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
@@ -3981,8 +3998,8 @@ export async function registerRoutes(
           // Use GPS Doppler speed as primary movement indicator (like Trackolap)
           const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
           const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
-            ? true          // satellite GPS confirms movement
-            : distM >= MIN_DIST_M; // network GPS fallback: require ≥ 30 m displacement
+            ? true                          // satellite GPS confirms movement
+            : distM >= MIN_DIST_NO_SPEED_M; // network GPS fallback: require ≥ 50 m displacement
           if (moving) { d += distM / 1000; last = i; }
         }
         return d;
@@ -3990,21 +4007,30 @@ export async function registerRoutes(
 
       type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
 
-      // Phase 1: find all stoppage clusters
+      // Phase 1: centroid-based stoppage detection
+      // Each new ping is compared to the ROLLING CENTROID of the growing cluster,
+      // not to the first ping.  This prevents GPS random walk from slowly drifting
+      // the cluster out of the radius even when the employee is fully stationary.
       const clusters: StoppageCluster[] = [];
       let i = 0;
       while (i < points.length) {
-        const anchor = points[i];
+        let sumLat = Number(points[i].latitude);
+        let sumLng = Number(points[i].longitude);
+        let cnt = 1;
         let j = i + 1;
-        while (j < points.length &&
-          haversineM(Number(anchor.latitude), Number(anchor.longitude), Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
-          j++;
+        while (j < points.length) {
+          const centLat = sumLat / cnt;
+          const centLng = sumLng / cnt;
+          if (haversineM(centLat, centLng, Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
+            sumLat += Number(points[j].latitude); sumLng += Number(points[j].longitude); cnt++;
+            j++;
+          } else { break; }
         }
         const durationSecs = j > i + 1
-          ? (new Date(points[j - 1].recordedAt).getTime() - new Date(anchor.recordedAt).getTime()) / 1000
+          ? (new Date(points[j - 1].recordedAt).getTime() - new Date(points[i].recordedAt).getTime()) / 1000
           : 0;
         if (j > i + 1 && durationSecs >= STOPPAGE_MIN_SECS) {
-          clusters.push({ startIdx: i, endIdx: j - 1, lat: Number(anchor.latitude), lng: Number(anchor.longitude), durationSecs });
+          clusters.push({ startIdx: i, endIdx: j - 1, lat: sumLat / cnt, lng: sumLng / cnt, durationSecs });
           i = j;
         } else {
           i++;
