@@ -2768,9 +2768,9 @@ export async function registerRoutes(
         return t >= tripStart && t <= tripEnd;
       });
 
-      // 400 m radius: contains random-walk GPS drift at 80–90 m accuracy for
-      // stationary periods up to ~14 min before exceeding the cluster boundary.
-      const STOPPAGE_RADIUS_M = 400;
+      // 200 m radius: balances GPS drift containment with short-trip detection.
+      // At 80–90 m accuracy, random-walk drift stays within 200 m for ~5–6 pings (~3 min).
+      const STOPPAGE_RADIUS_M = 200;
       const STOPPAGE_MIN_SECS = 2 * 60;
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
@@ -2782,12 +2782,12 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         // All field phones report 80–90 m GPS accuracy (network/cell-tower mode),
         // so accuracy-based filtering rejects every point.  Instead we use:
-        //   • 50 m minimum-movement gate  — skips drift noise between pings
-        //   • 200 km/h max-speed gate     — discards rare GPS teleport jumps
-        // Stationary drift is primarily handled by the 400 m STOPPAGE_RADIUS above,
+        //   • 30 m minimum-movement gate  — skips micro-jitter between pings
+        //   • 200 km/h max-speed gate     — discards GPS teleport jumps (e.g. 206 km in 71 min)
+        // Stationary drift is primarily handled by the 200 m STOPPAGE_RADIUS above,
         // which keeps oscillating points inside the stoppage cluster so they are
         // never passed to this function as "travel" in the first place.
-        const MIN_DIST_M = 50;
+        const MIN_DIST_M = 30;
         const MAX_SPEED_MS = 55.6; // 200 km/h
         if (pts.length < 2) return 0;
         let d = 0;
@@ -3941,7 +3941,7 @@ export async function registerRoutes(
         }
       }
 
-      const STOPPAGE_RADIUS_M = 400;   // 400 m contains random-walk GPS drift (80–90 m accuracy) for ~14 min stationary
+      const STOPPAGE_RADIUS_M = 200;   // 200 m: balances GPS drift containment with short-trip detection
       const STOPPAGE_MIN_SECS = 2 * 60; // 2 minutes minimum to count as a stoppage
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -3957,10 +3957,10 @@ export async function registerRoutes(
       function totalDistKm(pts: typeof points): number {
         // All field phones report 80–90 m GPS accuracy (network/cell-tower mode),
         // so accuracy-based filtering rejects every point.  Instead we use:
-        //   • 50 m minimum-movement gate  — skips drift noise between pings
-        //   • 200 km/h max-speed gate     — discards rare GPS teleport jumps
-        // Stationary drift is primarily handled by the 400 m STOPPAGE_RADIUS above.
-        const MIN_DIST_M = 50;
+        //   • 30 m minimum-movement gate  — skips micro-jitter between pings
+        //   • 200 km/h max-speed gate     — discards GPS teleport jumps (e.g. 206 km in 71 min)
+        // Stationary drift is primarily handled by the 200 m STOPPAGE_RADIUS above.
+        const MIN_DIST_M = 30;
         const MAX_SPEED_MS = 55.6; // 200 km/h
         if (pts.length < 2) return 0;
         let d = 0;
