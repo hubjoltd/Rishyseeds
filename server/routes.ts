@@ -2778,19 +2778,24 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
-        // Primary gate: GPS-reported speed (Doppler, accurate to ±0.2 m/s).
-        // If speed >= 1 m/s (3.6 km/h) the phone is genuinely moving.
-        // Fallback when speed is null (web GPS): 30 m last-accepted-point filter.
-        // This prevents GPS positional drift (10–100 m while stationary) from
-        // inflating distance, without needing unreliable arrival timestamps.
+        // Step 1: discard readings with poor GPS accuracy.
+        // Accuracy > 50 m means the phone is using cell-tower/WiFi positioning,
+        // not satellite GPS. A stationary phone with 80 m accuracy looks like it
+        // jumps 50–100 m every ping, inflating distance massively.
+        // Step 2: last-accepted-point filter (30 m) removes remaining jitter.
+        // Step 3: GPS speed gate (if available) as additional check.
+        const MAX_ACCURACY_M = 50;
         const MIN_DIST_M = 30;
+        // Filter to accurate GPS readings first
+        const accurate = pts.filter(p => p.accuracy == null || Number(p.accuracy) <= MAX_ACCURACY_M);
+        if (accurate.length < 2) return 0;
         let d = 0;
         let last = 0;
-        for (let k = 1; k < pts.length; k++) {
-          const speedMs = pts[k].speed != null ? Number(pts[k].speed) : null;
+        for (let k = 1; k < accurate.length; k++) {
+          const speedMs = accurate[k].speed != null ? Number(accurate[k].speed) : null;
           const distM = haversineM(
-            Number(pts[last].latitude), Number(pts[last].longitude),
-            Number(pts[k].latitude), Number(pts[k].longitude)
+            Number(accurate[last].latitude), Number(accurate[last].longitude),
+            Number(accurate[k].latitude), Number(accurate[k].longitude)
           );
           const moving = speedMs != null ? speedMs >= 1.0 : distM >= MIN_DIST_M;
           if (moving) { d += distM / 1000; last = k; }
@@ -3948,14 +3953,17 @@ export async function registerRoutes(
       }
 
       function totalDistKm(pts: typeof points): number {
+        const MAX_ACCURACY_M = 50;
         const MIN_DIST_M = 30;
+        const accurate = pts.filter(p => p.accuracy == null || Number(p.accuracy) <= MAX_ACCURACY_M);
+        if (accurate.length < 2) return 0;
         let d = 0;
         let last = 0;
-        for (let i = 1; i < pts.length; i++) {
-          const speedMs = pts[i].speed != null ? Number(pts[i].speed) : null;
+        for (let i = 1; i < accurate.length; i++) {
+          const speedMs = accurate[i].speed != null ? Number(accurate[i].speed) : null;
           const distM = haversineM(
-            Number(pts[last].latitude), Number(pts[last].longitude),
-            Number(pts[i].latitude), Number(pts[i].longitude)
+            Number(accurate[last].latitude), Number(accurate[last].longitude),
+            Number(accurate[i].latitude), Number(accurate[i].longitude)
           );
           const moving = speedMs != null ? speedMs >= 1.0 : distM >= MIN_DIST_M;
           if (moving) { d += distM / 1000; last = i; }
