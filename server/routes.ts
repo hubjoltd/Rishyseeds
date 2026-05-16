@@ -2778,9 +2778,20 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
+        // Use last-accepted-point filter: only count a GPS reading if the phone
+        // moved ≥ MIN_DIST_M from the last accepted position.
+        // Eliminates GPS jitter (drift 10–25 m while stationary) while counting
+        // all real vehicle movement (20 km/h = 56 m per 10 s ping).
+        const MIN_DIST_M = 30;
         let d = 0;
-        for (let k = 1; k < pts.length; k++)
-          d += haversineM(Number(pts[k-1].latitude), Number(pts[k-1].longitude), Number(pts[k].latitude), Number(pts[k].longitude)) / 1000;
+        let last = 0;
+        for (let k = 1; k < pts.length; k++) {
+          const distM = haversineM(
+            Number(pts[last].latitude), Number(pts[last].longitude),
+            Number(pts[k].latitude), Number(pts[k].longitude)
+          );
+          if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+        }
         return d;
       }
       type GpsSeg =
@@ -3934,9 +3945,16 @@ export async function registerRoutes(
       }
 
       function totalDistKm(pts: typeof points): number {
+        const MIN_DIST_M = 30;
         let d = 0;
-        for (let i = 1; i < pts.length; i++)
-          d += haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude), Number(pts[i].latitude), Number(pts[i].longitude)) / 1000;
+        let last = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const distM = haversineM(
+            Number(pts[last].latitude), Number(pts[last].longitude),
+            Number(pts[i].latitude), Number(pts[i].longitude)
+          );
+          if (distM >= MIN_DIST_M) { d += distM / 1000; last = i; }
+        }
         return d;
       }
 
