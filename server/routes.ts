@@ -2781,39 +2781,66 @@ export async function registerRoutes(
       }
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        // Guard: reject short segments that have NO GPS Doppler speed at all.
-        // If every ping shows speed=0 AND the segment spans < STOPPAGE_MIN_SECS,
-        // it is GPS drift that briefly escaped the stoppage cluster — not real travel.
-        // BUT if any ping has Doppler speed > 0 (satellite lock + movement), the
-        // segment is genuine even if it is only 1–2 minutes long.
         const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
         const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
+        // Short segment with no Doppler speed = GPS drift that escaped the cluster
         if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
-        // Trackolap-style calculation for genuine travel segments:
-        //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
-        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
-        //      (50 m: 83 m-accuracy network GPS averages 40–50 m ping-to-ping drift at rest)
-        //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
-        const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
-        const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
-        const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
-        let d = 0;
-        let last = 0;
-        for (let k = 1; k < pts.length; k++) {
-          const distM = haversineM(
-            Number(pts[last].latitude), Number(pts[last].longitude),
-            Number(pts[k].latitude),    Number(pts[k].longitude)
-          );
-          const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
-          if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
-          const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
-          const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
-            ? true                          // satellite GPS confirms movement
-            : distM >= MIN_DIST_NO_SPEED_M; // network GPS fallback: require ≥ 50 m displacement
-          if (moving) { d += distM / 1000; last = k; }
+
+        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
+
+        if (hasConfirmedMovement) {
+          // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
+          const MIN_DIST_NO_SPEED_M = 50;
+          const MIN_GPS_SPEED_MS = 0.5;
+          let d = 0, last = 0;
+          for (let k = 1; k < pts.length; k++) {
+            const distM = haversineM(
+              Number(pts[last].latitude), Number(pts[last].longitude),
+              Number(pts[k].latitude),    Number(pts[k].longitude)
+            );
+            const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
+            const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
+            const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
+            if (moving) { d += distM / 1000; last = k; }
+          }
+          return d;
+        } else {
+          // ── CELLULAR/WiFi GPS (no Doppler speed): 1-minute centroid binning ──
+          // Averaging all pings within each 60-second window reduces per-bin noise
+          // from ±σ to ±σ/√N, so real movement (~hundreds of metres/min) dominates
+          // over GPS drift even at ±235 m accuracy.
+          const BIN_MS = 60_000;
+          const startMs = new Date(pts[0].recordedAt).getTime();
+          const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
+          const bins: { lat: number; lng: number }[] = [];
+          for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
+            const binPts = pts.filter(p => {
+              const pt = new Date(p.recordedAt).getTime();
+              return pt >= t && pt < t + BIN_MS;
+            });
+            if (binPts.length > 0) {
+              bins.push({
+                lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
+                lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
+              });
+            }
+          }
+          if (bins.length < 2) {
+            // Segment spans < 1 min — use straight-line start→end as best estimate
+            return haversineM(
+              Number(pts[0].latitude), Number(pts[0].longitude),
+              Number(pts[pts.length - 1].latitude), Number(pts[pts.length - 1].longitude)
+            ) / 1000;
+          }
+          let d = 0;
+          for (let i = 1; i < bins.length; i++) {
+            const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
+            if (distM / (BIN_MS / 1000) > MAX_SPEED_MS) continue; // implausible centroid jump
+            d += distM / 1000;
+          }
+          return d;
         }
-        return d;
       }
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
@@ -4002,39 +4029,64 @@ export async function registerRoutes(
 
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        // Guard: reject short segments that have NO GPS Doppler speed at all.
-        // If every ping shows speed=0 AND the segment spans < STOPPAGE_MIN_SECS,
-        // it is GPS drift that briefly escaped the stoppage cluster — not real travel.
-        // BUT if any ping has Doppler speed > 0 (satellite lock + movement), the
-        // segment is genuine even if it is only 1–2 minutes long.
         const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
         const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
         if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
-        // Trackolap-style calculation for genuine travel segments:
-        //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
-        //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
-        //      (50 m: 83 m-accuracy network GPS averages 40–50 m ping-to-ping drift at rest)
-        //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
-        const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
-        const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
-        const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
-        let d = 0;
-        let last = 0;
-        for (let i = 1; i < pts.length; i++) {
-          const distM = haversineM(
-            Number(pts[last].latitude), Number(pts[last].longitude),
-            Number(pts[i].latitude),    Number(pts[i].longitude)
-          );
-          const dtSec = (new Date(pts[i].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
-          if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
-          const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
-          const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
-            ? true                          // satellite GPS confirms movement
-            : distM >= MIN_DIST_NO_SPEED_M; // network GPS fallback: require ≥ 50 m displacement
-          if (moving) { d += distM / 1000; last = i; }
+
+        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
+
+        if (hasConfirmedMovement) {
+          // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
+          const MIN_DIST_NO_SPEED_M = 50;
+          const MIN_GPS_SPEED_MS = 0.5;
+          let d = 0, last = 0;
+          for (let i = 1; i < pts.length; i++) {
+            const distM = haversineM(
+              Number(pts[last].latitude), Number(pts[last].longitude),
+              Number(pts[i].latitude),    Number(pts[i].longitude)
+            );
+            const dtSec = (new Date(pts[i].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
+            const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
+            const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
+            if (moving) { d += distM / 1000; last = i; }
+          }
+          return d;
+        } else {
+          // ── CELLULAR/WiFi GPS (no Doppler speed): 1-minute centroid binning ──
+          // Averaging all pings within each 60-second window reduces per-bin noise
+          // from ±σ to ±σ/√N, so real movement (~hundreds of metres/min) dominates
+          // over GPS drift even at ±235 m accuracy.
+          const BIN_MS = 60_000;
+          const startMs = new Date(pts[0].recordedAt).getTime();
+          const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
+          const bins: { lat: number; lng: number }[] = [];
+          for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
+            const binPts = pts.filter(p => {
+              const pt = new Date(p.recordedAt).getTime();
+              return pt >= t && pt < t + BIN_MS;
+            });
+            if (binPts.length > 0) {
+              bins.push({
+                lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
+                lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
+              });
+            }
+          }
+          if (bins.length < 2) {
+            return haversineM(
+              Number(pts[0].latitude), Number(pts[0].longitude),
+              Number(pts[pts.length - 1].latitude), Number(pts[pts.length - 1].longitude)
+            ) / 1000;
+          }
+          let d = 0;
+          for (let i = 1; i < bins.length; i++) {
+            const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
+            if (distM / (BIN_MS / 1000) > MAX_SPEED_MS) continue; // implausible centroid jump
+            d += distM / 1000;
+          }
+          return d;
         }
-        return d;
       }
 
       type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
