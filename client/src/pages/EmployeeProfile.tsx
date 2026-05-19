@@ -469,7 +469,9 @@ function LiveMap({
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
   const travelSegmentsPoints = useMemo(() => {
-    const travelSegs = (segments ?? []).filter(s => s.type === "travelled");
+    // Only use segments with meaningful distance — zero-distance segments are GPS drift
+    // during long rural stoppages that escaped the cluster and must not reach OSRM.
+    const travelSegs = (segments ?? []).filter(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
     if (travelSegs.length === 0) return [gpsPoints]; // no segment info yet — show all as one
     const result = travelSegs.map(seg => {
       const start = new Date(seg.startTime).getTime();
