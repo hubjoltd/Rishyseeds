@@ -468,22 +468,63 @@ function LiveMap({
   // One GPS-point array per travel segment — excludes stoppage pings entirely.
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
+  //
+  // CELLULAR GPS (speed=0): route using only the two stable stoppage cluster centroids
+  // as endpoints per segment.  Raw cell-tower pings zigzag 200 m–2 km off the real road,
+  // causing false staircase lines on the map.  Centroids (averaged over many pings) are
+  // accurate, and OSRM will snap between them to give the real road route.
   const travelSegmentsPoints = useMemo(() => {
+    const allSegs = segments ?? [];
     // Only use segments with meaningful distance — zero-distance segments are GPS drift
     // during long rural stoppages that escaped the cluster and must not reach OSRM.
-    const travelSegs = (segments ?? []).filter(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
-    if (travelSegs.length === 0) return [gpsPoints]; // no segment info yet — show all as one
-    const result = travelSegs.map(seg => {
-      const start = new Date(seg.startTime).getTime();
-      const end = new Date(seg.endTime).getTime();
-      return locationPoints
-        .filter(p => {
-          if (!p.latitude || !p.longitude || !p.recordedAt) return false;
-          const t = new Date(p.recordedAt).getTime();
-          return t >= start && t <= end;
-        })
-        .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
-    }).filter(pts => pts.length >= 2);
+    const hasMeaningfulTravel = allSegs.some(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
+    if (!hasMeaningfulTravel) return [gpsPoints]; // no segment info yet — show all as one
+
+    const isCellular = !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5);
+
+    const result: [number, number][][] = [];
+    for (let i = 0; i < allSegs.length; i++) {
+      const seg = allSegs[i];
+      if (seg.type !== "travelled") continue;
+      if (((seg as any).distanceKm ?? 0) < 0.05) continue;
+
+      let pts: [number, number][];
+
+      if (isCellular) {
+        // Use adjacent stoppage centroids as route endpoints — eliminates zigzag
+        const prevSeg = i > 0 ? allSegs[i - 1] : null;
+        const nextSeg = i < allSegs.length - 1 ? allSegs[i + 1] : null;
+        const prevLat = prevSeg?.type === "stoppage" ? (prevSeg as any).lat : null;
+        const prevLng = prevSeg?.type === "stoppage" ? (prevSeg as any).lng : null;
+        const nextLat = nextSeg?.type === "stoppage" ? (nextSeg as any).lat : null;
+        const nextLng = nextSeg?.type === "stoppage" ? (nextSeg as any).lng : null;
+
+        if (prevLat != null && nextLat != null) {
+          pts = [[prevLat, prevLng], [nextLat, nextLng]];
+        } else {
+          // Edge segment with no adjacent centroid — fall back to raw pings
+          const start = new Date(seg.startTime).getTime();
+          const end = new Date(seg.endTime).getTime();
+          pts = locationPoints
+            .filter(p => p.latitude && p.longitude && p.recordedAt &&
+              new Date(p.recordedAt).getTime() >= start && new Date(p.recordedAt).getTime() <= end)
+            .map(p => [Number(p.latitude), Number(p.longitude)]);
+        }
+      } else {
+        // Satellite GPS — raw pings have Doppler speed and are accurate
+        const start = new Date(seg.startTime).getTime();
+        const end = new Date(seg.endTime).getTime();
+        pts = locationPoints
+          .filter(p => {
+            if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+            const t = new Date(p.recordedAt).getTime();
+            return t >= start && t <= end;
+          })
+          .map(p => [Number(p.latitude), Number(p.longitude)]);
+      }
+
+      if (pts.length >= 2) result.push(pts);
+    }
     return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
   }, [locationPoints, segments, gpsPoints]);
 

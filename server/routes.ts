@@ -2883,30 +2883,41 @@ export async function registerRoutes(
           ci = cj;
         } else { ci++; }
       }
+      // For CELLULAR GPS (no Doppler speed anywhere in the trip) use centroid-to-centroid
+      // distance between consecutive stoppage clusters.  A stoppage centroid is the average
+      // of dozens of pings and is far more accurate than individual cell-tower positions,
+      // which can wander 200 m–2 km and cause the zigzag "staircase" overcounting.
+      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
+      let prevCluster: { lat: number; lng: number } | null = null;
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
-          // Include last ping of previous stoppage as distance-anchor so the
-          // ~250 m departure (still inside the old cluster radius) is not lost.
-          // startTime stays at the first TRUE travel ping (prevEnd + 1) so the
-          // timeline does not overlap with the preceding stoppage entry.
           const distStart = prevEnd < 0 ? 0 : prevEnd;
-          // Exclude cluster.startIdx (first stoppage ping) — alone in its own centroid
-          // bin it can represent a cell-tower jump that inflates the travel distance.
           const tPts = points.slice(distStart, cluster.startIdx);
           if (tPts.length >= 2) {
             const timeOffset = prevEnd >= 0 ? 1 : 0; // skip overlap ping for label time
+            // CELLULAR with a known previous centroid: distance = straight-line between
+            // the two stable cluster centroids, multiplied by 1.15 to approximate road
+            // distance (tortuosity factor for rural Indian roads).
+            // This eliminates the 2-3 km staircase overcounting from cell-tower drift.
+            let distanceKm: number;
+            if (tripIsCellular && prevCluster) {
+              distanceKm = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng) / 1000 * 1.15;
+            } else {
+              distanceKm = totalDistKm(tPts);
+            }
             gpsSegments.push({
               type: "travelled",
               startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
               endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
-              distanceKm: totalDistKm(tPts),
+              distanceKm,
             });
           }
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
+        prevCluster = cluster;
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
         const distStart = prevEnd < 0 ? 0 : prevEnd;
@@ -4148,27 +4159,32 @@ export async function registerRoutes(
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
+      // For CELLULAR GPS (no Doppler speed anywhere in the day) use centroid-to-centroid
+      // distance between consecutive stoppage clusters — eliminates 2-3 km staircase overcounting.
+      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const segments: Segment[] = [];
       let prevEndIdx = -1;
+      let prevClusterCentroid: { lat: number; lng: number } | null = null;
 
       for (const cluster of clusters) {
         // Travel segment before this stoppage
         if (cluster.startIdx > prevEndIdx + 1) {
-          // Include last ping of previous stoppage as distance-anchor so the
-          // ~250 m departure (still inside the old cluster radius) is not lost.
-          // startTime stays at the first TRUE travel ping so the timeline does
-          // not overlap with the preceding stoppage entry.
           const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-          // Exclude cluster.startIdx (first stoppage ping) from the travel slice —
-          // alone in its own centroid bin it can represent a cell-tower jump.
           const travelPts = points.slice(distStart, cluster.startIdx);
           if (travelPts.length >= 2) {
             const timeOffset = prevEndIdx >= 0 ? 1 : 0;
+            let distanceKm: number;
+            if (dayIsCellular && prevClusterCentroid) {
+              // Centroid-to-centroid straight-line × 1.15 road tortuosity factor
+              distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, cluster.lat, cluster.lng) / 1000 * 1.15;
+            } else {
+              distanceKm = totalDistKm(travelPts);
+            }
             segments.push({
               type: "travelled",
               startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
               endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
-              distanceKm: totalDistKm(travelPts),
+              distanceKm,
             });
           }
         }
@@ -4180,6 +4196,7 @@ export async function registerRoutes(
           lat: cluster.lat,
           lng: cluster.lng,
         });
+        prevClusterCentroid = cluster;
         prevEndIdx = cluster.endIdx;
       }
 
