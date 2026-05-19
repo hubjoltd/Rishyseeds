@@ -1829,7 +1829,15 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900">{(locationData?.totalKm ?? 0).toFixed(2)} Km</span>
+                  <span className="font-bold text-gray-900">
+                    {(
+                      locationData?.totalKm != null
+                        ? locationData.totalKm
+                        : (locationData?.segments ?? [])
+                            .filter((s: any) => s.type === "travelled")
+                            .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
+                    ).toFixed(2)} Km
+                  </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
 
