@@ -680,12 +680,12 @@ function splitTrackAtGaps(
 }
 
 // Snap GPS points to actual roads via OSRM public API (falls back to raw points on error)
-/** Fetch road-snapped route from OSRM using map-matching only.
+/** Fetch road-snapped route from OSRM.
  *  Strategy:
- *  - Always use /match/v1 (respects the actual path taken, timestamps-aware)
- *  - /route/v1 is intentionally NOT used: it draws the shortest-road path between
- *    sampled waypoints, which creates phantom lines through roads never traveled.
- *  - If match fails or times out: return raw GPS points (no phantom roads).
+ *  - Dense GPS (≥ 15 pts): map-match with /match/v1 (respects actual path taken)
+ *  - Sparse GPS (< 15 pts): route between waypoints with /route/v1 (gives smooth road-following line)
+ *  - If match fails/times out: fall back to /route/v1
+ *  - If route also fails: return raw GPS points
  */
 async function osrmSnap(points: [number, number][]): Promise<[number, number][]> {
   if (points.length < 2) return points;
@@ -700,62 +700,51 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
     finally { clearTimeout(t); }
   };
 
-  // Helper: haversine distance in metres between two [lat,lng] points
-  const haversineM = ([la, lo]: [number, number], [na, no]: [number, number]): number => {
-    const R = 6371000;
-    const dLat = (na - la) * Math.PI / 180;
-    const dLon = (no - lo) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(la*Math.PI/180)*Math.cos(na*Math.PI/180)*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  };
-
-  // Step 1: Deduplicate — collapse consecutive GPS points within 50 m of each other.
-  // This removes the hundreds of stationary-cluster pings (stoppages) so OSRM only
-  // sees the actual travel path and doesn't create phantom matchings for clusters.
-  const MIN_SNAP_DIST_M = 50;
-  const deduped: [number, number][] = [points[0]];
-  for (let i = 1; i < points.length; i++) {
-    if (haversineM(deduped[deduped.length - 1], points[i]) >= MIN_SNAP_DIST_M) {
-      deduped.push(points[i]);
-    }
-  }
-  if (deduped.length < 2) return points;
-
-  // ── Match/v1: map-matches GPS trace to roads (respects actual path taken) ──
-  // Snap radius 200 m — wide enough to handle 80–90 m accuracy GPS without failing.
-  // Samples deduped set to ≤ 100 waypoints (OSRM public server limit).
-  const tryMatch = async (pts: [number, number][]): Promise<[number, number][] | null> => {
+  // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
+  const tryRoute = async (pts: [number, number][]): Promise<[number, number][] | null> => {
     try {
-      const step = Math.max(1, Math.ceil(pts.length / 100));
+      // Sample to max 25 waypoints (route endpoint works best with fewer, key waypoints)
+      const step = Math.max(1, Math.ceil(pts.length / 25));
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const radiuses = sample.map(() => "200").join(";");
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+      const res = await fetchWithTimeout(url, 10000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
+      const snapped = geoToLeaflet(data.routes[0].geometry.coordinates);
+      return snapped.length > 1 ? snapped : null;
+    } catch { return null; }
+  };
+
+  // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
+  const tryMatch = async (pts: [number, number][]): Promise<[number, number][] | null> => {
+    try {
+      const step = Math.ceil(pts.length / 100);
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+      const radiuses = sample.map(() => "50").join(";");
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
-      const res = await fetchWithTimeout(url, 12000);
+      const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
       const data = await res.json();
       if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return null;
-      // Concatenate matchings; skip gap connector if matchings are > 500 m apart
-      // (prevents phantom lines between disconnected travel segments).
       const allCoords: [number, number][] = [];
-      let lastEnd: [number, number] | null = null;
       for (const m of data.matchings) {
-        if (!Array.isArray(m?.geometry?.coordinates)) continue;
-        const coords = geoToLeaflet(m.geometry.coordinates);
-        if (coords.length === 0) continue;
-        if (lastEnd !== null && haversineM(lastEnd, coords[0]) > 500) {
-          // Gap too large — start a new disconnected segment (no connector line drawn)
-          allCoords.push(lastEnd, lastEnd); // tiny zero-length segment breaks the polyline
-        }
-        allCoords.push(...coords);
-        lastEnd = coords[coords.length - 1];
+        if (Array.isArray(m?.geometry?.coordinates))
+          allCoords.push(...geoToLeaflet(m.geometry.coordinates));
       }
       return allCoords.length > 1 ? allCoords : null;
     } catch { return null; }
   };
 
-  const matched = await tryMatch(deduped);
-  return matched ?? deduped; // fall back to deduped raw GPS — never phantom roads from route/v1
+  // Dense GPS → try match first, fall back to route; Sparse → go straight to route
+  if (points.length >= 15) {
+    const matched = await tryMatch(points);
+    if (matched) return matched;
+  }
+  const routed = await tryRoute(points);
+  return routed ?? points;
 }
 
 // Inner layer — must be inside MapContainer so Leaflet hooks work
