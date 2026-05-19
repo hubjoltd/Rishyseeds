@@ -243,6 +243,7 @@ function LiveMapInner({
   mapTypeId,
   autoFollow,
   snappedPoints,
+  travelPoints,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -254,6 +255,7 @@ function LiveMapInner({
   mapTypeId: string;
   autoFollow: boolean;
   snappedPoints: [number, number][];
+  travelPoints: [number, number][];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -344,11 +346,11 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {/* While OSRM snap is pending: show raw GPS so track is never invisible */}
-      {gpsPoints.length > 1 && snappedPoints.length <= 1 && <>
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={gpsPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+      {/* ── Route line — travel-only points (stoppage clusters excluded) ── */}
+      {/* While OSRM snap is pending: show travel-only raw GPS so track is never invisible */}
+      {travelPoints.length > 1 && snappedPoints.length <= 1 && <>
+        <Polyline positions={travelPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={travelPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
       {/* Once OSRM returns: show ONLY the road-snapped line (hides the raw GPS line above) */}
       {snappedPoints.length > 1 && <>
@@ -357,7 +359,7 @@ function LiveMapInner({
       </>}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
-      {gpsPoints.length <= 1 && waypointLine.length > 1 && <>
+      {travelPoints.length <= 1 && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
         <Polyline positions={waypointLine} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
@@ -458,21 +460,41 @@ function LiveMap({
     [locationPoints]
   );
 
-  // Re-snap to roads only when new GPS points are added (not every 5s refresh if nothing changed)
+  // Travel-only GPS points — excludes stoppage cluster pings so OSRM gets a
+  // clean set of movement points and doesn't draw zigzag loops around stoppages.
+  // Falls back to all gpsPoints when segments haven't loaded yet.
+  const travelGpsPoints = useMemo(() => {
+    const travelSegs = (segments ?? []).filter(s => s.type === "travelled");
+    if (travelSegs.length === 0) return gpsPoints; // no segment info yet — show all
+    const windows = travelSegs.map(s => ({
+      start: new Date(s.startTime).getTime(),
+      end: new Date(s.endTime).getTime(),
+    }));
+    const pts = locationPoints
+      .filter(p => {
+        if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+        const t = new Date(p.recordedAt).getTime();
+        return windows.some(w => t >= w.start && t <= w.end);
+      })
+      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+    return pts.length > 1 ? pts : gpsPoints; // guard: never return < 2 points
+  }, [locationPoints, segments, gpsPoints]);
+
+  // Re-snap to roads only when new travel points are added (not every 5s refresh if nothing changed)
   useEffect(() => {
-    if (gpsPoints.length < 2) { setSnappedPoints([]); return; }
-    if (gpsPoints.length === lastSnapCount.current) return; // no new points
+    if (travelGpsPoints.length < 2) { setSnappedPoints([]); return; }
+    if (travelGpsPoints.length === lastSnapCount.current) return; // no new points
     let cancelled = false;
     setSnapping(true);
-    osrmSnap(gpsPoints).then(pts => {
+    osrmSnap(travelGpsPoints).then(pts => {
       if (!cancelled) {
         setSnappedPoints(pts);
         setSnapping(false);
-        lastSnapCount.current = gpsPoints.length;
+        lastSnapCount.current = travelGpsPoints.length;
       }
     });
     return () => { cancelled = true; };
-  }, [gpsPoints.length]);
+  }, [travelGpsPoints.length]);
 
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
@@ -492,6 +514,7 @@ function LiveMap({
           mapTypeId={mapTypeId}
           autoFollow={autoFollow}
           snappedPoints={snappedPoints}
+          travelPoints={travelGpsPoints}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
