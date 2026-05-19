@@ -2838,19 +2838,54 @@ export async function registerRoutes(
           ci = cj;
         } else { ci++; }
       }
-      const gpsSegments: GpsSeg[] = [];
+      const rawSegments: GpsSeg[] = [];
       let prevEnd = -1;
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
           const tPts = points.slice(prevEnd + 1, cluster.startIdx + 1);
-          if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+          if (tPts.length >= 1) rawSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
         }
-        gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
+        rawSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
         const tPts = points.slice(prevEnd + 1);
-        if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+        if (tPts.length >= 1) rawSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+      }
+
+      // Post-process: merge adjacent stoppages that are at the same location (≤ 300 m apart)
+      // and connected only by a micro-travel segment (< 0.5 km).
+      // This eliminates false "travelled" entries caused by GPS noise briefly escaping the
+      // stoppage cluster radius while the employee is genuinely stationary.
+      const SAME_LOC_M = 300;
+      const MIN_REAL_KM = 0.5;
+      const gpsSegments: GpsSeg[] = [];
+      let si = 0;
+      while (si < rawSegments.length) {
+        const cur = rawSegments[si];
+        gpsSegments.push(cur);
+        if (cur.type === "stoppage") {
+          // Absorb subsequent noise-travel → nearby-stoppage chains
+          while (
+            si + 2 < rawSegments.length &&
+            rawSegments[si + 1].type === "travelled" &&
+            rawSegments[si + 2].type === "stoppage"
+          ) {
+            const trav = rawSegments[si + 1] as { type: "travelled"; distanceKm: number; endTime: string };
+            const next = rawSegments[si + 2] as { type: "stoppage"; lat: number; lng: number; endTime: string; durationSecs: number };
+            const last = gpsSegments[gpsSegments.length - 1] as { type: "stoppage"; lat: number; lng: number; endTime: string; durationSecs: number; startTime: string };
+            const stopDist = haversineM(last.lat, last.lng, next.lat, next.lng);
+            if (trav.distanceKm < MIN_REAL_KM || stopDist < SAME_LOC_M) {
+              // Merge: extend current stoppage to cover the next, discard noise travel
+              last.endTime = next.endTime;
+              last.durationSecs = (new Date(next.endTime).getTime() - new Date(last.startTime).getTime()) / 1000;
+              last.lat = (last.lat + next.lat) / 2;
+              last.lng = (last.lng + next.lng) / 2;
+              si += 2;
+            } else { break; }
+          }
+        }
+        si++;
       }
 
       res.json({ ...trip, visits: allVisits, gpsSegments });
@@ -4037,12 +4072,12 @@ export async function registerRoutes(
         }
       }
 
-      // Phase 2: build timeline from clusters + travel segments between them
+      // Phase 2: build raw timeline from clusters + travel segments between them
       type Segment =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
-      const segments: Segment[] = [];
+      const rawSegs: Segment[] = [];
       let prevEndIdx = -1;
 
       for (const cluster of clusters) {
@@ -4050,7 +4085,7 @@ export async function registerRoutes(
         if (cluster.startIdx > prevEndIdx + 1) {
           const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx + 1);
           if (travelPts.length >= 1) {
-            segments.push({
+            rawSegs.push({
               type: "travelled",
               startTime: new Date(travelPts[0].recordedAt).toISOString(),
               endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
@@ -4058,7 +4093,7 @@ export async function registerRoutes(
             });
           }
         }
-        segments.push({
+        rawSegs.push({
           type: "stoppage",
           startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(),
           endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(),
@@ -4073,13 +4108,44 @@ export async function registerRoutes(
       if (prevEndIdx < points.length - 1) {
         const travelPts = points.slice(prevEndIdx + 1);
         if (travelPts.length >= 1) {
-          segments.push({
+          rawSegs.push({
             type: "travelled",
             startTime: new Date(travelPts[0].recordedAt).toISOString(),
             endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
             distanceKm: totalDistKm(travelPts),
           });
         }
+      }
+
+      // Post-process: merge adjacent stoppages at the same location (≤ 300 m) connected only
+      // by a micro-travel segment (< 0.5 km) — eliminates GPS noise "travelled" entries.
+      const SAME_LOC_M2 = 300;
+      const MIN_REAL_KM2 = 0.5;
+      const segments: Segment[] = [];
+      let sii = 0;
+      while (sii < rawSegs.length) {
+        const cur = rawSegs[sii];
+        segments.push(cur);
+        if (cur.type === "stoppage") {
+          while (
+            sii + 2 < rawSegs.length &&
+            rawSegs[sii + 1].type === "travelled" &&
+            rawSegs[sii + 2].type === "stoppage"
+          ) {
+            const trav = rawSegs[sii + 1] as { type: "travelled"; distanceKm: number };
+            const next = rawSegs[sii + 2] as { type: "stoppage"; lat: number; lng: number; endTime: string; durationSecs: number };
+            const last = segments[segments.length - 1] as { type: "stoppage"; lat: number; lng: number; endTime: string; durationSecs: number; startTime: string };
+            const stopDist = haversineM(last.lat, last.lng, next.lat, next.lng);
+            if (trav.distanceKm < MIN_REAL_KM2 || stopDist < SAME_LOC_M2) {
+              last.endTime = next.endTime;
+              last.durationSecs = (new Date(next.endTime).getTime() - new Date(last.startTime).getTime()) / 1000;
+              last.lat = (last.lat + next.lat) / 2;
+              last.lng = (last.lng + next.lng) / 2;
+              sii += 2;
+            } else { break; }
+          }
+        }
+        sii++;
       }
 
       const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
