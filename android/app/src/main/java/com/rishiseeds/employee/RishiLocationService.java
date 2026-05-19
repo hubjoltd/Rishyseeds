@@ -64,12 +64,16 @@ public class RishiLocationService extends Service {
     private static final long   MIN_INTERVAL_MS  = 10_000L;  // ping every 10 seconds
     private static final float  MIN_DISTANCE_M   = 0f;        // time-based only — no distance gate
     private static final long   WAKE_LOCK_MAX_MS = 10L * 60 * 60 * 1000; // 10 hours
+    // If a satellite GPS fix arrived within this window, suppress NETWORK (cell-tower)
+    // pings so they do not pollute the position log with inaccurate coordinates.
+    private static final long   GPS_PREFER_WINDOW_MS = 30_000L; // 30 seconds
 
     private LocationManager          locationManager;
     private LocationListener         locationListener;
     private HandlerThread            locationThread;
     private PowerManager.WakeLock    wakeLock;
-    private long                     lastPostedAt = 0;
+    private long                     lastPostedAt  = 0;
+    private long                     lastGpsFixAt  = 0; // wall-clock ms of last GPS_PROVIDER fix
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -145,6 +149,23 @@ public class RishiLocationService extends Service {
             @Override
             public void onLocationChanged(@NonNull Location location) {
                 long now = System.currentTimeMillis();
+
+                boolean isGpsFix = LocationManager.GPS_PROVIDER.equals(location.getProvider());
+
+                // Track the last time we got a genuine satellite fix.
+                if (isGpsFix) lastGpsFixAt = now;
+
+                // If this ping comes from the NETWORK (cell-tower) provider AND
+                // a satellite GPS fix arrived within the last 30 seconds, skip it.
+                // Cell-tower positions can be 200 m – 2 km off; letting them through
+                // when GPS is available creates the zigzag staircase pattern that
+                // inflates travel distances for employees tagged as CELLULAR.
+                if (!isGpsFix && (now - lastGpsFixAt) < GPS_PREFER_WINDOW_MS) {
+                    Log.d(TAG, "Suppressing NETWORK ping — GPS fix is fresh ("
+                            + (now - lastGpsFixAt) + " ms ago)");
+                    return;
+                }
+
                 if (now - lastPostedAt < MIN_INTERVAL_MS) return;
                 lastPostedAt = now;
 
