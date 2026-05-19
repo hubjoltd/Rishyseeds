@@ -2780,18 +2780,20 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
-        // Guard 1: segments shorter than STOPPAGE_MIN_SECS are GPS drift that briefly
-        // escaped the stoppage cluster, NOT real travel.  Return 0 immediately.
         if (pts.length < 2) return 0;
+        // Guard: reject short segments that have NO GPS Doppler speed at all.
+        // If every ping shows speed=0 AND the segment spans < STOPPAGE_MIN_SECS,
+        // it is GPS drift that briefly escaped the stoppage cluster — not real travel.
+        // BUT if any ping has Doppler speed > 0 (satellite lock + movement), the
+        // segment is genuine even if it is only 1–2 minutes long.
         const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
-        if (spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
+        const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
+        if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
         // Trackolap-style calculation for genuine travel segments:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
         //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
-        //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
-        //       drift while stationary — raising from 30 m eliminates most false "travel")
+        //      (50 m: 83 m-accuracy network GPS averages 40–50 m ping-to-ping drift at rest)
         //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
-        // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
         const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
         const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
         const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
@@ -2805,7 +2807,6 @@ export async function registerRoutes(
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
           const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
           if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
-          // Use GPS Doppler speed as primary movement indicator (like Trackolap)
           const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
           const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
             ? true                          // satellite GPS confirms movement
@@ -3978,18 +3979,20 @@ export async function registerRoutes(
       }
 
       function totalDistKm(pts: typeof points): number {
-        // Guard 1: segments shorter than STOPPAGE_MIN_SECS are GPS drift that briefly
-        // escaped the stoppage cluster, NOT real travel.  Return 0 immediately.
         if (pts.length < 2) return 0;
+        // Guard: reject short segments that have NO GPS Doppler speed at all.
+        // If every ping shows speed=0 AND the segment spans < STOPPAGE_MIN_SECS,
+        // it is GPS drift that briefly escaped the stoppage cluster — not real travel.
+        // BUT if any ping has Doppler speed > 0 (satellite lock + movement), the
+        // segment is genuine even if it is only 1–2 minutes long.
         const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
-        if (spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
+        const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
+        if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
         // Trackolap-style calculation for genuine travel segments:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
         //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
-        //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
-        //       drift while stationary — raising from 30 m eliminates most false "travel")
+        //      (50 m: 83 m-accuracy network GPS averages 40–50 m ping-to-ping drift at rest)
         //   3. Computed position-speed > 200 km/h         → GPS teleport, discard
-        // Android sends hasSpeed() ? getSpeed() : 0f  so 0 means "no satellite speed".
         const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
         const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
         const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
@@ -4003,7 +4006,6 @@ export async function registerRoutes(
           const dtSec = (new Date(pts[i].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
           const computedSpeedMs = dtSec > 0 ? distM / dtSec : 0;
           if (computedSpeedMs > MAX_SPEED_MS) continue; // GPS teleport — skip, do not advance last
-          // Use GPS Doppler speed as primary movement indicator (like Trackolap)
           const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
           const moving = gpsSpeedMs > MIN_GPS_SPEED_MS
             ? true                          // satellite GPS confirms movement
