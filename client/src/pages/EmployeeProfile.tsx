@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl, CircleMarker } from "react-leaflet";
 import L from "leaflet";
 import { useQuery } from "@tanstack/react-query";
@@ -254,8 +254,8 @@ function LiveMapInner({
   punchOutLng?: number | null;
   mapTypeId: string;
   autoFollow: boolean;
-  snappedPoints: [number, number][];
-  travelPoints: [number, number][];
+  snappedSegments: [number, number][][];
+  travelSegmentsPoints: [number, number][][];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -346,20 +346,28 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* ── Route line — travel-only points (stoppage clusters excluded) ── */}
-      {/* While OSRM snap is pending: show travel-only raw GPS so track is never invisible */}
-      {travelPoints.length > 1 && snappedPoints.length <= 1 && <>
-        <Polyline positions={travelPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={travelPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
-      {/* Once OSRM returns: show ONLY the road-snapped line (hides the raw GPS line above) */}
-      {snappedPoints.length > 1 && <>
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
+      {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
+      {/* While OSRM snap is pending: show raw travel GPS lines per segment */}
+      {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`raw-seg-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
+      {/* Once OSRM returns: one snapped polyline per segment — no loops, no connections between segments */}
+      {snappedSegments.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`snap-seg-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
-      {travelPoints.length <= 1 && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
+      {travelSegmentsPoints.every(s => s.length <= 1) && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
         <Polyline positions={waypointLine} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
@@ -449,7 +457,7 @@ function LiveMap({
   onSnappedKm?: (km: number) => void;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
-  const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
+  const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
@@ -460,41 +468,48 @@ function LiveMap({
     [locationPoints]
   );
 
-  // Travel-only GPS points — excludes stoppage cluster pings so OSRM gets a
-  // clean set of movement points and doesn't draw zigzag loops around stoppages.
-  // Falls back to all gpsPoints when segments haven't loaded yet.
-  const travelGpsPoints = useMemo(() => {
+  // One GPS-point array per travel segment — excludes stoppage pings entirely.
+  // Keeping segments separate prevents OSRM from routing between them and drawing loops.
+  // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
+  const travelSegmentsPoints = useMemo(() => {
     const travelSegs = (segments ?? []).filter(s => s.type === "travelled");
-    if (travelSegs.length === 0) return gpsPoints; // no segment info yet — show all
-    const windows = travelSegs.map(s => ({
-      start: new Date(s.startTime).getTime(),
-      end: new Date(s.endTime).getTime(),
-    }));
-    const pts = locationPoints
-      .filter(p => {
-        if (!p.latitude || !p.longitude || !p.recordedAt) return false;
-        const t = new Date(p.recordedAt).getTime();
-        return windows.some(w => t >= w.start && t <= w.end);
-      })
-      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
-    return pts.length > 1 ? pts : gpsPoints; // guard: never return < 2 points
+    if (travelSegs.length === 0) return [gpsPoints]; // no segment info yet — show all as one
+    const result = travelSegs.map(seg => {
+      const start = new Date(seg.startTime).getTime();
+      const end = new Date(seg.endTime).getTime();
+      return locationPoints
+        .filter(p => {
+          if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+          const t = new Date(p.recordedAt).getTime();
+          return t >= start && t <= end;
+        })
+        .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+    }).filter(pts => pts.length >= 2);
+    return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
   }, [locationPoints, segments, gpsPoints]);
+
+  // Total travel point count across all segments — used to detect new data without re-snapping
+  const totalTravelCount = useMemo(
+    () => travelSegmentsPoints.reduce((sum, seg) => sum + seg.length, 0),
+    [travelSegmentsPoints]
+  );
 
   // Re-snap to roads only when new travel points are added (not every 5s refresh if nothing changed)
   useEffect(() => {
-    if (travelGpsPoints.length < 2) { setSnappedPoints([]); return; }
-    if (travelGpsPoints.length === lastSnapCount.current) return; // no new points
+    if (totalTravelCount < 2) { setSnappedSegments([]); return; }
+    if (totalTravelCount === lastSnapCount.current) return; // no new points
     let cancelled = false;
     setSnapping(true);
-    osrmSnap(travelGpsPoints).then(pts => {
+    // Snap each segment separately so there are no connecting lines between segments
+    Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve([]))).then(results => {
       if (!cancelled) {
-        setSnappedPoints(pts);
+        setSnappedSegments(results);
         setSnapping(false);
-        lastSnapCount.current = travelGpsPoints.length;
+        lastSnapCount.current = totalTravelCount;
       }
     });
     return () => { cancelled = true; };
-  }, [travelGpsPoints.length]);
+  }, [totalTravelCount]);
 
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
@@ -513,8 +528,8 @@ function LiveMap({
           punchOutLng={punchOutLng}
           mapTypeId={mapTypeId}
           autoFollow={autoFollow}
-          snappedPoints={snappedPoints}
-          travelPoints={travelGpsPoints}
+          snappedSegments={snappedSegments}
+          travelSegmentsPoints={travelSegmentsPoints}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
