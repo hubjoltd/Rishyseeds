@@ -2892,7 +2892,9 @@ export async function registerRoutes(
           // startTime stays at the first TRUE travel ping (prevEnd + 1) so the
           // timeline does not overlap with the preceding stoppage entry.
           const distStart = prevEnd < 0 ? 0 : prevEnd;
-          const tPts = points.slice(distStart, cluster.startIdx + 1);
+          // Exclude cluster.startIdx (first stoppage ping) — alone in its own centroid
+          // bin it can represent a cell-tower jump that inflates the travel distance.
+          const tPts = points.slice(distStart, cluster.startIdx);
           if (tPts.length >= 2) {
             const timeOffset = prevEnd >= 0 ? 1 : 0; // skip overlap ping for label time
             gpsSegments.push({
@@ -4157,7 +4159,9 @@ export async function registerRoutes(
           // startTime stays at the first TRUE travel ping so the timeline does
           // not overlap with the preceding stoppage entry.
           const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-          const travelPts = points.slice(distStart, cluster.startIdx + 1);
+          // Exclude cluster.startIdx (first stoppage ping) from the travel slice —
+          // alone in its own centroid bin it can represent a cell-tower jump.
+          const travelPts = points.slice(distStart, cluster.startIdx);
           if (travelPts.length >= 2) {
             const timeOffset = prevEndIdx >= 0 ? 1 : 0;
             segments.push({
