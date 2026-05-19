@@ -2815,9 +2815,16 @@ export async function registerRoutes(
           const BIN_MS = avgAccuracy > 0
             ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
             : 60_000;
+          // 120 km/h (33.3 m/s) — realistic rural India ceiling for CELLULAR GPS.
+          // Lower than the satellite-GPS teleport cap (200 km/h) so cell-tower jumps
+          // (2–3 km in 1 min ≈ 134 km/h) are rejected before they inflate the total.
+          const MAX_CELLULAR_SPEED_MS = 33.3;
           const startMs = new Date(pts[0].recordedAt).getTime();
           const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-          const bins: { lat: number; lng: number }[] = [];
+          // Store bin midpoint timestamp so the speed check uses the ACTUAL elapsed
+          // time between non-empty bins, not always BIN_MS (which is wrong when bins
+          // are skipped because there are no pings in that window).
+          const bins: { lat: number; lng: number; tMs: number }[] = [];
           for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
             const binPts = pts.filter(p => {
               const pt = new Date(p.recordedAt).getTime();
@@ -2827,6 +2834,7 @@ export async function registerRoutes(
               bins.push({
                 lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
                 lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
+                tMs: t + BIN_MS / 2,
               });
             }
           }
@@ -2840,7 +2848,8 @@ export async function registerRoutes(
           let d = 0;
           for (let i = 1; i < bins.length; i++) {
             const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
-            if (distM / (BIN_MS / 1000) > MAX_SPEED_MS) continue; // implausible centroid jump
+            const dtSec = (bins[i].tMs - bins[i - 1].tMs) / 1000;
+            if (dtSec > 0 && distM / dtSec > MAX_CELLULAR_SPEED_MS) continue; // tower jump
             d += distM / 1000;
           }
           return d;
@@ -4066,9 +4075,10 @@ export async function registerRoutes(
           const BIN_MS = avgAccuracy > 0
             ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
             : 60_000;
+          const MAX_CELLULAR_SPEED_MS = 33.3; // 120 km/h — rejects cell-tower jumps
           const startMs = new Date(pts[0].recordedAt).getTime();
           const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-          const bins: { lat: number; lng: number }[] = [];
+          const bins: { lat: number; lng: number; tMs: number }[] = [];
           for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
             const binPts = pts.filter(p => {
               const pt = new Date(p.recordedAt).getTime();
@@ -4078,6 +4088,7 @@ export async function registerRoutes(
               bins.push({
                 lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
                 lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
+                tMs: t + BIN_MS / 2,
               });
             }
           }
@@ -4090,7 +4101,8 @@ export async function registerRoutes(
           let d = 0;
           for (let i = 1; i < bins.length; i++) {
             const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
-            if (distM / (BIN_MS / 1000) > MAX_SPEED_MS) continue; // implausible centroid jump
+            const dtSec = (bins[i].tMs - bins[i - 1].tMs) / 1000;
+            if (dtSec > 0 && distM / dtSec > MAX_CELLULAR_SPEED_MS) continue; // tower jump
             d += distM / 1000;
           }
           return d;
