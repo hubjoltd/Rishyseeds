@@ -2806,11 +2806,15 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── CELLULAR/WiFi GPS (no Doppler speed): 1-minute centroid binning ──
-          // Averaging all pings within each 60-second window reduces per-bin noise
-          // from ±σ to ±σ/√N, so real movement (~hundreds of metres/min) dominates
-          // over GPS drift even at ±235 m accuracy.
-          const BIN_MS = 60_000;
+          // ── CELLULAR/WiFi GPS (no Doppler speed): adaptive centroid binning ──
+          // Bin width scales with GPS accuracy so per-bin noise (σ/√N) stays small
+          // relative to real movement even when accuracy is ±500 m.
+          //   ±83 m  → 60 s bins   ±235 m → ~140 s bins   ±500 m → 300 s bins
+          const avgAccuracy = pts.reduce((s, p) =>
+            s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 0), 0) / pts.length;
+          const BIN_MS = avgAccuracy > 0
+            ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
+            : 60_000;
           const startMs = new Date(pts[0].recordedAt).getTime();
           const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
           const bins: { lat: number; lng: number }[] = [];
@@ -2827,7 +2831,7 @@ export async function registerRoutes(
             }
           }
           if (bins.length < 2) {
-            // Segment spans < 1 min — use straight-line start→end as best estimate
+            // Segment shorter than one bin — straight-line start→end as best estimate
             return haversineM(
               Number(pts[0].latitude), Number(pts[0].longitude),
               Number(pts[pts.length - 1].latitude), Number(pts[pts.length - 1].longitude)
@@ -4053,11 +4057,15 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── CELLULAR/WiFi GPS (no Doppler speed): 1-minute centroid binning ──
-          // Averaging all pings within each 60-second window reduces per-bin noise
-          // from ±σ to ±σ/√N, so real movement (~hundreds of metres/min) dominates
-          // over GPS drift even at ±235 m accuracy.
-          const BIN_MS = 60_000;
+          // ── CELLULAR/WiFi GPS (no Doppler speed): adaptive centroid binning ──
+          // Bin width scales with GPS accuracy so per-bin noise (σ/√N) stays small
+          // relative to real movement even when accuracy is ±500 m.
+          //   ±83 m  → 60 s bins   ±235 m → ~140 s bins   ±500 m → 300 s bins
+          const avgAccuracy = pts.reduce((s, p) =>
+            s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 0), 0) / pts.length;
+          const BIN_MS = avgAccuracy > 0
+            ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
+            : 60_000;
           const startMs = new Date(pts[0].recordedAt).getTime();
           const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
           const bins: { lat: number; lng: number }[] = [];
