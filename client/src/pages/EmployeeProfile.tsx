@@ -242,8 +242,8 @@ function LiveMapInner({
   punchOutLng,
   mapTypeId,
   autoFollow,
-  snappedPoints,
-  travelPoints,
+  snappedSegments,
+  travelSegmentsPoints,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -272,9 +272,6 @@ function LiveMapInner({
       .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
     [locationPoints]
   );
-
-  // Use road-snapped route when available, fallback to raw GPS
-  const routeLine = snappedPoints.length > 1 ? snappedPoints : gpsPoints;
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
