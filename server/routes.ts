@@ -2847,15 +2847,37 @@ export async function registerRoutes(
       let prevEnd = -1;
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
-          const tPts = points.slice(prevEnd + 1, cluster.startIdx + 1);
-          if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+          // Include last ping of previous stoppage as distance-anchor so the
+          // ~250 m departure (still inside the old cluster radius) is not lost.
+          // startTime stays at the first TRUE travel ping (prevEnd + 1) so the
+          // timeline does not overlap with the preceding stoppage entry.
+          const distStart = prevEnd < 0 ? 0 : prevEnd;
+          const tPts = points.slice(distStart, cluster.startIdx + 1);
+          if (tPts.length >= 2) {
+            const timeOffset = prevEnd >= 0 ? 1 : 0; // skip overlap ping for label time
+            gpsSegments.push({
+              type: "travelled",
+              startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
+              endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
+              distanceKm: totalDistKm(tPts),
+            });
+          }
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
-        const tPts = points.slice(prevEnd + 1);
-        if (tPts.length >= 1) gpsSegments.push({ type: "travelled", startTime: new Date(tPts[0].recordedAt).toISOString(), endTime: new Date(tPts[tPts.length-1].recordedAt).toISOString(), distanceKm: totalDistKm(tPts) });
+        const distStart = prevEnd < 0 ? 0 : prevEnd;
+        const tPts = points.slice(distStart);
+        if (tPts.length >= 2) {
+          const timeOffset = prevEnd >= 0 ? 1 : 0;
+          gpsSegments.push({
+            type: "travelled",
+            startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
+            endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
+            distanceKm: totalDistKm(tPts),
+          });
+        }
       }
 
       res.json({ ...trip, visits: allVisits, gpsSegments });
@@ -4058,11 +4080,17 @@ export async function registerRoutes(
       for (const cluster of clusters) {
         // Travel segment before this stoppage
         if (cluster.startIdx > prevEndIdx + 1) {
-          const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx + 1);
-          if (travelPts.length >= 1) {
+          // Include last ping of previous stoppage as distance-anchor so the
+          // ~250 m departure (still inside the old cluster radius) is not lost.
+          // startTime stays at the first TRUE travel ping so the timeline does
+          // not overlap with the preceding stoppage entry.
+          const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
+          const travelPts = points.slice(distStart, cluster.startIdx + 1);
+          if (travelPts.length >= 2) {
+            const timeOffset = prevEndIdx >= 0 ? 1 : 0;
             segments.push({
               type: "travelled",
-              startTime: new Date(travelPts[0].recordedAt).toISOString(),
+              startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
               endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
               distanceKm: totalDistKm(travelPts),
             });
@@ -4081,11 +4109,13 @@ export async function registerRoutes(
 
       // Travel segment after last stoppage
       if (prevEndIdx < points.length - 1) {
-        const travelPts = points.slice(prevEndIdx + 1);
-        if (travelPts.length >= 1) {
+        const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
+        const travelPts = points.slice(distStart);
+        if (travelPts.length >= 2) {
+          const timeOffset = prevEndIdx >= 0 ? 1 : 0;
           segments.push({
             type: "travelled",
-            startTime: new Date(travelPts[0].recordedAt).toISOString(),
+            startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
             endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
             distanceKm: totalDistKm(travelPts),
           });
