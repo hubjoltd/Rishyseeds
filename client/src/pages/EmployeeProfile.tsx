@@ -1391,7 +1391,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId && activeTab === "live",
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
   const { data: playbackCheckins = [] } = useQuery<any[]>({
@@ -1414,7 +1414,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId,
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
   const { data: attendanceRecords = [], isLoading: attLoading } = useQuery<any[]>({
