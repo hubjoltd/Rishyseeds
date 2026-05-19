@@ -2770,8 +2770,8 @@ export async function registerRoutes(
 
       // 200 m radius: balances GPS drift containment with short-trip detection.
       // At 80–90 m accuracy, random-walk drift stays within 200 m for ~5–6 pings (~3 min).
-      const STOPPAGE_RADIUS_M = 200;
-      const STOPPAGE_MIN_SECS = 2 * 60;
+      const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
+      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
         const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -2780,7 +2780,12 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
       function totalDistKm(pts: typeof points): number {
-        // Trackolap-style calculation:
+        // Guard 1: segments shorter than STOPPAGE_MIN_SECS are GPS drift that briefly
+        // escaped the stoppage cluster, NOT real travel.  Return 0 immediately.
+        if (pts.length < 2) return 0;
+        const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
+        if (spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
+        // Trackolap-style calculation for genuine travel segments:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
         //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
         //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
@@ -2790,7 +2795,6 @@ export async function registerRoutes(
         const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
         const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
         const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
-        if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
         for (let k = 1; k < pts.length; k++) {
@@ -3960,8 +3964,8 @@ export async function registerRoutes(
         }
       }
 
-      const STOPPAGE_RADIUS_M = 200;   // 200 m: balances GPS drift containment with short-trip detection
-      const STOPPAGE_MIN_SECS = 2 * 60; // 2 minutes minimum to count as a stoppage
+      const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
+      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
@@ -3974,7 +3978,12 @@ export async function registerRoutes(
       }
 
       function totalDistKm(pts: typeof points): number {
-        // Trackolap-style calculation:
+        // Guard 1: segments shorter than STOPPAGE_MIN_SECS are GPS drift that briefly
+        // escaped the stoppage cluster, NOT real travel.  Return 0 immediately.
+        if (pts.length < 2) return 0;
+        const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
+        if (spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
+        // Trackolap-style calculation for genuine travel segments:
         //   1. GPS Doppler speed (from device) > 0.5 m/s  → employee is moving, count distance
         //   2. GPS speed = 0 or unavailable               → fallback: count if distance ≥ 50 m
         //      (50 m chosen because 83 m-accuracy network GPS averages 40–50 m ping-to-ping
@@ -3984,7 +3993,6 @@ export async function registerRoutes(
         const MIN_DIST_NO_SPEED_M = 50; // network-GPS fallback gate (no Doppler speed)
         const MAX_SPEED_MS = 55.6;      // 200 km/h — GPS teleport rejection
         const MIN_GPS_SPEED_MS = 0.5;   // 1.8 km/h — minimum Doppler speed to count movement
-        if (pts.length < 2) return 0;
         let d = 0;
         let last = 0;
         for (let i = 1; i < pts.length; i++) {
