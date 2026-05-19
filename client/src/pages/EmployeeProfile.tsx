@@ -936,7 +936,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   const pbPunchOutLng = pbAttendance?.checkOutLongitude ? Number(pbAttendance.checkOutLongitude) : null;
 
   const { data: locationData, refetch: refetchPlayback, isFetching: pbFetching } = useQuery<{
-    points: { latitude: string; longitude: string; recordedAt: string; speed?: string | null }[];
+    points: { latitude: string; longitude: string; recordedAt: string; speed?: string | null; accuracy?: string | null }[];
     segments?: { type: string; startTime: string; endTime: string; lat?: number; lng?: number; durationSecs?: number }[];
   }>({
     queryKey: ["/api/employees", employeeId, "locations", date, "playback"],
@@ -957,18 +957,22 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   const routeWithTime = useMemo(() => {
     const gpsPts = (locationData?.points ?? [])
       .filter(p => p.latitude && p.longitude)
-      .map(p => ({ pos: [Number(p.latitude), Number(p.longitude)] as [number, number], ts: p.recordedAt }));
+      .map(p => ({
+        pos: [Number(p.latitude), Number(p.longitude)] as [number, number],
+        ts: p.recordedAt,
+        speedMs: p.speed != null && p.speed !== "" ? Number(p.speed) : null,
+      }));
     if (gpsPts.length > 0) return gpsPts;
-    const wps: { pos: [number, number]; ts: string }[] = [];
+    const wps: { pos: [number, number]; ts: string; speedMs: null }[] = [];
     filtered.forEach(trip => {
       if (trip.startLatitude && trip.startLongitude)
-        wps.push({ pos: [Number(trip.startLatitude), Number(trip.startLongitude)], ts: trip.startTime as string });
+        wps.push({ pos: [Number(trip.startLatitude), Number(trip.startLongitude)], ts: trip.startTime as string, speedMs: null });
       (trip.visits || []).forEach(v => {
         if (v.punchInLatitude && v.punchInLongitude)
-          wps.push({ pos: [Number(v.punchInLatitude), Number(v.punchInLongitude)], ts: v.punchInTime as unknown as string });
+          wps.push({ pos: [Number(v.punchInLatitude), Number(v.punchInLongitude)], ts: v.punchInTime as unknown as string, speedMs: null });
       });
       if (trip.endLatitude && trip.endLongitude)
-        wps.push({ pos: [Number(trip.endLatitude), Number(trip.endLongitude)], ts: trip.endTime as string });
+        wps.push({ pos: [Number(trip.endLatitude), Number(trip.endLongitude)], ts: trip.endTime as string, speedMs: null });
     });
     return wps;
   }, [locationData, filtered]);
@@ -1037,14 +1041,22 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   useEffect(() => { setPlaybackIdx(0); setPlaying(false); setSnappedPoints([]); }, [date]);
 
   // Speed at current playback position (km/h)
+  // Priority: GPS Doppler speed from device (most accurate) → computed from position diff
   const currentSpeedKmh = useMemo(() => {
-    if (routeWithTime.length < 2 || playbackIdx === 0) return 0;
+    if (routeWithTime.length < 1 || playbackIdx < 0) return 0;
+    const cur = routeWithTime[Math.min(playbackIdx, routeWithTime.length - 1)];
+    // Use GPS Doppler speed if the device reported it (satellite lock)
+    if (cur.speedMs != null && cur.speedMs > 0) return cur.speedMs * 3.6;
+    // Fallback: compute from consecutive position difference
+    if (playbackIdx === 0 || routeWithTime.length < 2) return 0;
     const p1 = routeWithTime[playbackIdx - 1];
-    const p2 = routeWithTime[playbackIdx];
+    const p2 = cur;
     const distKm = haversineKm(p1.pos[0], p1.pos[1], p2.pos[0], p2.pos[1]);
     const timeSec = (new Date(p2.ts).getTime() - new Date(p1.ts).getTime()) / 1000;
     if (timeSec <= 0) return 0;
-    return (distKm / timeSec) * 3600;
+    const computed = (distKm / timeSec) * 3600;
+    // Cap at 200 km/h to hide GPS teleport artefacts in the display
+    return Math.min(computed, 200);
   }, [routeWithTime, playbackIdx]);
 
   const currentTs = routeWithTime[playbackIdx]?.ts;
