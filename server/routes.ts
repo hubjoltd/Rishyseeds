@@ -2982,7 +2982,10 @@ export async function registerRoutes(
             if (tripIsCellular && prevCluster) {
               distanceKm = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng) / 1000 * CELLULAR_TORTUOSITY;
             } else {
-              distanceKm = totalDistKm(tPts);
+              // slice(timeOffset) excludes the overlap ping (last ping of the previous
+              // stoppage cluster that is shared as tPts[0]).  That ping has GPS drift
+              // up to STOPPAGE_RADIUS_M and must not be counted as movement.
+              distanceKm = totalDistKm(tPts.slice(timeOffset));
             }
             gpsSegments.push({
               type: "travelled",
@@ -3010,7 +3013,7 @@ export async function registerRoutes(
             const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
             tailDistKm = haversineM(prevCluster.lat, prevCluster.lng, dLat, dLng) / 1000 * CELLULAR_TORTUOSITY;
           } else {
-            tailDistKm = totalDistKm(tPts);
+            tailDistKm = totalDistKm(tPts.slice(timeOffset));
           }
           gpsSegments.push({
             type: "travelled",

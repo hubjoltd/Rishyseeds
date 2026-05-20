@@ -1659,9 +1659,14 @@ export default function EmployeeProfile() {
   }
 
   // Inject OSRM road distances into travelled segments (index matches order of OSRM snapping)
+  // Build OSRM-enriched timeline: replace distanceKm with OSRM road distance where available.
+  // Must skip segments with distanceKm < 0.05 when advancing _tIdx because travelSegmentsPoints
+  // skips those same segments before sending to OSRM — keeping both indexes in sync.
   let _tIdx = 0;
   const enrichedTimelineEvents = allTimelineEvents.map(ev => {
     if (ev.type === "travelled") {
+      const serverKm = (ev as any).distanceKm ?? 0;
+      if (serverKm < 0.05) return ev; // also skipped in travelSegmentsPoints — don't advance index
       const osrmKm = osrmSegmentDistances[_tIdx++];
       return (osrmKm != null && osrmKm > 0) ? { ...ev, distanceKm: osrmKm } : ev;
     }
@@ -1894,8 +1899,11 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(
-                      liveSnappedKm != null && liveSnappedKm > 0
-                        ? liveSnappedKm
+                      osrmSegmentDistances.length > 0
+                        // Sum enriched segments: OSRM road distance where snapped, server haversine as fallback
+                        ? enrichedTimelineEvents
+                            .filter((s: any) => s.type === "travelled")
+                            .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
                         : locationData?.totalKm != null
                           ? locationData.totalKm
                           : (locationData?.segments ?? [])
