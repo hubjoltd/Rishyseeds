@@ -2961,8 +2961,10 @@ export async function registerRoutes(
       //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
       //   at ±172 m accuracy (city):  ≈ 1.27  →  16.7 km × 1.27 ≈ 21.2 km ✓
       //   at ±500 m accuracy (rural): = 1.15  →   5.1 km × 1.15 ≈  5.9 km ✓
-      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
-        !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+      // WiFi check removed: employees always use cellular while travelling.
+      // WiFi pings come from stationary stops (customer offices etc.) and must
+      // not disable the accurate centroid-to-centroid path for travel segments.
+      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const avgTripAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
       const CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
@@ -4278,8 +4280,8 @@ export async function registerRoutes(
       // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
       // Adaptive tortuosity: city cellular (accurate, curvy) gets higher factor than rural.
       //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
-      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
-        !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+      // WiFi check removed: employees always use cellular while travelling.
+      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const avgDayAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
       const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
