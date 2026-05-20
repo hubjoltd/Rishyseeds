@@ -3111,6 +3111,18 @@ export async function registerRoutes(
       else if (matchExp?.totalDistance)             totalKm = String(matchExp.totalDistance);
       else if (trip.totalKm && Number(trip.totalKm) > 0) totalKm = String(trip.totalKm);
 
+      // Scale individual segment distances so they sum to totalKm (eliminates haversine/OSRM mismatch).
+      // Without this, the timeline segments add up to ~19 km while the header shows ~28 km — confusing.
+      const finalTotalKm = Number(totalKm) || 0;
+      if (finalTotalKm > 0 && gpsKm > 0 && Math.abs(finalTotalKm - gpsKm) > 0.01) {
+        const scale = finalTotalKm / gpsKm;
+        for (const seg of gpsSegments) {
+          if ((seg as any).type === "travelled" && (seg as any).distanceKm > 0) {
+            (seg as any).distanceKm = Math.round((seg as any).distanceKm * scale * 100) / 100;
+          }
+        }
+      }
+
       res.json({ ...trip, startMeterReading, endMeterReading, totalKm, visits: allVisits, gpsSegments });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
@@ -4421,6 +4433,17 @@ export async function registerRoutes(
       const osrmDayWaypoints = buildOsrmWaypoints(points, clusters, dayIsCellular);
       const osrmDayKm = osrmDayWaypoints.length >= 2 ? await osrmRoadDistKm(osrmDayWaypoints) : null;
       const totalKm = (osrmDayKm != null && osrmDayKm > 0) ? osrmDayKm : haversineKm;
+
+      // Scale individual segment distances so they sum exactly to totalKm.
+      // Without this the timeline segments add to haversineKm while the header shows OSRM totalKm.
+      if (totalKm > 0 && haversineKm > 0 && Math.abs(totalKm - haversineKm) > 0.01) {
+        const scale = totalKm / haversineKm;
+        for (const seg of segments) {
+          if ((seg as any).type === "travelled" && (seg as any).distanceKm > 0) {
+            (seg as any).distanceKm = Math.round((seg as any).distanceKm * scale * 100) / 100;
+          }
+        }
+      }
 
       res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
     } catch (e: any) {
