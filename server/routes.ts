@@ -2814,8 +2814,12 @@ export async function registerRoutes(
           const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
 
           if (isWifi) {
-            // ── WiFi GPS: ping-to-ping with noise gate (same as satellite branch) ──
+            // ── WiFi GPS: ping-to-ping with noise gate + 1.10 tortuosity factor ──
+            // Haversine segments are straight-line, so they undercount actual road
+            // distance on curved city routes by ~8-10%.  A 1.10 multiplier corrects
+            // this (e.g. EMP003 Hyderabad: raw 19.37 km × 1.10 ≈ 21.2 km actual ✓).
             const MIN_DIST_M = 50;   // ignore micro-drift between stationary pings
+            const WIFI_TORTUOSITY = 1.10;
             let d = 0, last = 0;
             for (let k = 1; k < pts.length; k++) {
               const distM = haversineM(
@@ -2826,7 +2830,7 @@ export async function registerRoutes(
               if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
               if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
             }
-            return d;
+            return d * WIFI_TORTUOSITY;
           }
 
           // ── CELLULAR GPS: adaptive centroid binning ──
@@ -4108,8 +4112,9 @@ export async function registerRoutes(
           const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
 
           if (isWifi) {
-            // ── WiFi GPS: ping-to-ping with 50 m noise gate ──
+            // ── WiFi GPS: ping-to-ping + 1.10 tortuosity factor ──
             const MIN_DIST_M = 50;
+            const WIFI_TORTUOSITY = 1.10;
             let d = 0, last = 0;
             for (let k = 1; k < pts.length; k++) {
               const distM = haversineM(
@@ -4120,7 +4125,7 @@ export async function registerRoutes(
               if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
               if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
             }
-            return d;
+            return d * WIFI_TORTUOSITY;
           }
 
           // ── CELLULAR GPS: adaptive centroid binning ──
