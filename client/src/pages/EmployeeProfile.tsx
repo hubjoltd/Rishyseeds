@@ -441,6 +441,7 @@ function LiveMap({
   mapTypeId,
   onMapTypeChange,
   onSnappedKm,
+  onOsrmSegmentDistances,
 }: {
   locationPoints?: any[];
   segments?: LiveMapSegment[];
@@ -452,6 +453,7 @@ function LiveMap({
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
   onSnappedKm?: (km: number) => void;
+  onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
@@ -541,9 +543,12 @@ function LiveMap({
     let cancelled = false;
     setSnapping(true);
     // Snap each segment separately so there are no connecting lines between segments
-    Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve([]))).then(results => {
+    Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve({ coords: [] as [number,number][], distanceM: 0 }))).then(results => {
       if (!cancelled) {
-        setSnappedSegments(results);
+        setSnappedSegments(results.map(r => r.coords));
+        const distances = results.map(r => r.distanceM / 1000);
+        if (onOsrmSegmentDistances) onOsrmSegmentDistances(distances);
+        if (onSnappedKm) onSnappedKm(distances.reduce((s, d) => s + d, 0));
         setSnapping(false);
         lastSnapCount.current = totalTravelCount;
       }
@@ -765,8 +770,8 @@ function splitTrackAtGaps(
  *  - If match fails/times out: fall back to /route/v1
  *  - If route also fails: return raw GPS points
  */
-async function osrmSnap(points: [number, number][]): Promise<[number, number][]> {
-  if (points.length < 2) return points;
+async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number }> {
+  if (points.length < 2) return { coords: points, distanceM: 0 };
 
   const geoToLeaflet = (coords: [number, number][]): [number, number][] =>
     coords.map(([lng, lat]) => [lat, lng]);
@@ -779,9 +784,8 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
   };
 
   // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
-  const tryRoute = async (pts: [number, number][]): Promise<[number, number][] | null> => {
+  const tryRoute = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      // Sample to max 25 waypoints (route endpoint works best with fewer, key waypoints)
       const step = Math.max(1, Math.ceil(pts.length / 25));
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
@@ -790,13 +794,14 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
       if (!res.ok) return null;
       const data = await res.json();
       if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
-      const snapped = geoToLeaflet(data.routes[0].geometry.coordinates);
-      return snapped.length > 1 ? snapped : null;
+      const coords = geoToLeaflet(data.routes[0].geometry.coordinates);
+      const distanceM: number = data.routes[0].distance ?? 0;
+      return coords.length > 1 ? { coords, distanceM } : null;
     } catch { return null; }
   };
 
   // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
-  const tryMatch = async (pts: [number, number][]): Promise<[number, number][] | null> => {
+  const tryMatch = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
       const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
@@ -808,11 +813,13 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
       const data = await res.json();
       if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return null;
       const allCoords: [number, number][] = [];
+      let distanceM = 0;
       for (const m of data.matchings) {
         if (Array.isArray(m?.geometry?.coordinates))
           allCoords.push(...geoToLeaflet(m.geometry.coordinates));
+        distanceM += m?.distance ?? 0;
       }
-      return allCoords.length > 1 ? allCoords : null;
+      return allCoords.length > 1 ? { coords: allCoords, distanceM } : null;
     } catch { return null; }
   };
 
@@ -822,7 +829,7 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
     if (matched) return matched;
   }
   const routed = await tryRoute(points);
-  return routed ?? points;
+  return routed ?? { coords: points, distanceM: 0 };
 }
 
 // Inner layer — must be inside MapContainer so Leaflet hooks work
@@ -1062,8 +1069,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
     if (rawPoints.length < 2) { setSnappedPoints([]); return; }
     let cancelled = false;
     setSnapping(true);
-    osrmSnap(rawPoints).then(pts => {
-      if (!cancelled) { setSnappedPoints(pts); setSnapping(false); }
+    osrmSnap(rawPoints).then(({ coords }) => {
+      if (!cancelled) { setSnappedPoints(coords); setSnapping(false); }
     });
     return () => { cancelled = true; };
   }, [JSON.stringify(rawPoints)]);
@@ -1391,6 +1398,9 @@ export default function EmployeeProfile() {
   });
 
   const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
+  const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
+  // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
+  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); }, [liveDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
     points: any[];
@@ -1648,6 +1658,16 @@ export default function EmployeeProfile() {
     }
   }
 
+  // Inject OSRM road distances into travelled segments (index matches order of OSRM snapping)
+  let _tIdx = 0;
+  const enrichedTimelineEvents = allTimelineEvents.map(ev => {
+    if (ev.type === "travelled") {
+      const osrmKm = osrmSegmentDistances[_tIdx++];
+      return (osrmKm != null && osrmKm > 0) ? { ...ev, distanceKm: osrmKm } : ev;
+    }
+    return ev;
+  });
+
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
@@ -1874,11 +1894,13 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(
-                      locationData?.totalKm != null
-                        ? locationData.totalKm
-                        : (locationData?.segments ?? [])
-                            .filter((s: any) => s.type === "travelled")
-                            .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
+                      liveSnappedKm != null && liveSnappedKm > 0
+                        ? liveSnappedKm
+                        : locationData?.totalKm != null
+                          ? locationData.totalKm
+                          : (locationData?.segments ?? [])
+                              .filter((s: any) => s.type === "travelled")
+                              .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
                     ).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
@@ -1977,7 +1999,7 @@ export default function EmployeeProfile() {
                     {/* Continuous vertical connector line, centred on icons at left=[19px] */}
                     <div className="absolute left-[19px] top-0 bottom-0 w-[2px] bg-gray-200 z-0" />
 
-                    {allTimelineEvents.map((seg, idx) => {
+                    {enrichedTimelineEvents.map((seg, idx) => {
                       const startT = new Date(seg.startTime);
                       const fmt  = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
                       const fmtS = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -2177,6 +2199,7 @@ export default function EmployeeProfile() {
                     mapTypeId={sharedMapTypeId}
                     onMapTypeChange={setSharedMapTypeId}
                     onSnappedKm={setLiveSnappedKm}
+                    onOsrmSegmentDistances={setOsrmSegmentDistances}
                   />
                 )}
               </div>
