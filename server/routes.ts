@@ -2806,7 +2806,30 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── CELLULAR/WiFi GPS (no Doppler speed): adaptive centroid binning ──
+          // ── No Doppler speed: choose algorithm based on network type ──
+          // WiFi (city): dense AP coverage gives ±150-200 m accuracy — ping-to-ping
+          //   with a 50 m gate and 200 km/h speed cap is accurate (e.g. EMP003 = 19.37 km ✓).
+          // CELLULAR (rural): sparse towers cause 200 m–2 km zigzag staircase — adaptive
+          //   centroid binning eliminates tower-switching noise (e.g. EMP029 fixed ✓).
+          const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+
+          if (isWifi) {
+            // ── WiFi GPS: ping-to-ping with noise gate (same as satellite branch) ──
+            const MIN_DIST_M = 50;   // ignore micro-drift between stationary pings
+            let d = 0, last = 0;
+            for (let k = 1; k < pts.length; k++) {
+              const distM = haversineM(
+                Number(pts[last].latitude), Number(pts[last].longitude),
+                Number(pts[k].latitude),    Number(pts[k].longitude)
+              );
+              const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+              if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
+              if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            }
+            return d;
+          }
+
+          // ── CELLULAR GPS: adaptive centroid binning ──
           // Bin width scales with GPS accuracy so per-bin noise (σ/√N) stays small
           // relative to real movement even when accuracy is ±500 m.
           //   ±83 m  → 60 s bins   ±235 m → ~140 s bins   ±500 m → 300 s bins
@@ -4081,10 +4104,26 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── CELLULAR/WiFi GPS (no Doppler speed): adaptive centroid binning ──
-          // Bin width scales with GPS accuracy so per-bin noise (σ/√N) stays small
-          // relative to real movement even when accuracy is ±500 m.
-          //   ±83 m  → 60 s bins   ±235 m → ~140 s bins   ±500 m → 300 s bins
+          // ── No Doppler speed: choose algorithm based on network type ──
+          const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+
+          if (isWifi) {
+            // ── WiFi GPS: ping-to-ping with 50 m noise gate ──
+            const MIN_DIST_M = 50;
+            let d = 0, last = 0;
+            for (let k = 1; k < pts.length; k++) {
+              const distM = haversineM(
+                Number(pts[last].latitude), Number(pts[last].longitude),
+                Number(pts[k].latitude),    Number(pts[k].longitude)
+              );
+              const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+              if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
+              if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            }
+            return d;
+          }
+
+          // ── CELLULAR GPS: adaptive centroid binning ──
           const avgAccuracy = pts.reduce((s, p) =>
             s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 0), 0) / pts.length;
           const BIN_MS = avgAccuracy > 0
