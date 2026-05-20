@@ -244,11 +244,9 @@ function LiveMapInner({
   autoFollow,
   snappedSegments,
   travelSegmentsPoints,
-  isCellular,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
-  isCellular: boolean;
   visitStops: VisitStop[];
   punchInLat?: number | null;
   punchInLng?: number | null;
@@ -572,7 +570,6 @@ function LiveMap({
           autoFollow={autoFollow}
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
-          isCellular={isCellular}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
