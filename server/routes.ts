@@ -2848,8 +2848,11 @@ export async function registerRoutes(
 
         if (hasConfirmedMovement) {
           // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
+          // Apply 1.10 road-tortuosity factor: haversine straight-line consistently
+          // undercounts actual road distance by ~8-10% (curves, bends, detours).
           const MIN_DIST_NO_SPEED_M = 50;
           const MIN_GPS_SPEED_MS = 0.5;
+          const SAT_TORTUOSITY = 1.10;
           let d = 0, last = 0;
           for (let k = 1; k < pts.length; k++) {
             const distM = haversineM(
@@ -2862,7 +2865,7 @@ export async function registerRoutes(
             const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
             if (moving) { d += distM / 1000; last = k; }
           }
-          return d;
+          return d * SAT_TORTUOSITY;
         } else {
           // ── No Doppler speed: choose algorithm based on network type ──
           // WiFi (city): dense AP coverage gives ±150-200 m accuracy — ping-to-ping
@@ -3034,14 +3037,18 @@ export async function registerRoutes(
         .filter((s: any) => s.type === "travelled")
         .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0);
 
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      // Waypoints = cluster centroids (+ raw start/end if no clusters detected).
-      let osrmWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmWaypoints.length < 2 && points.length >= 2) {
-        osrmWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
+      // Use OSRM road-snapped distance for highest accuracy.
+      // Sample up to 25 evenly-spaced actual GPS points so OSRM follows the real
+      // route path (curves, detours, loops) rather than just jumping between
+      // stoppage centroids which misses intermediate road geometry.
+      let osrmWaypoints: Array<{ lat: number; lng: number }> = [];
+      if (points.length >= 2) {
+        const step = Math.max(1, Math.ceil(points.length / 23)); // keep ≤23 inner pts + start/end = 25
+        osrmWaypoints.push({ lat: Number(points[0].latitude), lng: Number(points[0].longitude) });
+        for (let wi = step; wi < points.length - 1; wi += step) {
+          osrmWaypoints.push({ lat: Number(points[wi].latitude), lng: Number(points[wi].longitude) });
+        }
+        osrmWaypoints.push({ lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) });
       }
       const osrmKm = osrmWaypoints.length >= 2 ? await osrmRoadDistKm(osrmWaypoints) : null;
 
@@ -4182,8 +4189,11 @@ export async function registerRoutes(
 
         if (hasConfirmedMovement) {
           // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
+          // Apply 1.10 road-tortuosity factor: haversine straight-line consistently
+          // undercounts actual road distance by ~8-10% (curves, bends, detours).
           const MIN_DIST_NO_SPEED_M = 50;
           const MIN_GPS_SPEED_MS = 0.5;
+          const SAT_TORTUOSITY = 1.10;
           let d = 0, last = 0;
           for (let i = 1; i < pts.length; i++) {
             const distM = haversineM(
@@ -4196,7 +4206,7 @@ export async function registerRoutes(
             const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
             if (moving) { d += distM / 1000; last = i; }
           }
-          return d;
+          return d * SAT_TORTUOSITY;
         } else {
           // ── No Doppler speed: choose algorithm based on network type ──
           const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
@@ -4358,13 +4368,18 @@ export async function registerRoutes(
       const haversineKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
       const stoppageCount = clusters.length;
 
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      let osrmDayWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmDayWaypoints.length < 2 && points.length >= 2) {
-        osrmDayWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
+      // Use OSRM road-snapped distance for highest accuracy.
+      // Sample up to 25 evenly-spaced actual GPS points so OSRM follows the real
+      // route path (curves, detours, loops) rather than just jumping between
+      // stoppage centroids which misses intermediate road geometry.
+      let osrmDayWaypoints: Array<{ lat: number; lng: number }> = [];
+      if (points.length >= 2) {
+        const step = Math.max(1, Math.ceil(points.length / 23));
+        osrmDayWaypoints.push({ lat: Number(points[0].latitude), lng: Number(points[0].longitude) });
+        for (let wi = step; wi < points.length - 1; wi += step) {
+          osrmDayWaypoints.push({ lat: Number(points[wi].latitude), lng: Number(points[wi].longitude) });
+        }
+        osrmDayWaypoints.push({ lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) });
       }
       const osrmDayKm = osrmDayWaypoints.length >= 2 ? await osrmRoadDistKm(osrmDayWaypoints) : null;
       const totalKm = (osrmDayKm != null && osrmDayKm > 0) ? osrmDayKm : haversineKm;
