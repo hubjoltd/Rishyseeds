@@ -471,12 +471,12 @@ function LiveMap({
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
   //
-  // True when the employee uses rural CELLULAR towers (no Doppler, no WiFi).
-  // WiFi city employees: accurate pings → raw OSRM routing.
-  // CELLULAR rural employees: tower-switching zigzag → 1 rep ping/min → OSRM routing.
+  // True when the employee has no Doppler GPS speed (i.e. no dedicated GPS chip in motion mode).
+  // WiFi check removed: employees always use cellular while travelling; WiFi pings come from
+  // stationary stops (customer offices) and must not disable the 1-rep-ping/min filter.
+  // With isCellular=true, OSRM gets only clean centroid waypoints → no GPS zigzag on map.
   const isCellular = useMemo(
-    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5) &&
-          !locationPoints.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi'),
+    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5),
     [locationPoints]
   );
 
@@ -813,7 +813,7 @@ async function osrmSnap(points: [number, number][]): Promise<[number, number][]>
       const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const radiuses = sample.map(() => "50").join(";");
+      const radiuses = sample.map(() => "100").join(";");
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
       const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
