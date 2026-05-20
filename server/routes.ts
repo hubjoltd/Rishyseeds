@@ -17,34 +17,6 @@ import webpush from "web-push";
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "gnULZuZ-jGv4b3KBumeqgiYYWqP5qlo9meA-ltqcfeE";
 
-/**
- * Calls the OSRM public routing API with up to 25 sampled waypoints and returns
- * the actual road distance in km.  Falls back to null on any error/timeout so
- * callers can fall back to haversine × tortuosity.
- */
-async function osrmRoadDistKm(waypoints: Array<{ lat: number; lng: number }>): Promise<number | null> {
-  if (waypoints.length < 2) return null;
-  // Sample: OSRM route/v1 handles up to 25 waypoints reliably
-  const step = Math.max(1, Math.ceil(waypoints.length / 25));
-  const sampled = waypoints.filter((_, i) => i % step === 0 || i === waypoints.length - 1);
-  const coordStr = sampled.map(w => `${w.lng},${w.lat}`).join(";");
-  try {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=false`,
-      { signal: ctrl.signal }
-    );
-    clearTimeout(tid);
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    if (data.code === "Ok" && data.routes?.[0]?.distance != null) {
-      return data.routes[0].distance / 1000; // metres → km
-    }
-  } catch { /* timeout or network error — fall through to haversine */ }
-  return null;
-}
-
 webpush.setVapidDetails("mailto:admin@rishiseeds.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
 async function sendPushToEmployee(employeeDbId: number, title: string, body: string, url?: string) {
@@ -2774,14 +2746,15 @@ export async function registerRoutes(
           // Overlay odometer from matching expense when trip fields are null
           let startMeterReading = t.startMeterReading;
           let endMeterReading   = t.endMeterReading;
-          const tripDate = t.startTime ? new Date(t.startTime).toISOString().slice(0, 10) : null;
-          const exp = tripDate ? allExps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer || e.totalDistance)) : null;
-          if (!startMeterReading && exp?.startingOdometer) startMeterReading = exp.startingOdometer;
-          if (!endMeterReading   && exp?.endOdometer)      endMeterReading   = exp.endOdometer;
-          // Use expense totalDistance (odometer-based) as fallback for GPS totalKm
-          let totalKm: string | null = t.totalKm ? String(t.totalKm) : null;
-          if ((!totalKm || Number(totalKm) === 0) && exp?.totalDistance) totalKm = String(exp.totalDistance);
-          return { ...t, startMeterReading, endMeterReading, totalKm, visitsCount: visits.length + dashCheckins.length };
+          if (!startMeterReading || !endMeterReading) {
+            const tripDate = t.startTime ? new Date(t.startTime).toISOString().slice(0, 10) : null;
+            const exp = tripDate ? allExps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer)) : null;
+            if (exp) {
+              if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
+              if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
+            }
+          }
+          return { ...t, startMeterReading, endMeterReading, visitsCount: visits.length + dashCheckins.length };
         })
       );
       res.json(tripsWithCounts);
@@ -3024,35 +2997,15 @@ export async function registerRoutes(
       // Overlay odometer from expense when trip fields are null
       let startMeterReading = trip.startMeterReading;
       let endMeterReading   = trip.endMeterReading;
-      const exps = await storage.getExpensesByEmployee(employeeId);
-      const matchExp = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer || e.totalDistance));
-      if (!startMeterReading && matchExp?.startingOdometer) startMeterReading = matchExp.startingOdometer;
-      if (!endMeterReading   && matchExp?.endOdometer)      endMeterReading   = matchExp.endOdometer;
-
-      // Compute GPS-based totalKm from travelled segments (haversine × tortuosity fallback).
-      const gpsKm = gpsSegments
-        .filter((s: any) => s.type === "travelled")
-        .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0);
-
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      // Waypoints = cluster centroids (+ raw start/end if no clusters detected).
-      let osrmWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmWaypoints.length < 2 && points.length >= 2) {
-        osrmWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
+      if (!startMeterReading || !endMeterReading) {
+        const exps = await storage.getExpensesByEmployee(employeeId);
+        const exp  = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer));
+        if (exp) {
+          if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
+          if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
+        }
       }
-      const osrmKm = osrmWaypoints.length >= 2 ? await osrmRoadDistKm(osrmWaypoints) : null;
-
-      // Priority: OSRM road distance > haversine GPS sum > expense odometer distance > DB value
-      let totalKm: string | null = null;
-      if (osrmKm != null && osrmKm > 0)             totalKm = osrmKm.toFixed(2);
-      else if (gpsKm > 0)                           totalKm = gpsKm.toFixed(2);
-      else if (matchExp?.totalDistance)             totalKm = String(matchExp.totalDistance);
-      else if (trip.totalKm && Number(trip.totalKm) > 0) totalKm = String(trip.totalKm);
-
-      res.json({ ...trip, startMeterReading, endMeterReading, totalKm, visits: allVisits, gpsSegments });
+      res.json({ ...trip, startMeterReading, endMeterReading, visits: allVisits, gpsSegments });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
     }
@@ -4026,7 +3979,7 @@ export async function registerRoutes(
       // Link to active trip if employee has one
       let activeTripId: number | null = null;
       try {
-        const empTrips = await storage.getTripsByEmployee(empId);
+        const empTrips = await storage.getEmployeeTrips(empId);
         const activeTrip = empTrips.find(t => t.status === "started" || t.status === "in_progress");
         if (activeTrip) activeTripId = activeTrip.id;
       } catch (_) {}
@@ -4355,19 +4308,8 @@ export async function registerRoutes(
         }
       }
 
-      const haversineKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
+      const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
       const stoppageCount = clusters.length;
-
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      let osrmDayWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmDayWaypoints.length < 2 && points.length >= 2) {
-        osrmDayWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
-      }
-      const osrmDayKm = osrmDayWaypoints.length >= 2 ? await osrmRoadDistKm(osrmDayWaypoints) : null;
-      const totalKm = (osrmDayKm != null && osrmDayKm > 0) ? osrmDayKm : haversineKm;
 
       res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
     } catch (e: any) {
