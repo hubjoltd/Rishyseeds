@@ -1662,13 +1662,22 @@ export default function EmployeeProfile() {
   // Build OSRM-enriched timeline: replace distanceKm with OSRM road distance where available.
   // Must skip segments with distanceKm < 0.05 when advancing _tIdx because travelSegmentsPoints
   // skips those same segments before sending to OSRM — keeping both indexes in sync.
+  //
+  // Short cellular trips (< ~3 min) have only 2 centroid bins, both near the stoppage
+  // boundary locations. OSRM routes between those two "contaminated" points and gives a
+  // distance much shorter than the actual road. Guard: only replace with OSRM if it is at
+  // least 70% of the server's value. Below that threshold the GPS trace was too sparse /
+  // boundary-distorted for OSRM to be reliable, so keep the server centroid-to-centroid km.
   let _tIdx = 0;
   const enrichedTimelineEvents = allTimelineEvents.map(ev => {
     if (ev.type === "travelled") {
       const serverKm = (ev as any).distanceKm ?? 0;
       if (serverKm < 0.05) return ev; // also skipped in travelSegmentsPoints — don't advance index
       const osrmKm = osrmSegmentDistances[_tIdx++];
-      return (osrmKm != null && osrmKm > 0) ? { ...ev, distanceKm: osrmKm } : ev;
+      if (osrmKm != null && osrmKm > 0 && osrmKm >= serverKm * 0.70) {
+        return { ...ev, distanceKm: osrmKm };
+      }
+      return ev;
     }
     return ev;
   });
