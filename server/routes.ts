@@ -2594,8 +2594,27 @@ export async function registerRoutes(
       if (!trip) return res.status(404).json({ message: "Trip not found" });
       const visits = await storage.getTripVisits(id);
       const employee = await storage.getEmployee(trip.employeeId);
+
+      // Overlay odometer from expense when trip fields are null.
+      // Modern flow saves odometer to expenses table, not trips table directly.
+      let startMeterReading = trip.startMeterReading;
+      let endMeterReading   = trip.endMeterReading;
+      if (!startMeterReading || !endMeterReading) {
+        const tripDate = trip.startTime ? new Date(trip.startTime).toISOString().slice(0, 10) : null;
+        if (tripDate) {
+          const exps = await storage.getExpensesByEmployee(trip.employeeId);
+          const exp  = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer));
+          if (exp) {
+            if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
+            if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
+          }
+        }
+      }
+
       res.json({
         ...trip,
+        startMeterReading,
+        endMeterReading,
         employeeName: employee?.fullName || "Unknown",
         employeeCode: employee?.employeeId || "N/A",
         visits,
@@ -2718,12 +2737,24 @@ export async function registerRoutes(
       const employeeId = req.employeeId;
       if (!employeeId) return res.status(401).json({ message: "Not authenticated" });
       const employeeTrips = await storage.getTripsByEmployee(employeeId);
-      // Attach visit count to each trip for the list view
+      // Fetch all expenses once and match by date for odometer overlay
+      const allExps = await storage.getExpensesByEmployee(employeeId);
       const tripsWithCounts = await Promise.all(
         employeeTrips.map(async (t) => {
           const visits = await storage.getTripVisits(t.id);
           const dashCheckins = await storage.getCustomerCheckinsByTripId(t.id);
-          return { ...t, visitsCount: visits.length + dashCheckins.length };
+          // Overlay odometer from matching expense when trip fields are null
+          let startMeterReading = t.startMeterReading;
+          let endMeterReading   = t.endMeterReading;
+          if (!startMeterReading || !endMeterReading) {
+            const tripDate = t.startTime ? new Date(t.startTime).toISOString().slice(0, 10) : null;
+            const exp = tripDate ? allExps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer)) : null;
+            if (exp) {
+              if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
+              if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
+            }
+          }
+          return { ...t, startMeterReading, endMeterReading, visitsCount: visits.length + dashCheckins.length };
         })
       );
       res.json(tripsWithCounts);
@@ -2963,7 +2994,18 @@ export async function registerRoutes(
         }
       }
 
-      res.json({ ...trip, visits: allVisits, gpsSegments });
+      // Overlay odometer from expense when trip fields are null
+      let startMeterReading = trip.startMeterReading;
+      let endMeterReading   = trip.endMeterReading;
+      if (!startMeterReading || !endMeterReading) {
+        const exps = await storage.getExpensesByEmployee(employeeId);
+        const exp  = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer));
+        if (exp) {
+          if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
+          if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
+        }
+      }
+      res.json({ ...trip, startMeterReading, endMeterReading, visits: allVisits, gpsSegments });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
     }
