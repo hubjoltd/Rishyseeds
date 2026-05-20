@@ -2967,7 +2967,8 @@ export async function registerRoutes(
       const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const avgTripAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      const CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
+      // K=0.05: urban ±36m → 1.20, rural ±500m → 1.15 (EMP029 calibration preserved ✓)
+      const CELLULAR_TORTUOSITY = 1.15 + 0.05 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
       let prevCluster: { lat: number; lng: number } | null = null;
@@ -3000,11 +3001,22 @@ export async function registerRoutes(
         const tPts = points.slice(distStart);
         if (tPts.length >= 2) {
           const timeOffset = prevEnd >= 0 ? 1 : 0;
+          let tailDistKm: number;
+          if (tripIsCellular && prevCluster) {
+            // Tail segment: prevCluster centroid → destination centroid (last 5 pings avg)
+            // Same approach as inter-cluster so tortuosity is applied consistently.
+            const lastN = tPts.slice(-Math.min(5, tPts.length));
+            const dLat = lastN.reduce((s, p) => s + Number(p.latitude), 0) / lastN.length;
+            const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
+            tailDistKm = haversineM(prevCluster.lat, prevCluster.lng, dLat, dLng) / 1000 * CELLULAR_TORTUOSITY;
+          } else {
+            tailDistKm = totalDistKm(tPts);
+          }
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
             endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
-            distanceKm: totalDistKm(tPts),
+            distanceKm: tailDistKm,
           });
         }
       }
@@ -4284,7 +4296,8 @@ export async function registerRoutes(
       const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
       const avgDayAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
+      // K=0.05: urban ±36m → 1.20, rural ±500m → 1.15 (EMP029 calibration preserved ✓)
+      const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.05 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
       const segments: Segment[] = [];
       let prevEndIdx = -1;
       let prevClusterCentroid: { lat: number; lng: number } | null = null;
@@ -4328,11 +4341,20 @@ export async function registerRoutes(
         const travelPts = points.slice(distStart);
         if (travelPts.length >= 2) {
           const timeOffset = prevEndIdx >= 0 ? 1 : 0;
+          let tailDistKm: number;
+          if (dayIsCellular && prevClusterCentroid) {
+            const lastN = travelPts.slice(-Math.min(5, travelPts.length));
+            const dLat = lastN.reduce((s, p) => s + Number(p.latitude), 0) / lastN.length;
+            const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
+            tailDistKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, dLat, dLng) / 1000 * DAY_CELLULAR_TORTUOSITY;
+          } else {
+            tailDistKm = totalDistKm(travelPts);
+          }
           segments.push({
             type: "travelled",
             startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
             endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
-            distanceKm: totalDistKm(travelPts),
+            distanceKm: tailDistKm,
           });
         }
       }
