@@ -12,18 +12,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserCheck, Clock, MapPin } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { UserCheck, Clock, MapPin, Pencil, Trash2, Loader2 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { getAuthToken } from "@/lib/queryClient";
+
+type AttendanceRecord = {
+  id: number;
+  employeeId: number;
+  date: string;
+  status: string;
+  shift: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  checkInLatitude: string | null;
+  checkInLongitude: string | null;
+  checkInLocation: string | null;
+  checkOutLatitude: string | null;
+  checkOutLongitude: string | null;
+  checkOutLocation: string | null;
+};
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export default function Attendance() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : undefined;
-  
+
   const { data: attendanceData, isLoading } = useAttendance(formattedDate);
   const { data: employees } = useEmployees();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null);
+  const [editCheckOut, setEditCheckOut] = useState("");
 
   const getEmployeeName = (empId: number) => {
     const emp = (employees as Employee[] || []).find(e => e.id === empId);
     return emp ? emp.fullName : `EMP-${empId}`;
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, checkOut }: { id: number; checkOut: string | null }) => {
+      const res = await fetch(`/api/attendance/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ checkOut: checkOut ?? "" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Update failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+      setEditRecord(null);
+      toast({ title: "Updated", description: "Attendance record updated successfully." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const openEdit = (record: AttendanceRecord) => {
+    setEditRecord(record);
+    setEditCheckOut(record.checkOut ?? "");
+  };
+
+  const handleSave = () => {
+    if (!editRecord) return;
+    updateMutation.mutate({ id: editRecord.id, checkOut: editCheckOut || null });
+  };
+
+  const handleRemovePunchOut = () => {
+    if (!editRecord) return;
+    updateMutation.mutate({ id: editRecord.id, checkOut: null });
   };
 
   return (
@@ -66,41 +143,53 @@ export default function Attendance() {
                   <TableHead>Check In Location</TableHead>
                   <TableHead>Check Out</TableHead>
                   <TableHead>Check Out Location</TableHead>
+                  <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center">Loading...</TableCell></TableRow>
                 ) : attendanceData?.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No attendance records for this date.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No attendance records for this date.</TableCell></TableRow>
                 ) : (
-                  attendanceData?.map((record) => (
+                  (attendanceData as AttendanceRecord[] || []).map((record) => (
                     <TableRow key={record.id}>
                       <TableCell className="font-medium">{getEmployeeName(record.employeeId)}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${
-                          record.status === 'present' ? 'bg-green-100 text-green-700' : 
+                          record.status === 'present' ? 'bg-green-100 text-green-700' :
                           record.status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                         }`}>
                           {record.status}
                         </span>
                       </TableCell>
-                      <TableCell>{record.shift}</TableCell>
-                      <TableCell className="flex items-center gap-1">
-                         {record.checkIn ? <><Clock className="w-3 h-3 text-muted-foreground"/> {record.checkIn}</> : '-'}
+                      <TableCell>{record.shift ?? '-'}</TableCell>
+                      <TableCell>
+                        {record.checkIn ? <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground"/>{record.checkIn}</span> : '-'}
                       </TableCell>
                       <TableCell>
                         {record.checkInLocation ? (
-                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkin-location-${record.id}`}><MapPin className="w-3 h-3 text-green-600" /> {record.checkInLocation}</span>
+                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkin-location-${record.id}`}><MapPin className="w-3 h-3 text-green-600" />{record.checkInLocation}</span>
                         ) : '-'}
                       </TableCell>
                       <TableCell>
-                        {record.checkOut ? <><Clock className="w-3 h-3 text-muted-foreground"/> {record.checkOut}</> : '-'}
+                        {record.checkOut ? <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground"/>{record.checkOut}</span> : <span className="text-muted-foreground text-xs">—</span>}
                       </TableCell>
                       <TableCell>
                         {record.checkOutLocation ? (
-                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkout-location-${record.id}`}><MapPin className="w-3 h-3 text-red-600" /> {record.checkOutLocation}</span>
+                          <span className="flex items-center gap-1 text-xs" data-testid={`text-checkout-location-${record.id}`}><MapPin className="w-3 h-3 text-red-600" />{record.checkOutLocation}</span>
                         ) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          onClick={() => openEdit(record)}
+                          data-testid={`button-edit-attendance-${record.id}`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -110,6 +199,56 @@ export default function Attendance() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!editRecord} onOpenChange={(open) => { if (!open) setEditRecord(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Punch Out</DialogTitle>
+          </DialogHeader>
+          {editRecord && (
+            <div className="space-y-4 py-2">
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{getEmployeeName(editRecord.employeeId)}</span>
+                {" · "}{editRecord.date}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="checkout-time">Punch Out Time (HH:MM:SS)</Label>
+                <Input
+                  id="checkout-time"
+                  type="text"
+                  placeholder="e.g. 18:30:00"
+                  value={editCheckOut}
+                  onChange={e => setEditCheckOut(e.target.value)}
+                  data-testid="input-checkout-time"
+                />
+                <p className="text-xs text-muted-foreground">Leave empty and click Save to clear the punch out.</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1.5"
+              onClick={handleRemovePunchOut}
+              disabled={updateMutation.isPending}
+              data-testid="button-remove-punchout"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remove Punch Out
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={updateMutation.isPending}
+              data-testid="button-save-attendance"
+            >
+              {updateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1224,6 +1224,23 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  app.patch("/api/attendance/:id", checkPermission('attendance', 'edit'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
+      const allowed = ["checkOut", "checkOutLatitude", "checkOutLongitude", "checkOutLocation", "checkIn", "status", "shift"];
+      const updates: Record<string, any> = {};
+      for (const key of allowed) {
+        if (key in req.body) updates[key] = req.body[key] === "" ? null : req.body[key];
+      }
+      const updated = await storage.updateAttendance(id, updates);
+      if (!updated) return res.status(404).json({ message: "Record not found" });
+      res.json(updated);
+    } catch (e) {
+      res.status(400).json({ message: "Update failed" });
+    }
+  });
+
   // === PAYROLL ROUTES ===
   app.post(api.payroll.generate.path, async (req, res) => {
     try {
