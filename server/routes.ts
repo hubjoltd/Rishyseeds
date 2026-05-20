@@ -4316,7 +4316,7 @@ export async function registerRoutes(
             if (dayIsCellular && prevClusterCentroid) {
               distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, cluster.lat, cluster.lng) / 1000 * DAY_CELLULAR_TORTUOSITY;
             } else {
-              distanceKm = totalDistKm(travelPts);
+              distanceKm = totalDistKm(travelPts.slice(timeOffset));
             }
             segments.push({
               type: "travelled",
@@ -4351,7 +4351,7 @@ export async function registerRoutes(
             const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
             tailDistKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, dLat, dLng) / 1000 * DAY_CELLULAR_TORTUOSITY;
           } else {
-            tailDistKm = totalDistKm(travelPts);
+            tailDistKm = totalDistKm(travelPts.slice(timeOffset));
           }
           segments.push({
             type: "travelled",
