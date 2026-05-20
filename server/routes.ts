@@ -2812,16 +2812,20 @@ export async function registerRoutes(
       }
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
-      //   speed gate    : if Doppler speed available, require > 0.5 m/s
-      //   distance gate : if no speed, require >= 30 m (filters stationary noise)
-      //   teleport cap  : reject > 200 km/h (GPS glitch)
-      //   tower-jump cap: if no speed AND jump > 500 m, skip (cell tower switch)
+      //
+      // Two-tier speed cap:
+      //   • Satellite GPS (has Doppler speed): count when speed > 0.5 m/s; reject GPS glitches > 200 km/h.
+      //   • Cellular / WiFi (no Doppler speed): count when distance >= 30 m AND
+      //     implied speed <= 120 km/h.  The lower cap (vs 200 km/h) rejects rapid
+      //     tower-switching noise (e.g. 1 km jump in 10 s ≈ 360 km/h) while still
+      //     counting legitimate driving (80–110 km/h highway, or a long ping gap
+      //     of 57 min covering 103 km at ~108 km/h — all below 120 km/h).
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS  = 55.6; // 200 km/h absolute cap
-        const MAX_NOSPEED_M = 500;  // cellular tower-jump guard
-        const MIN_DIST_M    = 30;   // minimum movement without speed data
-        const MIN_SPEED_MS  = 0.5;  // 1.8 km/h minimum Doppler speed
+        const MAX_SPEED_MS   = 55.6; // 200 km/h — GPS glitch / timestamp error
+        const MAX_NOSPEED_MS = 33.3; // 120 km/h — tower-jump rejection (no Doppler)
+        const MIN_DIST_M     = 30;   // minimum movement without speed data
+        const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
           const distM = haversineM(
@@ -2829,11 +2833,17 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
-          if (!hasSpeed && distM > MAX_NOSPEED_M) continue; // tower jump
-          const moving = hasSpeed || distM >= MIN_DIST_M;
-          if (moving) { d += distM / 1000; last = k; }
+          if (hasSpeed) {
+            // Satellite GPS: trust Doppler, only reject GPS glitches
+            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+            d += distM / 1000;
+            last = k;
+          } else {
+            // No Doppler: reject noise (< 30 m) and tower jumps (> 120 km/h equiv)
+            if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
+            if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+          }
         }
         return d;
       }
@@ -4045,10 +4055,10 @@ export async function registerRoutes(
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS  = 55.6; // 200 km/h absolute cap
-        const MAX_NOSPEED_M = 500;  // cellular tower-jump guard
-        const MIN_DIST_M    = 30;   // minimum movement without speed data
-        const MIN_SPEED_MS  = 0.5;  // 1.8 km/h minimum Doppler speed
+        const MAX_SPEED_MS   = 55.6; // 200 km/h — GPS glitch / timestamp error
+        const MAX_NOSPEED_MS = 33.3; // 120 km/h — tower-jump rejection (no Doppler)
+        const MIN_DIST_M     = 30;   // minimum movement without speed data
+        const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
           const distM = haversineM(
@@ -4056,11 +4066,15 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
-          if (!hasSpeed && distM > MAX_NOSPEED_M) continue;
-          const moving = hasSpeed || distM >= MIN_DIST_M;
-          if (moving) { d += distM / 1000; last = k; }
+          if (hasSpeed) {
+            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+            d += distM / 1000;
+            last = k;
+          } else {
+            if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
+            if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+          }
         }
         return d;
       }
