@@ -244,9 +244,11 @@ function LiveMapInner({
   autoFollow,
   snappedSegments,
   travelSegmentsPoints,
+  isCellular,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
+  isCellular: boolean;
   visitStops: VisitStop[];
   punchInLat?: number | null;
   punchInLng?: number | null;
@@ -344,23 +346,39 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
-      {/* While OSRM snap is pending: show raw travel GPS lines per segment */}
-      {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
-        seg.length > 1 ? (
-          <Fragment key={`raw-seg-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-          </Fragment>
-        ) : null
-      )}
-      {/* Once OSRM returns: one snapped polyline per segment — no loops, no connections between segments */}
-      {snappedSegments.map((seg, i) =>
-        seg.length > 1 ? (
-          <Fragment key={`snap-seg-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-          </Fragment>
-        ) : null
+      {isCellular ? (
+        /* CELLULAR / WiFi: no Doppler speed → raw pings are inaccurate.
+           Draw a dashed approximate line between the two stable stop centroids
+           instead of letting OSRM pick a highway route the employee never took. */
+        travelSegmentsPoints.map((seg, i) =>
+          seg.length > 1 ? (
+            <Fragment key={`cell-seg-${i}`}>
+              <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round", dashArray: undefined }} />
+              <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
+            </Fragment>
+          ) : null
+        )
+      ) : (
+        <>
+          {/* While OSRM snap is pending: show raw travel GPS lines per segment */}
+          {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
+            seg.length > 1 ? (
+              <Fragment key={`raw-seg-${i}`}>
+                <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+                <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+              </Fragment>
+            ) : null
+          )}
+          {/* Once OSRM returns: one snapped polyline per segment — no loops, no connections between segments */}
+          {snappedSegments.map((seg, i) =>
+            seg.length > 1 ? (
+              <Fragment key={`snap-seg-${i}`}>
+                <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+                <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+              </Fragment>
+            ) : null
+          )}
+        </>
       )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
@@ -473,14 +491,19 @@ function LiveMap({
   // as endpoints per segment.  Raw cell-tower pings zigzag 200 m–2 km off the real road,
   // causing false staircase lines on the map.  Centroids (averaged over many pings) are
   // accurate, and OSRM will snap between them to give the real road route.
+  // True when ALL pings have speed=0 (CELLULAR/WiFi — no Doppler satellite fix).
+  // Used both here and in LiveMapInner to skip OSRM and draw dashed lines instead.
+  const isCellular = useMemo(
+    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5),
+    [locationPoints]
+  );
+
   const travelSegmentsPoints = useMemo(() => {
     const allSegs = segments ?? [];
     // Only use segments with meaningful distance — zero-distance segments are GPS drift
     // during long rural stoppages that escaped the cluster and must not reach OSRM.
     const hasMeaningfulTravel = allSegs.some(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
     if (!hasMeaningfulTravel) return [gpsPoints]; // no segment info yet — show all as one
-
-    const isCellular = !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5);
 
     const result: [number, number][][] = [];
     for (let i = 0; i < allSegs.length; i++) {
@@ -526,7 +549,7 @@ function LiveMap({
       if (pts.length >= 2) result.push(pts);
     }
     return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
-  }, [locationPoints, segments, gpsPoints]);
+  }, [locationPoints, segments, gpsPoints, isCellular]);
 
   // Total travel point count across all segments — used to detect new data without re-snapping
   const totalTravelCount = useMemo(
@@ -534,8 +557,9 @@ function LiveMap({
     [travelSegmentsPoints]
   );
 
-  // Re-snap to roads only when new travel points are added (not every 5s refresh if nothing changed)
+  // Re-snap to roads only for satellite GPS employees — cellular/WiFi show dashed lines instead
   useEffect(() => {
+    if (isCellular) { setSnappedSegments([]); return; } // skip OSRM — dashed lines used instead
     if (totalTravelCount < 2) { setSnappedSegments([]); return; }
     if (totalTravelCount === lastSnapCount.current) return; // no new points
     let cancelled = false;
@@ -570,6 +594,7 @@ function LiveMap({
           autoFollow={autoFollow}
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
+          isCellular={isCellular}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
