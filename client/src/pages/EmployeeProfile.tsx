@@ -346,39 +346,23 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
-      {isCellular ? (
-        /* CELLULAR / WiFi: no Doppler speed → raw pings are inaccurate.
-           Draw a dashed approximate line between the two stable stop centroids
-           instead of letting OSRM pick a highway route the employee never took. */
-        travelSegmentsPoints.map((seg, i) =>
-          seg.length > 1 ? (
-            <Fragment key={`cell-seg-${i}`}>
-              <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round", dashArray: undefined }} />
-              <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
-            </Fragment>
-          ) : null
-        )
-      ) : (
-        <>
-          {/* While OSRM snap is pending: show raw travel GPS lines per segment */}
-          {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
-            seg.length > 1 ? (
-              <Fragment key={`raw-seg-${i}`}>
-                <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-                <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-              </Fragment>
-            ) : null
-          )}
-          {/* Once OSRM returns: one snapped polyline per segment — no loops, no connections between segments */}
-          {snappedSegments.map((seg, i) =>
-            seg.length > 1 ? (
-              <Fragment key={`snap-seg-${i}`}>
-                <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-                <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-              </Fragment>
-            ) : null
-          )}
-        </>
+      {/* While OSRM snap is pending: show travel GPS lines per segment */}
+      {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`raw-seg-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
+      {/* Once OSRM returns: one snapped polyline per segment */}
+      {snappedSegments.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`snap-seg-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
       )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
@@ -487,14 +471,12 @@ function LiveMap({
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
   //
-  // CELLULAR GPS (speed=0): route using only the two stable stoppage cluster centroids
-  // as endpoints per segment.  Raw cell-tower pings zigzag 200 m–2 km off the real road,
-  // causing false staircase lines on the map.  Centroids (averaged over many pings) are
-  // accurate, and OSRM will snap between them to give the real road route.
-  // True when ALL pings have speed=0 (CELLULAR/WiFi — no Doppler satellite fix).
-  // Used both here and in LiveMapInner to skip OSRM and draw dashed lines instead.
+  // True when the employee uses rural CELLULAR towers (no Doppler, no WiFi).
+  // WiFi city employees: accurate pings → raw OSRM routing.
+  // CELLULAR rural employees: tower-switching zigzag → 1 rep ping/min → OSRM routing.
   const isCellular = useMemo(
-    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5),
+    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5) &&
+          !locationPoints.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi'),
     [locationPoints]
   );
 
@@ -513,37 +495,40 @@ function LiveMap({
 
       let pts: [number, number][];
 
-      if (isCellular) {
-        // Use adjacent stoppage centroids as route endpoints — eliminates zigzag
-        const prevSeg = i > 0 ? allSegs[i - 1] : null;
-        const nextSeg = i < allSegs.length - 1 ? allSegs[i + 1] : null;
-        const prevLat = prevSeg?.type === "stoppage" ? (prevSeg as any).lat : null;
-        const prevLng = prevSeg?.type === "stoppage" ? (prevSeg as any).lng : null;
-        const nextLat = nextSeg?.type === "stoppage" ? (nextSeg as any).lat : null;
-        const nextLng = nextSeg?.type === "stoppage" ? (nextSeg as any).lng : null;
+      const segStart = new Date(seg.startTime).getTime();
+      const segEnd   = new Date(seg.endTime).getTime();
+      const segPings = locationPoints.filter(p =>
+        p.latitude && p.longitude && p.recordedAt &&
+        new Date(p.recordedAt).getTime() >= segStart &&
+        new Date(p.recordedAt).getTime() <= segEnd
+      );
 
-        if (prevLat != null && nextLat != null) {
-          pts = [[prevLat, prevLng], [nextLat, nextLng]];
-        } else {
-          // Edge segment with no adjacent centroid — fall back to raw pings
-          const start = new Date(seg.startTime).getTime();
-          const end = new Date(seg.endTime).getTime();
-          pts = locationPoints
-            .filter(p => p.latitude && p.longitude && p.recordedAt &&
-              new Date(p.recordedAt).getTime() >= start && new Date(p.recordedAt).getTime() <= end)
-            .map(p => [Number(p.latitude), Number(p.longitude)]);
+      if (isCellular) {
+        // CELLULAR (rural tower GPS): reduce zigzag by keeping 1 representative ping
+        // per minute — the ping closest to the bin centroid.  Feeding these ~N stable
+        // waypoints to OSRM yields a solid blue road line that follows the real route
+        // without the staircase detours caused by tower-switching noise.
+        const BIN_MS = 60_000;
+        const repPings: [number, number][] = [];
+        for (let t = segStart; t <= segEnd + BIN_MS; t += BIN_MS) {
+          const bin = segPings.filter(p => {
+            const pt = new Date(p.recordedAt).getTime();
+            return pt >= t && pt < t + BIN_MS;
+          });
+          if (bin.length === 0) continue;
+          const cLat = bin.reduce((s, p) => s + Number(p.latitude),  0) / bin.length;
+          const cLng = bin.reduce((s, p) => s + Number(p.longitude), 0) / bin.length;
+          let best = bin[0], bestD = Infinity;
+          for (const p of bin) {
+            const d = (Number(p.latitude) - cLat) ** 2 + (Number(p.longitude) - cLng) ** 2;
+            if (d < bestD) { bestD = d; best = p; }
+          }
+          repPings.push([Number(best.latitude), Number(best.longitude)]);
         }
+        pts = repPings;
       } else {
-        // Satellite GPS — raw pings have Doppler speed and are accurate
-        const start = new Date(seg.startTime).getTime();
-        const end = new Date(seg.endTime).getTime();
-        pts = locationPoints
-          .filter(p => {
-            if (!p.latitude || !p.longitude || !p.recordedAt) return false;
-            const t = new Date(p.recordedAt).getTime();
-            return t >= start && t <= end;
-          })
-          .map(p => [Number(p.latitude), Number(p.longitude)]);
+        // Satellite GPS or WiFi — pings are accurate enough for raw OSRM routing
+        pts = segPings.map(p => [Number(p.latitude), Number(p.longitude)]);
       }
 
       if (pts.length >= 2) result.push(pts);
@@ -557,9 +542,11 @@ function LiveMap({
     [travelSegmentsPoints]
   );
 
-  // Re-snap to roads only for satellite GPS employees — cellular/WiFi show dashed lines instead
+  // Snap route segments to roads via OSRM for all employee types.
   useEffect(() => {
-    if (isCellular) { setSnappedSegments([]); return; } // skip OSRM — dashed lines used instead
+    // All employee types (satellite, WiFi, CELLULAR) now use OSRM for solid blue road lines.
+    // Cellular employees use filtered representative pings (1/min) so OSRM follows the
+    // actual road without zigzag or false highway detours.
     if (totalTravelCount < 2) { setSnappedSegments([]); return; }
     if (totalTravelCount === lastSnapCount.current) return; // no new points
     let cancelled = false;

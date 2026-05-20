@@ -2883,11 +2883,13 @@ export async function registerRoutes(
           ci = cj;
         } else { ci++; }
       }
-      // For CELLULAR GPS (no Doppler speed anywhere in the trip) use centroid-to-centroid
-      // distance between consecutive stoppage clusters.  A stoppage centroid is the average
-      // of dozens of pings and is far more accurate than individual cell-tower positions,
-      // which can wander 200 m–2 km and cause the zigzag "staircase" overcounting.
-      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
+      // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
+      // WiFi employees (city) have dense AP coverage — their ping-to-ping is accurate
+      // and the original algorithm gives correct results (e.g. 19.37 km city route).
+      // CELLULAR employees (rural) have sparse tower coverage — zigzag staircase from
+      // tower switching inflates ping-to-ping by 2–3 km; centroid approach fixes that.
+      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
+        !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
       let prevCluster: { lat: number; lng: number } | null = null;
@@ -4159,9 +4161,11 @@ export async function registerRoutes(
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
-      // For CELLULAR GPS (no Doppler speed anywhere in the day) use centroid-to-centroid
-      // distance between consecutive stoppage clusters — eliminates 2-3 km staircase overcounting.
-      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
+      // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
+      // WiFi employees in cities have dense AP coverage — ping-to-ping is accurate for them.
+      // CELLULAR employees in rural areas have sparse tower coverage — centroid approach needed.
+      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
+        !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
       const segments: Segment[] = [];
       let prevEndIdx = -1;
       let prevClusterCentroid: { lat: number; lng: number } | null = null;
