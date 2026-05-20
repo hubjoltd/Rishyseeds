@@ -1674,7 +1674,7 @@ export default function EmployeeProfile() {
       const serverKm = (ev as any).distanceKm ?? 0;
       if (serverKm < 0.05) return ev; // also skipped in travelSegmentsPoints — don't advance index
       const osrmKm = osrmSegmentDistances[_tIdx++];
-      if (osrmKm != null && osrmKm > 0 && osrmKm >= serverKm * 0.70) {
+      if (osrmKm != null && osrmKm > 0 && osrmKm >= serverKm * 0.70 && osrmKm <= serverKm * 1.50) {
         return { ...ev, distanceKm: osrmKm };
       }
       return ev;
