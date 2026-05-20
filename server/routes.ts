@@ -18,14 +18,14 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BMfWv-0gEu0b6DEybeZJEM
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "gnULZuZ-jGv4b3KBumeqgiYYWqP5qlo9meA-ltqcfeE";
 
 /**
- * Calls the OSRM public routing API with up to 25 sampled waypoints and returns
+ * Calls the OSRM public routing API with up to 100 sampled waypoints and returns
  * the actual road distance in km.  Falls back to null on any error/timeout so
  * callers can fall back to haversine × tortuosity.
  */
 async function osrmRoadDistKm(waypoints: Array<{ lat: number; lng: number }>): Promise<number | null> {
   if (waypoints.length < 2) return null;
-  // Sample: OSRM route/v1 handles up to 25 waypoints reliably
-  const step = Math.max(1, Math.ceil(waypoints.length / 25));
+  // Sample: OSRM route/v1 handles up to 100 waypoints reliably
+  const step = Math.max(1, Math.ceil(waypoints.length / 100));
   const sampled = waypoints.filter((_, i) => i % step === 0 || i === waypoints.length - 1);
   const coordStr = sampled.map(w => `${w.lng},${w.lat}`).join(";");
   try {
@@ -43,6 +43,70 @@ async function osrmRoadDistKm(waypoints: Array<{ lat: number; lng: number }>): P
     }
   } catch { /* timeout or network error — fall through to haversine */ }
   return null;
+}
+
+type GpsPing = { latitude: unknown; longitude: unknown; recordedAt: unknown; speed?: unknown; networkType?: unknown };
+
+/**
+ * Builds a dense ordered waypoint list for the OSRM route call — identical to
+ * what the frontend travelSegmentsPoints / osrmSnap pipeline uses.
+ *
+ * For CELLULAR trips  → 1 representative ping per minute from each travel segment
+ *                       (bin centroid, same algorithm as the frontend).
+ * For satellite/WiFi  → every ping from each travel segment (sampled to 25/segment max).
+ * Stoppage cluster centroids are inserted in chronological order so OSRM knows
+ * the vehicle actually passed through those locations.
+ */
+function buildOsrmWaypoints(
+  points: GpsPing[],
+  clusters: Array<{ startIdx: number; endIdx: number; lat: number; lng: number }>,
+  isCellular: boolean,
+): Array<{ lat: number; lng: number }> {
+  const waypoints: Array<{ lat: number; lng: number }> = [];
+  let prevEnd = -1;
+
+  const addTravelPings = (tPts: GpsPing[]) => {
+    if (tPts.length < 1) return;
+    if (isCellular) {
+      // 1 representative ping per minute — same bin centroid approach as the frontend
+      const segStart = new Date(tPts[0].recordedAt as string).getTime();
+      const segEnd   = new Date(tPts[tPts.length - 1].recordedAt as string).getTime();
+      const BIN_MS   = 60_000;
+      for (let t = segStart; t <= segEnd + BIN_MS; t += BIN_MS) {
+        const bin = tPts.filter(p => {
+          const pt = new Date(p.recordedAt as string).getTime();
+          return pt >= t && pt < t + BIN_MS;
+        });
+        if (bin.length === 0) continue;
+        const cLat = bin.reduce((s, p) => s + Number(p.latitude), 0) / bin.length;
+        const cLng = bin.reduce((s, p) => s + Number(p.longitude), 0) / bin.length;
+        waypoints.push({ lat: cLat, lng: cLng });
+      }
+    } else {
+      // Satellite / WiFi — use all pings (sampled to 25 per segment to keep request small)
+      const step = Math.max(1, Math.ceil(tPts.length / 25));
+      tPts.filter((_, i) => i % step === 0 || i === tPts.length - 1).forEach(p =>
+        waypoints.push({ lat: Number(p.latitude), lng: Number(p.longitude) })
+      );
+    }
+  };
+
+  for (const cluster of clusters) {
+    // Travel pings before this stoppage
+    const tStart = prevEnd < 0 ? 0 : prevEnd;
+    const tPts   = points.slice(tStart, cluster.startIdx);
+    if (tPts.length >= 1) addTravelPings(tPts);
+    // Stoppage centroid — vehicle definitely passed through here
+    waypoints.push({ lat: cluster.lat, lng: cluster.lng });
+    prevEnd = cluster.endIdx;
+  }
+
+  // Travel pings after the last stoppage
+  const tailStart = prevEnd < 0 ? 0 : prevEnd;
+  const tailPts   = points.slice(tailStart);
+  if (tailPts.length >= 1) addTravelPings(tailPts);
+
+  return waypoints;
 }
 
 webpush.setVapidDetails("mailto:admin@rishiseeds.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -3034,15 +3098,10 @@ export async function registerRoutes(
         .filter((s: any) => s.type === "travelled")
         .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0);
 
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      // Waypoints = cluster centroids (+ raw start/end if no clusters detected).
-      let osrmWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmWaypoints.length < 2 && points.length >= 2) {
-        osrmWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
-      }
+      // Use OSRM road-snapped distance — same dense waypoints as the frontend map.
+      // buildOsrmWaypoints mirrors the frontend's 1-per-min representative ping approach
+      // so the distance number matches the displayed route line exactly.
+      const osrmWaypoints = buildOsrmWaypoints(points, clusters, tripIsCellular);
       const osrmKm = osrmWaypoints.length >= 2 ? await osrmRoadDistKm(osrmWaypoints) : null;
 
       // Priority: OSRM road distance > haversine GPS sum > expense odometer distance > DB value
@@ -4358,14 +4417,8 @@ export async function registerRoutes(
       const haversineKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
       const stoppageCount = clusters.length;
 
-      // Use OSRM road-snapped distance for highest accuracy (same as map display).
-      let osrmDayWaypoints: Array<{ lat: number; lng: number }> = clusters.map(c => ({ lat: c.lat, lng: c.lng }));
-      if (osrmDayWaypoints.length < 2 && points.length >= 2) {
-        osrmDayWaypoints = [
-          { lat: Number(points[0].latitude), lng: Number(points[0].longitude) },
-          { lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) },
-        ];
-      }
+      // Use OSRM road-snapped distance — same dense waypoints as the frontend map.
+      const osrmDayWaypoints = buildOsrmWaypoints(points, clusters, dayIsCellular);
       const osrmDayKm = osrmDayWaypoints.length >= 2 ? await osrmRoadDistKm(osrmDayWaypoints) : null;
       const totalKm = (osrmDayKm != null && osrmDayKm > 0) ? osrmDayKm : haversineKm;
 
