@@ -1908,16 +1908,11 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(
-                      osrmSegmentDistances.length > 0
-                        // Sum enriched segments: OSRM road distance where snapped, server haversine as fallback
-                        ? enrichedTimelineEvents
+                      locationData?.totalKm != null
+                        ? locationData.totalKm
+                        : (locationData?.segments ?? [])
                             .filter((s: any) => s.type === "travelled")
                             .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
-                        : locationData?.totalKm != null
-                          ? locationData.totalKm
-                          : (locationData?.segments ?? [])
-                              .filter((s: any) => s.type === "travelled")
-                              .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
                     ).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
