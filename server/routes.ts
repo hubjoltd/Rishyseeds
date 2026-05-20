@@ -2746,15 +2746,14 @@ export async function registerRoutes(
           // Overlay odometer from matching expense when trip fields are null
           let startMeterReading = t.startMeterReading;
           let endMeterReading   = t.endMeterReading;
-          if (!startMeterReading || !endMeterReading) {
-            const tripDate = t.startTime ? new Date(t.startTime).toISOString().slice(0, 10) : null;
-            const exp = tripDate ? allExps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer)) : null;
-            if (exp) {
-              if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
-              if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
-            }
-          }
-          return { ...t, startMeterReading, endMeterReading, visitsCount: visits.length + dashCheckins.length };
+          const tripDate = t.startTime ? new Date(t.startTime).toISOString().slice(0, 10) : null;
+          const exp = tripDate ? allExps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer || e.totalDistance)) : null;
+          if (!startMeterReading && exp?.startingOdometer) startMeterReading = exp.startingOdometer;
+          if (!endMeterReading   && exp?.endOdometer)      endMeterReading   = exp.endOdometer;
+          // Use expense totalDistance (odometer-based) as fallback for GPS totalKm
+          let totalKm: string | null = t.totalKm ? String(t.totalKm) : null;
+          if ((!totalKm || Number(totalKm) === 0) && exp?.totalDistance) totalKm = String(exp.totalDistance);
+          return { ...t, startMeterReading, endMeterReading, totalKm, visitsCount: visits.length + dashCheckins.length };
         })
       );
       res.json(tripsWithCounts);
@@ -2997,15 +2996,23 @@ export async function registerRoutes(
       // Overlay odometer from expense when trip fields are null
       let startMeterReading = trip.startMeterReading;
       let endMeterReading   = trip.endMeterReading;
-      if (!startMeterReading || !endMeterReading) {
-        const exps = await storage.getExpensesByEmployee(employeeId);
-        const exp  = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer));
-        if (exp) {
-          if (!startMeterReading && exp.startingOdometer) startMeterReading = exp.startingOdometer;
-          if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
-        }
+      const exps = await storage.getExpensesByEmployee(employeeId);
+      const matchExp = exps.find(e => e.expenseDate === tripDate && (e.startingOdometer || e.endOdometer || e.totalDistance));
+      if (!startMeterReading && matchExp?.startingOdometer) startMeterReading = matchExp.startingOdometer;
+      if (!endMeterReading   && matchExp?.endOdometer)      endMeterReading   = matchExp.endOdometer;
+
+      // Compute GPS-based totalKm from travelled segments; use as fallback when DB is null/zero.
+      // Also use expense totalDistance (odometer-based) as a fallback.
+      const gpsKm = gpsSegments
+        .filter((s: any) => s.type === "travelled")
+        .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0);
+      let totalKm: string | null = trip.totalKm ? String(trip.totalKm) : null;
+      if (!totalKm || Number(totalKm) === 0) {
+        if (gpsKm > 0) totalKm = gpsKm.toFixed(2);
+        else if (matchExp?.totalDistance) totalKm = String(matchExp.totalDistance);
       }
-      res.json({ ...trip, startMeterReading, endMeterReading, visits: allVisits, gpsSegments });
+
+      res.json({ ...trip, startMeterReading, endMeterReading, totalKm, visits: allVisits, gpsSegments });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
     }
@@ -3979,7 +3986,7 @@ export async function registerRoutes(
       // Link to active trip if employee has one
       let activeTripId: number | null = null;
       try {
-        const empTrips = await storage.getEmployeeTrips(empId);
+        const empTrips = await storage.getTripsByEmployee(empId);
         const activeTrip = empTrips.find(t => t.status === "started" || t.status === "in_progress");
         if (activeTrip) activeTripId = activeTrip.id;
       } catch (_) {}
