@@ -62,46 +62,48 @@ function buildOsrmWaypoints(
   clusters: Array<{ startIdx: number; endIdx: number; lat: number; lng: number }>,
   isCellular: boolean,
 ): Array<{ lat: number; lng: number }> {
+
+  if (isCellular) {
+    // For cellular GPS (50–200 m accuracy), feeding dense pings to OSRM route/v1 causes it to
+    // route to the nearest road for every scattered ping — including tiny side-street detours —
+    // inflating the total by several km.  Instead, use only the key anchor points:
+    //   trip start → stoppage centroids (clean averaged positions) → trip end
+    // OSRM then computes the road distance along the actual logical route without noise detours.
+    const anchors: Array<{ lat: number; lng: number }> = [];
+    if (points.length > 0)
+      anchors.push({ lat: Number(points[0].latitude), lng: Number(points[0].longitude) });
+    for (const c of clusters)
+      anchors.push({ lat: c.lat, lng: c.lng });
+    if (points.length > 1)
+      anchors.push({ lat: Number(points[points.length - 1].latitude), lng: Number(points[points.length - 1].longitude) });
+    // Drop adjacent duplicate points (start ≈ first stoppage, last ≈ last stoppage, etc.)
+    return anchors.filter((w, i) => {
+      if (i === 0) return true;
+      const prev = anchors[i - 1];
+      return Math.abs(w.lat - prev.lat) > 0.0001 || Math.abs(w.lng - prev.lng) > 0.0001;
+    });
+  }
+
+  // Satellite / WiFi — pings are accurate to 5–10 m, so dense waypoints work well.
   const waypoints: Array<{ lat: number; lng: number }> = [];
   let prevEnd = -1;
 
   const addTravelPings = (tPts: GpsPing[]) => {
     if (tPts.length < 1) return;
-    if (isCellular) {
-      // 1 representative ping per minute — same bin centroid approach as the frontend
-      const segStart = new Date(tPts[0].recordedAt as string).getTime();
-      const segEnd   = new Date(tPts[tPts.length - 1].recordedAt as string).getTime();
-      const BIN_MS   = 60_000;
-      for (let t = segStart; t <= segEnd + BIN_MS; t += BIN_MS) {
-        const bin = tPts.filter(p => {
-          const pt = new Date(p.recordedAt as string).getTime();
-          return pt >= t && pt < t + BIN_MS;
-        });
-        if (bin.length === 0) continue;
-        const cLat = bin.reduce((s, p) => s + Number(p.latitude), 0) / bin.length;
-        const cLng = bin.reduce((s, p) => s + Number(p.longitude), 0) / bin.length;
-        waypoints.push({ lat: cLat, lng: cLng });
-      }
-    } else {
-      // Satellite / WiFi — use all pings (sampled to 25 per segment to keep request small)
-      const step = Math.max(1, Math.ceil(tPts.length / 25));
-      tPts.filter((_, i) => i % step === 0 || i === tPts.length - 1).forEach(p =>
-        waypoints.push({ lat: Number(p.latitude), lng: Number(p.longitude) })
-      );
-    }
+    const step = Math.max(1, Math.ceil(tPts.length / 25));
+    tPts.filter((_, i) => i % step === 0 || i === tPts.length - 1).forEach(p =>
+      waypoints.push({ lat: Number(p.latitude), lng: Number(p.longitude) })
+    );
   };
 
   for (const cluster of clusters) {
-    // Travel pings before this stoppage
     const tStart = prevEnd < 0 ? 0 : prevEnd;
     const tPts   = points.slice(tStart, cluster.startIdx);
     if (tPts.length >= 1) addTravelPings(tPts);
-    // Stoppage centroid — vehicle definitely passed through here
     waypoints.push({ lat: cluster.lat, lng: cluster.lng });
     prevEnd = cluster.endIdx;
   }
 
-  // Travel pings after the last stoppage
   const tailStart = prevEnd < 0 ? 0 : prevEnd;
   const tailPts   = points.slice(tailStart);
   if (tailPts.length >= 1) addTravelPings(tailPts);
