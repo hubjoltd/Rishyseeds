@@ -471,15 +471,6 @@ function LiveMap({
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
   //
-  // True when the employee has no Doppler GPS speed (i.e. no dedicated GPS chip in motion mode).
-  // WiFi check removed: employees always use cellular while travelling; WiFi pings come from
-  // stationary stops (customer offices) and must not disable the 1-rep-ping/min filter.
-  // With isCellular=true, OSRM gets only clean centroid waypoints → no GPS zigzag on map.
-  const isCellular = useMemo(
-    () => !locationPoints.some(p => p.speed != null && Number(p.speed) > 0.5),
-    [locationPoints]
-  );
-
   const travelSegmentsPoints = useMemo(() => {
     const allSegs = segments ?? [];
     // Only use segments with meaningful distance — zero-distance segments are GPS drift
@@ -503,11 +494,14 @@ function LiveMap({
         new Date(p.recordedAt).getTime() <= segEnd
       );
 
-      if (isCellular) {
-        // CELLULAR (rural tower GPS): reduce zigzag by keeping 1 representative ping
-        // per minute — the ping closest to the bin centroid.  Feeding these ~N stable
-        // waypoints to OSRM yields a solid blue road line that follows the real route
-        // without the staircase detours caused by tower-switching noise.
+      // Always use centroid binning: pick the ping closest to each 60-second bin
+      // centroid as the representative waypoint sent to OSRM.  This works for every
+      // GPS type — cellular, WiFi, and Doppler-speed — because:
+      //   • Raw pings (even ±10 m) can place the employee off the road momentarily,
+      //     causing OSRM to route through a side road and add phantom detours.
+      //   • 1 clean rep-ping per minute gives OSRM ~N stable waypoints that stay on
+      //     the actual road without zigzag noise or brief off-road drift.
+      {
         const BIN_MS = 60_000;
         const repPings: [number, number][] = [];
         for (let t = segStart; t <= segEnd + BIN_MS; t += BIN_MS) {
@@ -526,15 +520,12 @@ function LiveMap({
           repPings.push([Number(best.latitude), Number(best.longitude)]);
         }
         pts = repPings;
-      } else {
-        // Satellite GPS or WiFi — pings are accurate enough for raw OSRM routing
-        pts = segPings.map(p => [Number(p.latitude), Number(p.longitude)]);
       }
 
       if (pts.length >= 2) result.push(pts);
     }
     return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
-  }, [locationPoints, segments, gpsPoints, isCellular]);
+  }, [locationPoints, segments, gpsPoints]);
 
   // Total travel point count across all segments — used to detect new data without re-snapping
   const totalTravelCount = useMemo(
