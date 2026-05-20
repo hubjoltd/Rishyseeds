@@ -2943,18 +2943,16 @@ export async function registerRoutes(
       }
       // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
       // Tower-switching zigzag inflates raw ping-to-ping by 2–3 km; centroid approach fixes that.
-      // Tortuosity factor is adaptive: LOW accuracy (±500 m) needs the MOST correction because
-      // sparse tower centroids skip road curvature; HIGH accuracy (±19 m) already traces the road
-      // precisely and needs the LEAST correction (just ~10% for road curves vs straight-line).
-      //   formula: 1.10 + 0.17 × clamp(avgAccuracy / 172, 0, 1)
-      //   at  ±19 m accuracy (very precise): ≈ 1.12  →  minimal road-curve correction ✓
-      //   at ±172 m accuracy (city):         = 1.27  →  16.7 km × 1.27 ≈ 21.2 km ✓
-      //   at ±500 m accuracy (rural):        = 1.27  →  matches prior correct calibration ✓
+      // Tortuosity factor is adaptive: city cellular (high positioning accuracy, curvy streets)
+      // needs a higher multiplier than rural cellular (low accuracy, straight highways).
+      //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
+      //   at ±172 m accuracy (city):  ≈ 1.27  →  16.7 km × 1.27 ≈ 21.2 km ✓
+      //   at ±500 m accuracy (rural): = 1.15  →   5.1 km × 1.15 ≈  5.9 km ✓
       const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
         !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
       const avgTripAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      const CELLULAR_TORTUOSITY = 1.10 + 0.17 * Math.min(1, avgTripAccuracy / 172);
+      const CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
       let prevCluster: { lat: number; lng: number } | null = null;
@@ -2987,24 +2985,11 @@ export async function registerRoutes(
         const tPts = points.slice(distStart);
         if (tPts.length >= 2) {
           const timeOffset = prevEnd >= 0 ? 1 : 0;
-          let distanceKm: number;
-          if (tripIsCellular && prevCluster) {
-            // Same centroid-to-centroid approach as inter-cluster segments:
-            // average the final pings as the "tail centroid" (destination).
-            // This avoids totalDistKm's raw bin-to-bin haversine which over-counts
-            // when high-accuracy GPS pings zigzag near the destination.
-            const tailPts = tPts.slice(-Math.min(tPts.length, 5));
-            const tailLat = tailPts.reduce((s, p) => s + Number(p.latitude), 0) / tailPts.length;
-            const tailLng = tailPts.reduce((s, p) => s + Number(p.longitude), 0) / tailPts.length;
-            distanceKm = haversineM(prevCluster.lat, prevCluster.lng, tailLat, tailLng) / 1000 * CELLULAR_TORTUOSITY;
-          } else {
-            distanceKm = totalDistKm(tPts);
-          }
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
             endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
-            distanceKm,
+            distanceKm: totalDistKm(tPts),
           });
         }
       }
@@ -4264,14 +4249,13 @@ export async function registerRoutes(
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
-      // Tortuosity: LOW accuracy needs MORE correction; HIGH accuracy needs LESS (road trace is precise).
-      //   formula: 1.10 + 0.17 × clamp(avgAccuracy / 172, 0, 1)
-      //   at  ±19 m: ≈ 1.12  |  at ±172 m: = 1.27  |  at ±500 m: = 1.27 (capped)
+      // Adaptive tortuosity: city cellular (accurate, curvy) gets higher factor than rural.
+      //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
       const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
         !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
       const avgDayAccuracy = points.reduce((s, p) =>
         s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      const DAY_CELLULAR_TORTUOSITY = 1.10 + 0.17 * Math.min(1, avgDayAccuracy / 172);
+      const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
       const segments: Segment[] = [];
       let prevEndIdx = -1;
       let prevClusterCentroid: { lat: number; lng: number } | null = null;
@@ -4315,22 +4299,11 @@ export async function registerRoutes(
         const travelPts = points.slice(distStart);
         if (travelPts.length >= 2) {
           const timeOffset = prevEndIdx >= 0 ? 1 : 0;
-          let distanceKm: number;
-          if (dayIsCellular && prevClusterCentroid) {
-            // Use centroid-to-centroid logic (same as inter-cluster segments) so that
-            // GPS zigzag near the destination doesn't inflate the tail segment distance.
-            const tailPts = travelPts.slice(-Math.min(travelPts.length, 5));
-            const tailLat = tailPts.reduce((s, p) => s + Number(p.latitude), 0) / tailPts.length;
-            const tailLng = tailPts.reduce((s, p) => s + Number(p.longitude), 0) / tailPts.length;
-            distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, tailLat, tailLng) / 1000 * DAY_CELLULAR_TORTUOSITY;
-          } else {
-            distanceKm = totalDistKm(travelPts);
-          }
           segments.push({
             type: "travelled",
             startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
             endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
-            distanceKm,
+            distanceKm: totalDistKm(travelPts),
           });
         }
       }
