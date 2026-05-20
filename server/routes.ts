@@ -2837,31 +2837,44 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── No Doppler speed: choose algorithm based on network type ──
-          // WiFi (city): dense AP coverage gives ±150-200 m accuracy — ping-to-ping
-          //   with a 50 m gate and 200 km/h speed cap is accurate (e.g. EMP003 = 19.37 km ✓).
-          // CELLULAR (rural): sparse towers cause 200 m–2 km zigzag staircase — adaptive
-          //   centroid binning eliminates tower-switching noise (e.g. EMP029 fixed ✓).
+          // ── No Doppler speed: both WiFi and Cellular use centroid binning ──
+          // Ping-to-ping overcounts when GPS accuracy is ±20-50 m because random
+          // noise easily exceeds the 50 m gate and accumulates as false distance.
+          // Centroid binning averages pings per 60 s window, cancelling out noise.
           const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
 
           if (isWifi) {
-            // ── WiFi GPS: ping-to-ping with noise gate + 1.10 tortuosity factor ──
-            // Haversine segments are straight-line, so they undercount actual road
-            // distance on curved city routes by ~8-10%.  A 1.10 multiplier corrects
-            // this (e.g. EMP003 Hyderabad: raw 19.37 km × 1.10 ≈ 21.2 km actual ✓).
-            const MIN_DIST_M = 50;   // ignore micro-drift between stationary pings
+            // ── WiFi GPS: 60-second centroid binning + 1.10 tortuosity ──
+            // WiFi typically has ±20-50 m accuracy. Grouping pings per minute gives
+            // stable centroids; centroid-to-centroid haversine closely tracks the
+            // actual road path. 100 km/h cap rejects any AP-switch position jumps.
+            const WIFI_BIN_MS = 60_000;
+            const MAX_WIFI_SPEED_MS = 27.8; // 100 km/h
             const WIFI_TORTUOSITY = 1.10;
-            let d = 0, last = 0;
-            for (let k = 1; k < pts.length; k++) {
-              const distM = haversineM(
-                Number(pts[last].latitude), Number(pts[last].longitude),
-                Number(pts[k].latitude),    Number(pts[k].longitude)
-              );
-              const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-              if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
-              if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            const wStartMs = new Date(pts[0].recordedAt).getTime();
+            const wEndMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
+            const wBins: { lat: number; lng: number; tMs: number }[] = [];
+            for (let t = wStartMs; t <= wEndMs + WIFI_BIN_MS; t += WIFI_BIN_MS) {
+              const bp = pts.filter(p => { const pt = new Date(p.recordedAt).getTime(); return pt >= t && pt < t + WIFI_BIN_MS; });
+              if (bp.length > 0) {
+                wBins.push({
+                  lat: bp.reduce((s, p) => s + Number(p.latitude), 0) / bp.length,
+                  lng: bp.reduce((s, p) => s + Number(p.longitude), 0) / bp.length,
+                  tMs: t + WIFI_BIN_MS / 2,
+                });
+              }
             }
-            return d * WIFI_TORTUOSITY;
+            if (wBins.length < 2) {
+              return haversineM(Number(pts[0].latitude), Number(pts[0].longitude), Number(pts[pts.length-1].latitude), Number(pts[pts.length-1].longitude)) / 1000;
+            }
+            let wd = 0;
+            for (let i = 1; i < wBins.length; i++) {
+              const distM = haversineM(wBins[i-1].lat, wBins[i-1].lng, wBins[i].lat, wBins[i].lng);
+              const dtSec = (wBins[i].tMs - wBins[i-1].tMs) / 1000;
+              if (dtSec > 0 && distM / dtSec > MAX_WIFI_SPEED_MS) continue; // AP jump
+              wd += distM / 1000;
+            }
+            return wd * WIFI_TORTUOSITY;
           }
 
           // ── CELLULAR GPS: adaptive centroid binning ──
@@ -4151,24 +4164,38 @@ export async function registerRoutes(
           }
           return d;
         } else {
-          // ── No Doppler speed: choose algorithm based on network type ──
+          // ── No Doppler speed: both WiFi and Cellular use centroid binning ──
           const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
 
           if (isWifi) {
-            // ── WiFi GPS: ping-to-ping + 1.10 tortuosity factor ──
-            const MIN_DIST_M = 50;
+            // ── WiFi GPS: 60-second centroid binning + 1.10 tortuosity ──
+            const WIFI_BIN_MS = 60_000;
+            const MAX_WIFI_SPEED_MS = 27.8; // 100 km/h
             const WIFI_TORTUOSITY = 1.10;
-            let d = 0, last = 0;
-            for (let k = 1; k < pts.length; k++) {
-              const distM = haversineM(
-                Number(pts[last].latitude), Number(pts[last].longitude),
-                Number(pts[k].latitude),    Number(pts[k].longitude)
-              );
-              const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-              if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
-              if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            const wStartMs = new Date(pts[0].recordedAt).getTime();
+            const wEndMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
+            const wBins: { lat: number; lng: number; tMs: number }[] = [];
+            for (let t = wStartMs; t <= wEndMs + WIFI_BIN_MS; t += WIFI_BIN_MS) {
+              const bp = pts.filter(p => { const pt = new Date(p.recordedAt).getTime(); return pt >= t && pt < t + WIFI_BIN_MS; });
+              if (bp.length > 0) {
+                wBins.push({
+                  lat: bp.reduce((s, p) => s + Number(p.latitude), 0) / bp.length,
+                  lng: bp.reduce((s, p) => s + Number(p.longitude), 0) / bp.length,
+                  tMs: t + WIFI_BIN_MS / 2,
+                });
+              }
             }
-            return d * WIFI_TORTUOSITY;
+            if (wBins.length < 2) {
+              return haversineM(Number(pts[0].latitude), Number(pts[0].longitude), Number(pts[pts.length-1].latitude), Number(pts[pts.length-1].longitude)) / 1000;
+            }
+            let wd = 0;
+            for (let i = 1; i < wBins.length; i++) {
+              const distM = haversineM(wBins[i-1].lat, wBins[i-1].lng, wBins[i].lat, wBins[i].lng);
+              const dtSec = (wBins[i].tMs - wBins[i-1].tMs) / 1000;
+              if (dtSec > 0 && distM / dtSec > MAX_WIFI_SPEED_MS) continue; // AP jump
+              wd += distM / 1000;
+            }
+            return wd * WIFI_TORTUOSITY;
           }
 
           // ── CELLULAR GPS: adaptive centroid binning ──
