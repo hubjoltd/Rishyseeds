@@ -2810,121 +2810,32 @@ export async function registerRoutes(
         const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
+      // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
+      // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
+      //   speed gate    : if Doppler speed available, require > 0.5 m/s
+      //   distance gate : if no speed, require >= 30 m (filters stationary noise)
+      //   teleport cap  : reject > 200 km/h (GPS glitch)
+      //   tower-jump cap: if no speed AND jump > 500 m, skip (cell tower switch)
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
-        const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
-        // Short segment with no Doppler speed = GPS drift that escaped the cluster
-        if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
-
-        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
-
-        if (hasConfirmedMovement) {
-          // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
-          const MIN_DIST_NO_SPEED_M = 50;
-          const MIN_GPS_SPEED_MS = 0.5;
-          let d = 0, last = 0;
-          for (let k = 1; k < pts.length; k++) {
-            const distM = haversineM(
-              Number(pts[last].latitude), Number(pts[last].longitude),
-              Number(pts[k].latitude),    Number(pts[k].longitude)
-            );
-            const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
-            const gpsSpeedMs = pts[k].speed != null ? Number(pts[k].speed) : 0;
-            const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
-            if (moving) { d += distM / 1000; last = k; }
-          }
-          return d;
-        } else {
-          // ── No Doppler speed: both WiFi and Cellular use centroid binning ──
-          // Ping-to-ping overcounts when GPS accuracy is ±20-50 m because random
-          // noise easily exceeds the 50 m gate and accumulates as false distance.
-          // Centroid binning averages pings per 60 s window, cancelling out noise.
-          const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
-
-          if (isWifi) {
-            // ── WiFi GPS: 60-second centroid binning + 1.10 tortuosity ──
-            // WiFi typically has ±20-50 m accuracy. Grouping pings per minute gives
-            // stable centroids; centroid-to-centroid haversine closely tracks the
-            // actual road path. 100 km/h cap rejects any AP-switch position jumps.
-            const WIFI_BIN_MS = 60_000;
-            const MAX_WIFI_SPEED_MS = 27.8; // 100 km/h
-            const WIFI_TORTUOSITY = 1.10;
-            const wStartMs = new Date(pts[0].recordedAt).getTime();
-            const wEndMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-            const wBins: { lat: number; lng: number; tMs: number }[] = [];
-            for (let t = wStartMs; t <= wEndMs + WIFI_BIN_MS; t += WIFI_BIN_MS) {
-              const bp = pts.filter(p => { const pt = new Date(p.recordedAt).getTime(); return pt >= t && pt < t + WIFI_BIN_MS; });
-              if (bp.length > 0) {
-                wBins.push({
-                  lat: bp.reduce((s, p) => s + Number(p.latitude), 0) / bp.length,
-                  lng: bp.reduce((s, p) => s + Number(p.longitude), 0) / bp.length,
-                  tMs: t + WIFI_BIN_MS / 2,
-                });
-              }
-            }
-            if (wBins.length < 2) {
-              return haversineM(Number(pts[0].latitude), Number(pts[0].longitude), Number(pts[pts.length-1].latitude), Number(pts[pts.length-1].longitude)) / 1000;
-            }
-            let wd = 0;
-            for (let i = 1; i < wBins.length; i++) {
-              const distM = haversineM(wBins[i-1].lat, wBins[i-1].lng, wBins[i].lat, wBins[i].lng);
-              const dtSec = (wBins[i].tMs - wBins[i-1].tMs) / 1000;
-              if (dtSec > 0 && distM / dtSec > MAX_WIFI_SPEED_MS) continue; // AP jump
-              wd += distM / 1000;
-            }
-            return wd * WIFI_TORTUOSITY;
-          }
-
-          // ── CELLULAR GPS: adaptive centroid binning ──
-          // Bin width scales with GPS accuracy so per-bin noise (σ/√N) stays small
-          // relative to real movement even when accuracy is ±500 m.
-          //   ±83 m  → 60 s bins   ±235 m → ~140 s bins   ±500 m → 300 s bins
-          const avgAccuracy = pts.reduce((s, p) =>
-            s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 0), 0) / pts.length;
-          const BIN_MS = avgAccuracy > 0
-            ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
-            : 60_000;
-          // 120 km/h (33.3 m/s) — realistic rural India ceiling for CELLULAR GPS.
-          // Lower than the satellite-GPS teleport cap (200 km/h) so cell-tower jumps
-          // (2–3 km in 1 min ≈ 134 km/h) are rejected before they inflate the total.
-          const MAX_CELLULAR_SPEED_MS = 33.3;
-          const startMs = new Date(pts[0].recordedAt).getTime();
-          const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-          // Store bin midpoint timestamp so the speed check uses the ACTUAL elapsed
-          // time between non-empty bins, not always BIN_MS (which is wrong when bins
-          // are skipped because there are no pings in that window).
-          const bins: { lat: number; lng: number; tMs: number }[] = [];
-          for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
-            const binPts = pts.filter(p => {
-              const pt = new Date(p.recordedAt).getTime();
-              return pt >= t && pt < t + BIN_MS;
-            });
-            if (binPts.length > 0) {
-              bins.push({
-                lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
-                lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
-                tMs: t + BIN_MS / 2,
-              });
-            }
-          }
-          if (bins.length < 2) {
-            // Segment shorter than one bin — straight-line start→end as best estimate
-            return haversineM(
-              Number(pts[0].latitude), Number(pts[0].longitude),
-              Number(pts[pts.length - 1].latitude), Number(pts[pts.length - 1].longitude)
-            ) / 1000;
-          }
-          let d = 0;
-          for (let i = 1; i < bins.length; i++) {
-            const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
-            const dtSec = (bins[i].tMs - bins[i - 1].tMs) / 1000;
-            if (dtSec > 0 && distM / dtSec > MAX_CELLULAR_SPEED_MS) continue; // tower jump
-            d += distM / 1000;
-          }
-          return d;
+        const MAX_SPEED_MS  = 55.6; // 200 km/h absolute cap
+        const MAX_NOSPEED_M = 500;  // cellular tower-jump guard
+        const MIN_DIST_M    = 30;   // minimum movement without speed data
+        const MIN_SPEED_MS  = 0.5;  // 1.8 km/h minimum Doppler speed
+        let d = 0, last = 0;
+        for (let k = 1; k < pts.length; k++) {
+          const distM = haversineM(
+            Number(pts[last].latitude), Number(pts[last].longitude),
+            Number(pts[k].latitude),    Number(pts[k].longitude)
+          );
+          const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+          if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
+          const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
+          if (!hasSpeed && distM > MAX_NOSPEED_M) continue; // tower jump
+          const moving = hasSpeed || distM >= MIN_DIST_M;
+          if (moving) { d += distM / 1000; last = k; }
         }
+        return d;
       }
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
@@ -2964,29 +2875,15 @@ export async function registerRoutes(
       // WiFi check removed: employees always use cellular while travelling.
       // WiFi pings come from stationary stops (customer offices etc.) and must
       // not disable the accurate centroid-to-centroid path for travel segments.
-      const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
-      const avgTripAccuracy = points.reduce((s, p) =>
-        s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      // K=0.05: urban ±36m → 1.20, rural ±500m → 1.15 (EMP029 calibration preserved ✓)
-      const CELLULAR_TORTUOSITY = 1.15 + 0.05 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
-      let prevCluster: { lat: number; lng: number } | null = null;
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
           const distStart = prevEnd < 0 ? 0 : prevEnd;
           const tPts = points.slice(distStart, cluster.startIdx);
           if (tPts.length >= 2) {
-            const timeOffset = prevEnd >= 0 ? 1 : 0; // skip overlap ping for label time
-            let distanceKm: number;
-            if (tripIsCellular && prevCluster) {
-              distanceKm = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng) / 1000 * CELLULAR_TORTUOSITY;
-            } else {
-              // slice(timeOffset) excludes the overlap ping (last ping of the previous
-              // stoppage cluster that is shared as tPts[0]).  That ping has GPS drift
-              // up to STOPPAGE_RADIUS_M and must not be counted as movement.
-              distanceKm = totalDistKm(tPts.slice(timeOffset));
-            }
+            const timeOffset = prevEnd >= 0 ? 1 : 0;
+            const distanceKm = totalDistKm(tPts.slice(timeOffset));
             gpsSegments.push({
               type: "travelled",
               startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
@@ -2997,24 +2894,13 @@ export async function registerRoutes(
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
-        prevCluster = cluster;
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
         const distStart = prevEnd < 0 ? 0 : prevEnd;
         const tPts = points.slice(distStart);
         if (tPts.length >= 2) {
           const timeOffset = prevEnd >= 0 ? 1 : 0;
-          let tailDistKm: number;
-          if (tripIsCellular && prevCluster) {
-            // Tail segment: prevCluster centroid → destination centroid (last 5 pings avg)
-            // Same approach as inter-cluster so tortuosity is applied consistently.
-            const lastN = tPts.slice(-Math.min(5, tPts.length));
-            const dLat = lastN.reduce((s, p) => s + Number(p.latitude), 0) / lastN.length;
-            const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
-            tailDistKm = haversineM(prevCluster.lat, prevCluster.lng, dLat, dLng) / 1000 * CELLULAR_TORTUOSITY;
-          } else {
-            tailDistKm = totalDistKm(tPts.slice(timeOffset));
-          }
+          const tailDistKm = totalDistKm(tPts.slice(timeOffset));
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
@@ -4155,104 +4041,28 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
 
+      // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
+      // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const spanMs = new Date(pts[pts.length - 1].recordedAt).getTime() - new Date(pts[0].recordedAt).getTime();
-        const hasConfirmedMovement = pts.some(p => p.speed != null && Number(p.speed) > 0.5);
-        if (!hasConfirmedMovement && spanMs < STOPPAGE_MIN_SECS * 1000) return 0;
-
-        const MAX_SPEED_MS = 55.6; // 200 km/h — GPS teleport rejection
-
-        if (hasConfirmedMovement) {
-          // ── Satellite GPS with Doppler speed: ping-to-ping Trackolap-style ──
-          const MIN_DIST_NO_SPEED_M = 50;
-          const MIN_GPS_SPEED_MS = 0.5;
-          let d = 0, last = 0;
-          for (let i = 1; i < pts.length; i++) {
-            const distM = haversineM(
-              Number(pts[last].latitude), Number(pts[last].longitude),
-              Number(pts[i].latitude),    Number(pts[i].longitude)
-            );
-            const dtSec = (new Date(pts[i].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue; // teleport
-            const gpsSpeedMs = pts[i].speed != null ? Number(pts[i].speed) : 0;
-            const moving = gpsSpeedMs > MIN_GPS_SPEED_MS ? true : distM >= MIN_DIST_NO_SPEED_M;
-            if (moving) { d += distM / 1000; last = i; }
-          }
-          return d;
-        } else {
-          // ── No Doppler speed: both WiFi and Cellular use centroid binning ──
-          const isWifi = pts.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
-
-          if (isWifi) {
-            // ── WiFi GPS: 60-second centroid binning + 1.10 tortuosity ──
-            const WIFI_BIN_MS = 60_000;
-            const MAX_WIFI_SPEED_MS = 27.8; // 100 km/h
-            const WIFI_TORTUOSITY = 1.10;
-            const wStartMs = new Date(pts[0].recordedAt).getTime();
-            const wEndMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-            const wBins: { lat: number; lng: number; tMs: number }[] = [];
-            for (let t = wStartMs; t <= wEndMs + WIFI_BIN_MS; t += WIFI_BIN_MS) {
-              const bp = pts.filter(p => { const pt = new Date(p.recordedAt).getTime(); return pt >= t && pt < t + WIFI_BIN_MS; });
-              if (bp.length > 0) {
-                wBins.push({
-                  lat: bp.reduce((s, p) => s + Number(p.latitude), 0) / bp.length,
-                  lng: bp.reduce((s, p) => s + Number(p.longitude), 0) / bp.length,
-                  tMs: t + WIFI_BIN_MS / 2,
-                });
-              }
-            }
-            if (wBins.length < 2) {
-              return haversineM(Number(pts[0].latitude), Number(pts[0].longitude), Number(pts[pts.length-1].latitude), Number(pts[pts.length-1].longitude)) / 1000;
-            }
-            let wd = 0;
-            for (let i = 1; i < wBins.length; i++) {
-              const distM = haversineM(wBins[i-1].lat, wBins[i-1].lng, wBins[i].lat, wBins[i].lng);
-              const dtSec = (wBins[i].tMs - wBins[i-1].tMs) / 1000;
-              if (dtSec > 0 && distM / dtSec > MAX_WIFI_SPEED_MS) continue; // AP jump
-              wd += distM / 1000;
-            }
-            return wd * WIFI_TORTUOSITY;
-          }
-
-          // ── CELLULAR GPS: adaptive centroid binning ──
-          const avgAccuracy = pts.reduce((s, p) =>
-            s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 0), 0) / pts.length;
-          const BIN_MS = avgAccuracy > 0
-            ? Math.max(60_000, Math.min(300_000, Math.round(avgAccuracy * 600)))
-            : 60_000;
-          const MAX_CELLULAR_SPEED_MS = 33.3; // 120 km/h — rejects cell-tower jumps
-          const startMs = new Date(pts[0].recordedAt).getTime();
-          const endMs   = new Date(pts[pts.length - 1].recordedAt).getTime();
-          const bins: { lat: number; lng: number; tMs: number }[] = [];
-          for (let t = startMs; t <= endMs + BIN_MS; t += BIN_MS) {
-            const binPts = pts.filter(p => {
-              const pt = new Date(p.recordedAt).getTime();
-              return pt >= t && pt < t + BIN_MS;
-            });
-            if (binPts.length > 0) {
-              bins.push({
-                lat: binPts.reduce((s, p) => s + Number(p.latitude), 0) / binPts.length,
-                lng: binPts.reduce((s, p) => s + Number(p.longitude), 0) / binPts.length,
-                tMs: t + BIN_MS / 2,
-              });
-            }
-          }
-          if (bins.length < 2) {
-            return haversineM(
-              Number(pts[0].latitude), Number(pts[0].longitude),
-              Number(pts[pts.length - 1].latitude), Number(pts[pts.length - 1].longitude)
-            ) / 1000;
-          }
-          let d = 0;
-          for (let i = 1; i < bins.length; i++) {
-            const distM = haversineM(bins[i - 1].lat, bins[i - 1].lng, bins[i].lat, bins[i].lng);
-            const dtSec = (bins[i].tMs - bins[i - 1].tMs) / 1000;
-            if (dtSec > 0 && distM / dtSec > MAX_CELLULAR_SPEED_MS) continue; // tower jump
-            d += distM / 1000;
-          }
-          return d;
+        const MAX_SPEED_MS  = 55.6; // 200 km/h absolute cap
+        const MAX_NOSPEED_M = 500;  // cellular tower-jump guard
+        const MIN_DIST_M    = 30;   // minimum movement without speed data
+        const MIN_SPEED_MS  = 0.5;  // 1.8 km/h minimum Doppler speed
+        let d = 0, last = 0;
+        for (let k = 1; k < pts.length; k++) {
+          const distM = haversineM(
+            Number(pts[last].latitude), Number(pts[last].longitude),
+            Number(pts[k].latitude),    Number(pts[k].longitude)
+          );
+          const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+          if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+          const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
+          if (!hasSpeed && distM > MAX_NOSPEED_M) continue;
+          const moving = hasSpeed || distM >= MIN_DIST_M;
+          if (moving) { d += distM / 1000; last = k; }
         }
+        return d;
       }
 
       type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
@@ -4292,32 +4102,16 @@ export async function registerRoutes(
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
-      // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
-      // Adaptive tortuosity: city cellular (accurate, curvy) gets higher factor than rural.
-      //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
-      // WiFi check removed: employees always use cellular while travelling.
-      const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5);
-      const avgDayAccuracy = points.reduce((s, p) =>
-        s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
-      // K=0.05: urban ±36m → 1.20, rural ±500m → 1.15 (EMP029 calibration preserved ✓)
-      const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.05 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
       const segments: Segment[] = [];
       let prevEndIdx = -1;
-      let prevClusterCentroid: { lat: number; lng: number } | null = null;
 
       for (const cluster of clusters) {
-        // Travel segment before this stoppage
         if (cluster.startIdx > prevEndIdx + 1) {
           const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
           const travelPts = points.slice(distStart, cluster.startIdx);
           if (travelPts.length >= 2) {
             const timeOffset = prevEndIdx >= 0 ? 1 : 0;
-            let distanceKm: number;
-            if (dayIsCellular && prevClusterCentroid) {
-              distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, cluster.lat, cluster.lng) / 1000 * DAY_CELLULAR_TORTUOSITY;
-            } else {
-              distanceKm = totalDistKm(travelPts.slice(timeOffset));
-            }
+            const distanceKm = totalDistKm(travelPts.slice(timeOffset));
             segments.push({
               type: "travelled",
               startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
@@ -4334,7 +4128,6 @@ export async function registerRoutes(
           lat: cluster.lat,
           lng: cluster.lng,
         });
-        prevClusterCentroid = cluster;
         prevEndIdx = cluster.endIdx;
       }
 
@@ -4344,15 +4137,7 @@ export async function registerRoutes(
         const travelPts = points.slice(distStart);
         if (travelPts.length >= 2) {
           const timeOffset = prevEndIdx >= 0 ? 1 : 0;
-          let tailDistKm: number;
-          if (dayIsCellular && prevClusterCentroid) {
-            const lastN = travelPts.slice(-Math.min(5, travelPts.length));
-            const dLat = lastN.reduce((s, p) => s + Number(p.latitude), 0) / lastN.length;
-            const dLng = lastN.reduce((s, p) => s + Number(p.longitude), 0) / lastN.length;
-            tailDistKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, dLat, dLng) / 1000 * DAY_CELLULAR_TORTUOSITY;
-          } else {
-            tailDistKm = totalDistKm(travelPts.slice(timeOffset));
-          }
+          const tailDistKm = totalDistKm(travelPts.slice(timeOffset));
           segments.push({
             type: "travelled",
             startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
