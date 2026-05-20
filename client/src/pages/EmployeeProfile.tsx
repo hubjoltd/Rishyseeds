@@ -542,29 +542,17 @@ function LiveMap({
     [travelSegmentsPoints]
   );
 
-  // Average GPS accuracy across all location points — used to set OSRM match radius.
-  // For satellite GPS: ~20–50 m.  WiFi: ~50–150 m.  Cellular: ~100–300 m.
-  const avgAccuracyM = useMemo(() => {
-    const pts = locationPoints.filter(p => p.accuracy != null && Number(p.accuracy) > 0);
-    if (pts.length === 0) return 50;
-    return pts.reduce((s, p) => s + Number(p.accuracy), 0) / pts.length;
-  }, [locationPoints]);
-
   // Snap route segments to roads via OSRM for all employee types.
   useEffect(() => {
     // All employee types (satellite, WiFi, CELLULAR) now use OSRM for solid blue road lines.
-    // Cellular employees: route/v1 with all 1-per-min rep-pings as waypoints (most accurate).
-    // Satellite/WiFi: map-match first with accuracy-based radius, then fall back to route.
+    // Cellular employees use filtered representative pings (1/min) so OSRM follows the
+    // actual road without zigzag or false highway detours.
     if (totalTravelCount < 2) { setSnappedSegments([]); return; }
     if (totalTravelCount === lastSnapCount.current) return; // no new points
     let cancelled = false;
     setSnapping(true);
     // Snap each segment separately so there are no connecting lines between segments
-    Promise.all(
-      travelSegmentsPoints.map(seg =>
-        seg.length >= 2 ? osrmSnap(seg, isCellular, avgAccuracyM) : Promise.resolve([])
-      )
-    ).then(results => {
+    Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve([]))).then(results => {
       if (!cancelled) {
         setSnappedSegments(results);
         setSnapping(false);
@@ -572,7 +560,7 @@ function LiveMap({
       }
     });
     return () => { cancelled = true; };
-  }, [totalTravelCount, isCellular, avgAccuracyM]);
+  }, [totalTravelCount]);
 
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
@@ -789,32 +777,28 @@ function splitTrackAtGaps(
  *  - If match fails/times out: fall back to /route/v1
  *  - If route also fails: return raw GPS points
  */
-// isCellular: when true, GPS accuracy is ±100–300 m (rural tower), so we:
-//   1. Skip map-matching (50 m radius would reject all points)
-//   2. Route with ALL representative pings as waypoints (1/min centroids are clean)
-// When false (satellite/WiFi): try map-matching with tight 50 m radius first.
-async function osrmSnap(points: [number, number][], isCellular = false, avgAccuracyM = 50): Promise<[number, number][]> {
+async function osrmSnap(points: [number, number][]): Promise<[number, number][]> {
   if (points.length < 2) return points;
 
   const geoToLeaflet = (coords: [number, number][]): [number, number][] =>
     coords.map(([lng, lat]) => [lat, lng]);
 
-  const fetchWithTimeout = async (url: string, ms = 12000): Promise<Response> => {
+  const fetchWithTimeout = async (url: string, ms = 10000): Promise<Response> => {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), ms);
     try { return await fetch(url, { signal: ctrl.signal }); }
     finally { clearTimeout(t); }
   };
 
-  // ── Route/v1: road route through sampled waypoints ──
-  // Uses up to 100 waypoints — covers full trip without skipping key turns.
+  // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
   const tryRoute = async (pts: [number, number][]): Promise<[number, number][] | null> => {
     try {
-      const step = Math.max(1, Math.ceil(pts.length / 100));
+      // Sample to max 25 waypoints (route endpoint works best with fewer, key waypoints)
+      const step = Math.max(1, Math.ceil(pts.length / 25));
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
       const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
-      const res = await fetchWithTimeout(url, 12000);
+      const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
       const data = await res.json();
       if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
@@ -823,19 +807,15 @@ async function osrmSnap(points: [number, number][], isCellular = false, avgAccur
     } catch { return null; }
   };
 
-  // ── Match/v1: map-match a dense GPS trace to roads ──
-  // radius is set per-point from actual GPS accuracy so OSRM can find the road
-  // even when accuracy is poor (±150 m cellular) vs good (±20 m satellite).
-  const tryMatch = async (pts: [number, number][], radiusM: number): Promise<[number, number][] | null> => {
+  // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
+  const tryMatch = async (pts: [number, number][]): Promise<[number, number][] | null> => {
     try {
-      const step = Math.max(1, Math.ceil(pts.length / 100));
+      const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      // Clamp radius: min 50 m (OSRM default), max 500 m
-      const r = Math.min(500, Math.max(50, Math.round(radiusM)));
-      const radiuses = sample.map(() => String(r)).join(";");
+      const radiuses = sample.map(() => "50").join(";");
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
-      const res = await fetchWithTimeout(url, 12000);
+      const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
       const data = await res.json();
       if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return null;
@@ -848,18 +828,9 @@ async function osrmSnap(points: [number, number][], isCellular = false, avgAccur
     } catch { return null; }
   };
 
-  if (isCellular) {
-    // Cellular (1 rep-ping/min) → route only.
-    // match/v1 would need ≥150 m radius and still risks snapping to a parallel road.
-    // route/v1 through all 1-per-minute centroids already follows the correct road.
-    const routed = await tryRoute(points);
-    return routed ?? points;
-  }
-
-  // Satellite / WiFi — dense, accurate pings.
-  // Try map-matching first (most accurate); fall back to routing.
+  // Dense GPS → try match first, fall back to route; Sparse → go straight to route
   if (points.length >= 15) {
-    const matched = await tryMatch(points, avgAccuracyM);
+    const matched = await tryMatch(points);
     if (matched) return matched;
   }
   const routed = await tryRoute(points);
