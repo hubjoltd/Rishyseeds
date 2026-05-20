@@ -2911,12 +2911,17 @@ export async function registerRoutes(
         } else { ci++; }
       }
       // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
-      // WiFi employees (city) have dense AP coverage — their ping-to-ping is accurate
-      // and the original algorithm gives correct results (e.g. 19.37 km city route).
-      // CELLULAR employees (rural) have sparse tower coverage — zigzag staircase from
-      // tower switching inflates ping-to-ping by 2–3 km; centroid approach fixes that.
+      // Tower-switching zigzag inflates raw ping-to-ping by 2–3 km; centroid approach fixes that.
+      // Tortuosity factor is adaptive: city cellular (high positioning accuracy, curvy streets)
+      // needs a higher multiplier than rural cellular (low accuracy, straight highways).
+      //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
+      //   at ±172 m accuracy (city):  ≈ 1.27  →  16.7 km × 1.27 ≈ 21.2 km ✓
+      //   at ±500 m accuracy (rural): = 1.15  →   5.1 km × 1.15 ≈  5.9 km ✓
       const tripIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
         !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+      const avgTripAccuracy = points.reduce((s, p) =>
+        s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
+      const CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgTripAccuracy) / 350));
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
       let prevCluster: { lat: number; lng: number } | null = null;
@@ -2926,13 +2931,9 @@ export async function registerRoutes(
           const tPts = points.slice(distStart, cluster.startIdx);
           if (tPts.length >= 2) {
             const timeOffset = prevEnd >= 0 ? 1 : 0; // skip overlap ping for label time
-            // CELLULAR with a known previous centroid: distance = straight-line between
-            // the two stable cluster centroids, multiplied by 1.15 to approximate road
-            // distance (tortuosity factor for rural Indian roads).
-            // This eliminates the 2-3 km staircase overcounting from cell-tower drift.
             let distanceKm: number;
             if (tripIsCellular && prevCluster) {
-              distanceKm = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng) / 1000 * 1.15;
+              distanceKm = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng) / 1000 * CELLULAR_TORTUOSITY;
             } else {
               distanceKm = totalDistKm(tPts);
             }
@@ -4206,10 +4207,13 @@ export async function registerRoutes(
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       // For CELLULAR GPS (no Doppler speed, non-WiFi) use centroid-to-centroid distance.
-      // WiFi employees in cities have dense AP coverage — ping-to-ping is accurate for them.
-      // CELLULAR employees in rural areas have sparse tower coverage — centroid approach needed.
+      // Adaptive tortuosity: city cellular (accurate, curvy) gets higher factor than rural.
+      //   formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
       const dayIsCellular = !points.some(p => p.speed != null && Number(p.speed) > 0.5) &&
         !points.some(p => p.networkType != null && String(p.networkType).toLowerCase() === 'wifi');
+      const avgDayAccuracy = points.reduce((s, p) =>
+        s + (p.accuracy != null && Number(p.accuracy) > 0 ? Number(p.accuracy) : 400), 0) / points.length;
+      const DAY_CELLULAR_TORTUOSITY = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgDayAccuracy) / 350));
       const segments: Segment[] = [];
       let prevEndIdx = -1;
       let prevClusterCentroid: { lat: number; lng: number } | null = null;
@@ -4223,8 +4227,7 @@ export async function registerRoutes(
             const timeOffset = prevEndIdx >= 0 ? 1 : 0;
             let distanceKm: number;
             if (dayIsCellular && prevClusterCentroid) {
-              // Centroid-to-centroid straight-line × 1.15 road tortuosity factor
-              distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, cluster.lat, cluster.lng) / 1000 * 1.15;
+              distanceKm = haversineM(prevClusterCentroid.lat, prevClusterCentroid.lng, cluster.lat, cluster.lng) / 1000 * DAY_CELLULAR_TORTUOSITY;
             } else {
               distanceKm = totalDistKm(travelPts);
             }
