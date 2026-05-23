@@ -390,13 +390,11 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — red dashed lines where GPS tracking was lost */}
+      {/* Signal-drop gaps — solid red route lines (same weight as blue route) */}
       {signalGapLines.map((gap, i) => (
         <Fragment key={`gap-${i}`}>
-          <Polyline
-            positions={gap.path}
-            pathOptions={{ color: "#ef4444", weight: 4, opacity: 0.9, dashArray: "10 8", lineCap: "round", lineJoin: "round" }}
-          >
+          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 150 }}>
                 <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
@@ -665,7 +663,7 @@ function LiveMap({
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500"/><span>Stoppage</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block w-6 border-t-2 border-dashed border-red-500" style={{ height: 0 }}/>
+          <span className="inline-block w-6 h-[4px] rounded" style={{ background: "#ef4444" }}/>
           <span className="text-red-600 font-medium">Signal Lost</span>
         </div>
       </div>
@@ -972,13 +970,11 @@ function PlaybackMapInner({
         <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — red dashed lines where GPS tracking was lost */}
+      {/* Signal-drop gaps — solid red route lines (same weight as blue route) */}
       {signalGapLines.map((gap, i) => (
         <Fragment key={`pb-gap-${i}`}>
-          <Polyline
-            positions={gap.path}
-            pathOptions={{ color: "#ef4444", weight: 4, opacity: 0.9, dashArray: "10 8", lineCap: "round", lineJoin: "round" }}
-          >
+          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 150 }}>
                 <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
