@@ -22,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserCheck, Clock, MapPin, Pencil, Trash2, Loader2 } from "lucide-react";
+import { UserCheck, Clock, MapPin, Pencil, Trash2, Loader2, Users, LogIn, LogOut, UserX } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthToken } from "@/lib/queryClient";
@@ -65,12 +65,20 @@ export default function Attendance() {
     return emp ? emp.fullName : `EMP-${empId}`;
   };
 
+  const records = (attendanceData as AttendanceRecord[] || []);
+  const allEmployees = (employees as Employee[] || []);
+  const totalEmployees = allEmployees.length;
+  const punchedInOnly = records.filter(r => r.checkIn && !r.checkOut).length;
+  const punchedOut = records.filter(r => r.checkIn && r.checkOut).length;
+  const withCheckIn = records.filter(r => r.checkIn).length;
+  const notPunched = Math.max(0, totalEmployees - withCheckIn);
+
   const updateMutation = useMutation({
-    mutationFn: async ({ id, checkOut }: { id: number; checkOut: string | null }) => {
+    mutationFn: async ({ id, body }: { id: number; body: Record<string, string | null> }) => {
       const res = await fetch(`/api/attendance/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ checkOut: checkOut ?? "" }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -95,19 +103,77 @@ export default function Attendance() {
 
   const handleSave = () => {
     if (!editRecord) return;
-    updateMutation.mutate({ id: editRecord.id, checkOut: editCheckOut || null });
+    updateMutation.mutate({ id: editRecord.id, body: { checkOut: editCheckOut || "" } });
   };
 
   const handleRemovePunchOut = () => {
     if (!editRecord) return;
-    updateMutation.mutate({ id: editRecord.id, checkOut: null });
+    updateMutation.mutate({
+      id: editRecord.id,
+      body: {
+        checkOut: null,
+        checkOutLatitude: null,
+        checkOutLongitude: null,
+        checkOutLocation: null,
+      },
+    });
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in">
+    <div className="space-y-6 animate-in fade-in">
       <div>
         <h2 className="text-3xl font-bold font-display text-primary">Attendance</h2>
         <p className="text-muted-foreground">Daily attendance logs</p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-blue-50">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Employees</p>
+              <p className="text-2xl font-bold text-foreground" data-testid="stat-total-employees">{totalEmployees}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-green-50">
+              <LogIn className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Punched In</p>
+              <p className="text-2xl font-bold text-green-600" data-testid="stat-punched-in">{punchedInOnly}</p>
+              <p className="text-[10px] text-muted-foreground">checked in, not out</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-purple-50">
+              <LogOut className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Punched Out</p>
+              <p className="text-2xl font-bold text-purple-600" data-testid="stat-punched-out">{punchedOut}</p>
+              <p className="text-[10px] text-muted-foreground">completed day</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-red-50">
+              <UserX className="w-5 h-5 text-red-500" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Not Punched</p>
+              <p className="text-2xl font-bold text-red-500" data-testid="stat-not-punched">{notPunched}</p>
+              <p className="text-[10px] text-muted-foreground">no check-in yet</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid md:grid-cols-[300px_1fr] gap-8">
@@ -149,10 +215,10 @@ export default function Attendance() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={8} className="text-center">Loading...</TableCell></TableRow>
-                ) : attendanceData?.length === 0 ? (
+                ) : records.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No attendance records for this date.</TableCell></TableRow>
                 ) : (
-                  (attendanceData as AttendanceRecord[] || []).map((record) => (
+                  records.map((record) => (
                     <TableRow key={record.id}>
                       <TableCell className="font-medium">{getEmployeeName(record.employeeId)}</TableCell>
                       <TableCell>

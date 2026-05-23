@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, ZoomControl, useMap } from "react-leaflet";
+import L from "leaflet";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -113,249 +115,223 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
-declare global { interface Window { __GMAPS_KEY__?: string; } }
+// OSRM road-snap helper for trips map
+async function tripOsrmSnap(points: [number, number][]): Promise<[number, number][]> {
+  if (points.length < 2) return points;
+  try {
+    const step = Math.max(1, Math.ceil(points.length / 25));
+    const sample = points.filter((_, i) => i % step === 0 || i === points.length - 1);
+    const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) return points;
+      const data = await res.json();
+      if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return points;
+      return data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number]);
+    } catch { clearTimeout(t); return points; }
+  } catch { return points; }
+}
 
-let googleMapsLoaded = false;
-let googleMapsLoading = false;
-const googleMapsCallbacks: Array<() => void> = [];
+function TripMapInner({ trip, locationPoints, isActive, snappedTrail, snappedGaps }: {
+  trip: TripDetail;
+  locationPoints: { lat: number; lng: number; recordedAt?: string }[];
+  isActive: boolean;
+  snappedTrail: [number, number][];
+  snappedGaps: { path: [number, number][]; gapMins: number }[];
+}) {
+  const map = useMap();
+  const fitted = useRef(false);
 
-function loadGoogleMaps(callback: () => void) {
-  if (googleMapsLoaded) { callback(); return; }
-  googleMapsCallbacks.push(callback);
-  if (googleMapsLoading) return;
-  googleMapsLoading = true;
-  const script = document.createElement("script");
-  const key = window.__GMAPS_KEY__ || "";
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
-  script.async = true;
-  script.onload = () => {
-    googleMapsLoaded = true;
-    googleMapsLoading = false;
-    googleMapsCallbacks.forEach(cb => cb());
-    googleMapsCallbacks.length = 0;
-  };
-  document.head.appendChild(script);
+  useEffect(() => {
+    setTimeout(() => map.invalidateSize(), 100);
+  }, [map]);
+
+  useEffect(() => {
+    if (fitted.current) return;
+    const all: [number, number][] = [];
+    if (trip.startLatitude && trip.startLongitude) all.push([Number(trip.startLatitude), Number(trip.startLongitude)]);
+    locationPoints.forEach(p => { if (p.lat && p.lng) all.push([p.lat, p.lng]); });
+    (trip.visits || []).forEach(v => {
+      if (v.punchInLatitude && v.punchInLongitude) all.push([Number(v.punchInLatitude), Number(v.punchInLongitude)]);
+      if (v.punchOutLatitude && v.punchOutLongitude) all.push([Number(v.punchOutLatitude), Number(v.punchOutLongitude)]);
+    });
+    if (trip.endLatitude && trip.endLongitude) all.push([Number(trip.endLatitude), Number(trip.endLongitude)]);
+    if (all.length > 1) {
+      map.fitBounds(L.latLngBounds(all.map(c => L.latLng(c[0], c[1]))), { padding: [40, 40] });
+      fitted.current = true;
+    } else if (all.length === 1) {
+      map.setView(all[0], 15);
+      fitted.current = true;
+    }
+  });
+
+  const gpsPoints = locationPoints.filter(p => p.lat && p.lng).map(p => [p.lat, p.lng] as [number, number]);
+  const displayTrail = snappedTrail.length > 1 ? snappedTrail : gpsPoints;
+
+  // Signal gaps for fallback (when snappedGaps not yet computed)
+  const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  const rawGapLines = useMemo(() => {
+    const valid = locationPoints.filter(p => p.lat && p.lng && p.recordedAt);
+    const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < valid.length; i++) {
+      const g = new Date(valid[i].recordedAt!).getTime() - new Date(valid[i - 1].recordedAt!).getTime();
+      if (g > SIGNAL_GAP_MS) {
+        gaps.push({ path: [[valid[i - 1].lat, valid[i - 1].lng], [valid[i].lat, valid[i].lng]], gapMins: Math.round(g / 60000) });
+      }
+    }
+    return gaps;
+  }, [locationPoints]);
+
+  const startIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text></svg>`,
+    className: "", iconSize: [36, 52] as [number, number], iconAnchor: [18, 52] as [number, number],
+  });
+  const endIcon = L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text></svg>`,
+    className: "", iconSize: [36, 52] as [number, number], iconAnchor: [18, 52] as [number, number],
+  });
+  const liveIcon = L.divIcon({
+    html: `<div style="width:38px;height:38px;border-radius:50%;background:#1d4ed8;border:3px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.35)"><svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`,
+    className: "", iconSize: [38, 38] as [number, number], iconAnchor: [19, 19] as [number, number],
+  });
+
+  const gapLinesToRender = snappedGaps.length > 0 ? snappedGaps : rawGapLines;
+
+  return (
+    <>
+      <TileLayer
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        subdomains={["a", "b", "c", "d"]}
+        attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
+        maxZoom={20}
+      />
+
+      {/* GPS trail — blue road-snapped (dashed if not yet snapped) */}
+      {displayTrail.length > 1 && (
+        <>
+          <Polyline positions={displayTrail} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={displayTrail} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round", dashArray: snappedTrail.length > 1 ? undefined : "8 6" }} />
+        </>
+      )}
+
+      {/* Signal gap lines — red road-snapped */}
+      {gapLinesToRender.map((gap, i) => (
+        <Fragment key={`gap-${i}`}>
+          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 150 }}>
+                <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
+                <span style={{ fontSize: 12 }}>No GPS for <b>{gap.gapMins} min{gap.gapMins !== 1 ? "s" : ""}</b></span><br />
+                <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
+              </div>
+            </Popup>
+          </Polyline>
+        </Fragment>
+      ))}
+
+      {/* START marker */}
+      {trip.startLatitude && trip.startLongitude && (
+        <Marker position={[Number(trip.startLatitude), Number(trip.startLongitude)]} icon={startIcon} zIndexOffset={200}>
+          <Popup><div style={{ fontSize: 13 }}><b style={{ color: "#15803d" }}>▶ Trip Start</b>{trip.startLocationName ? <><br /><span style={{ fontSize: 11, color: "#555" }}>{trip.startLocationName}</span></> : null}</div></Popup>
+        </Marker>
+      )}
+
+      {/* END marker */}
+      {trip.endLatitude && trip.endLongitude && (
+        <Marker position={[Number(trip.endLatitude), Number(trip.endLongitude)]} icon={endIcon} zIndexOffset={200}>
+          <Popup><div style={{ fontSize: 13 }}><b style={{ color: "#dc2626" }}>⬛ Trip End</b>{trip.endLocationName ? <><br /><span style={{ fontSize: 11, color: "#555" }}>{trip.endLocationName}</span></> : null}</div></Popup>
+        </Marker>
+      )}
+
+      {/* Visit markers — blue check-in, purple check-out */}
+      {(trip.visits || []).map((v, i) => (
+        <Fragment key={`visit-${v.id}`}>
+          {v.punchInLatitude && v.punchInLongitude && (
+            <CircleMarker center={[Number(v.punchInLatitude), Number(v.punchInLongitude)]} radius={8} pathOptions={{ color: "#fff", weight: 2.5, fillColor: "#2563eb", fillOpacity: 1 }}>
+              <Popup><div style={{ minWidth: 130, fontSize: 12 }}><b>Visit {i + 1} Check-In</b>{v.punchInLocationName ? <><br /><span style={{ fontSize: 11, color: "#555" }}>{v.punchInLocationName}</span></> : null}</div></Popup>
+            </CircleMarker>
+          )}
+          {v.punchOutLatitude && v.punchOutLongitude && (
+            <CircleMarker center={[Number(v.punchOutLatitude), Number(v.punchOutLongitude)]} radius={8} pathOptions={{ color: "#fff", weight: 2.5, fillColor: "#7c3aed", fillOpacity: 1 }}>
+              <Popup><div style={{ minWidth: 130, fontSize: 12 }}><b>Visit {i + 1} Check-Out</b>{v.punchOutLocationName ? <><br /><span style={{ fontSize: 11, color: "#555" }}>{v.punchOutLocationName}</span></> : null}</div></Popup>
+            </CircleMarker>
+          )}
+        </Fragment>
+      ))}
+
+      {/* Live position */}
+      {isActive && gpsPoints.length > 0 && (
+        <Marker position={gpsPoints[gpsPoints.length - 1]} icon={liveIcon} zIndexOffset={1000}>
+          <Popup><div style={{ fontSize: 13 }}><b>📍 Current Location</b><br /><span style={{ fontSize: 11, color: "#555" }}>Live tracking</span></div></Popup>
+        </Marker>
+      )}
+    </>
+  );
 }
 
 function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number; recordedAt?: string }[]; isActive?: boolean }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(googleMapsLoaded);
+  const [snappedTrail, setSnappedTrail] = useState<[number, number][]>([]);
+  const [snappedGaps, setSnappedGaps] = useState<{ path: [number, number][]; gapMins: number }[]>([]);
 
+  const gpsPoints = useMemo(
+    () => locationPoints.filter(p => p.lat && p.lng).map(p => [p.lat, p.lng] as [number, number]),
+    [locationPoints]
+  );
+
+  const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  const signalGaps = useMemo(() => {
+    const valid = locationPoints.filter(p => p.lat && p.lng && p.recordedAt);
+    const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < valid.length; i++) {
+      const g = new Date(valid[i].recordedAt!).getTime() - new Date(valid[i - 1].recordedAt!).getTime();
+      if (g > SIGNAL_GAP_MS) {
+        gaps.push({ pair: [[valid[i - 1].lat, valid[i - 1].lng], [valid[i].lat, valid[i].lng]], gapMins: Math.round(g / 60000) });
+      }
+    }
+    return gaps;
+  }, [locationPoints]);
+
+  // Snap GPS trail to roads
   useEffect(() => {
-    if (!ready) { loadGoogleMaps(() => setReady(true)); }
-  }, [ready]);
+    if (gpsPoints.length < 2) { setSnappedTrail([]); return; }
+    let cancelled = false;
+    tripOsrmSnap(gpsPoints).then(coords => { if (!cancelled) setSnappedTrail(coords); });
+    return () => { cancelled = true; };
+  }, [gpsPoints.length]);
 
+  // Snap signal gap lines to roads
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
-
-    const gpsPoints = locationPoints.filter(p => p.lat && p.lng);
-
-    const allCoords: { lat: number; lng: number }[] = [...gpsPoints];
-    if (trip.startLatitude && trip.startLongitude) allCoords.push({ lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) });
-    (trip.visits || []).forEach(v => {
-      if (v.punchInLatitude && v.punchInLongitude) allCoords.push({ lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) });
-      if (v.punchOutLatitude && v.punchOutLongitude) allCoords.push({ lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) });
+    if (signalGaps.length === 0) { setSnappedGaps([]); return; }
+    let cancelled = false;
+    Promise.all(signalGaps.map(g => tripOsrmSnap(g.pair))).then(results => {
+      if (!cancelled) setSnappedGaps(results.map((path, i) => ({ path, gapMins: signalGaps[i].gapMins })));
     });
-    if (trip.endLatitude && trip.endLongitude) allCoords.push({ lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) });
+    return () => { cancelled = true; };
+  }, [signalGaps.length]);
 
-    if (allCoords.length === 0) return;
+  const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[0]
+    : trip.startLatitude && trip.startLongitude ? [Number(trip.startLatitude), Number(trip.startLongitude)]
+    : [17.4, 78.5];
 
-    const defaultCenter = { lat: 17.4, lng: 78.5 };
-    const center = allCoords[allCoords.length - 1] || defaultCenter;
-
-    const map = new google.maps.Map(mapRef.current, {
-      center,
-      zoom: 14,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-
-    const bounds = new google.maps.LatLngBounds();
-    allCoords.forEach(p => bounds.extend(p));
-    if (allCoords.length > 1) map.fitBounds(bounds, 50);
-
-    const infoWindow = new google.maps.InfoWindow();
-
-    // Split GPS trail into consecutive segments separated by signal gaps (> 5 min)
-    // Gaps are drawn in red dashed lines; normal segments are road-snapped orange.
-    const SIGNAL_GAP_MS = 5 * 60 * 1000;
-    const normalSegments: { lat: number; lng: number }[][] = [];
-    const gapPairs: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; gapMins: number }[] = [];
-
-    if (gpsPoints.length > 0) {
-      let current: { lat: number; lng: number }[] = [gpsPoints[0]];
-      for (let i = 1; i < gpsPoints.length; i++) {
-        const prev = gpsPoints[i - 1];
-        const curr = gpsPoints[i];
-        if (prev.recordedAt && curr.recordedAt) {
-          const gap = new Date(curr.recordedAt).getTime() - new Date(prev.recordedAt).getTime();
-          if (gap > SIGNAL_GAP_MS) {
-            normalSegments.push(current);
-            gapPairs.push({ from: { lat: prev.lat, lng: prev.lng }, to: { lat: curr.lat, lng: curr.lng }, gapMins: Math.round(gap / 60000) });
-            current = [curr];
-            continue;
-          }
-        }
-        current.push(curr);
-      }
-      normalSegments.push(current);
-    }
-
-    // Draw orange road-snapped trail for each normal segment
-    const ds = new google.maps.DirectionsService();
-    const CHUNK = 23;
-    const MAX_PTS = 23;
-
-    const drawChunk = (pts: { lat: number; lng: number }[]) => {
-      if (pts.length < 2) return;
-      const origin = pts[0];
-      const destination = pts[pts.length - 1];
-      const waypoints = pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const }));
-      ds.route(
-        { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-        (result, status) => {
-          if (status === "OK" && result) {
-            new google.maps.DirectionsRenderer({ map, directions: result, suppressMarkers: true, polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 } });
-          } else {
-            new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
-          }
-        },
-      );
-    };
-
-    for (const seg of normalSegments) {
-      if (seg.length < 2) continue;
-      const step = Math.max(1, Math.ceil(seg.length / MAX_PTS));
-      const sampled: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < seg.length; i += step) sampled.push(seg[i]);
-      const lastPt = seg[seg.length - 1];
-      if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
-      for (let i = 0; i < sampled.length - 1; i += CHUNK) {
-        drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
-      }
-    }
-
-    // Draw red dashed lines for signal-drop gaps + info window on click
-    for (const gap of gapPairs) {
-      const line = new google.maps.Polyline({
-        path: [gap.from, gap.to],
-        geodesic: true,
-        strokeColor: "#ef4444",
-        strokeOpacity: 0,
-        icons: [{
-          icon: { path: "M 0,-1 0,1", strokeOpacity: 0.9, strokeColor: "#ef4444", scale: 4 },
-          offset: "0",
-          repeat: "12px",
-        }],
-        map,
-        zIndex: 5,
-      });
-      line.addListener("click", (e: google.maps.MapMouseEvent) => {
-        const mins = gap.gapMins;
-        infoWindow.setContent(
-          `<div style="font-size:13px;min-width:160px">` +
-          `<b style="color:#dc2626">📵 Signal Lost</b><br/>` +
-          `<span style="color:#555;font-size:11px">No GPS for <b>${mins} min${mins !== 1 ? "s" : ""}</b></span><br/>` +
-          `<span style="color:#888;font-size:10px">Background tracking gap</span></div>`
-        );
-        infoWindow.setPosition(e.latLng);
-        infoWindow.open(map);
-      });
-    }
-
-    // Start marker — IN badge (green)
-    if (trip.startLatitude && trip.startLongitude) {
-      const m = new google.maps.Marker({
-        position: { lat: Number(trip.startLatitude), lng: Number(trip.startLongitude) },
-        map,
-        zIndex: 200,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-              <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-              <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/>
-              <circle cx="18" cy="14" r="9" fill="white"/>
-              <text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text>
-            </svg>`
-          ),
-          scaledSize: new google.maps.Size(36, 52),
-          anchor: new google.maps.Point(18, 52),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#15803d">▶ Trip Start</b><br/><span style="color:#555;font-size:11px">${trip.startLocationName || ""}</span></div>`); infoWindow.open(map, m); });
-    }
-
-    // End marker — tall red pin
-    if (trip.endLatitude && trip.endLongitude) {
-      const m = new google.maps.Marker({
-        position: { lat: Number(trip.endLatitude), lng: Number(trip.endLongitude) },
-        map,
-        zIndex: 200,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-              <ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/>
-              <path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#dc2626" stroke="white" stroke-width="2"/>
-              <circle cx="18" cy="14" r="9" fill="white"/>
-              <text x="18" y="18" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="bold" font-family="sans-serif">END</text>
-            </svg>`
-          ),
-          scaledSize: new google.maps.Size(36, 52),
-          anchor: new google.maps.Point(18, 52),
-        },
-      });
-      m.addListener("click", () => { infoWindow.setContent(`<div style="font-size:13px"><b style="color:#dc2626">⬛ Trip End</b><br/><span style="color:#555;font-size:11px">${trip.endLocationName || ""}</span></div>`); infoWindow.open(map, m); });
-    }
-
-    // Visit markers — blue circle for check-in, purple for check-out
-    (trip.visits || []).forEach((v, i) => {
-      if (v.punchInLatitude && v.punchInLongitude) {
-        const m = new google.maps.Marker({
-          position: { lat: Number(v.punchInLatitude), lng: Number(v.punchInLongitude) },
-          map,
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
-        });
-        m.addListener("click", () => { infoWindow.setContent(`<div style="min-width:130px;font-size:12px"><b>Visit ${i + 1} Check-In</b><br/><span style="color:#555;font-size:11px">${v.punchInLocationName || ""}</span></div>`); infoWindow.open(map, m); });
-      }
-      if (v.punchOutLatitude && v.punchOutLongitude) {
-        const m = new google.maps.Marker({
-          position: { lat: Number(v.punchOutLatitude), lng: Number(v.punchOutLongitude) },
-          map,
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#7c3aed", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 },
-        });
-        m.addListener("click", () => { infoWindow.setContent(`<div style="min-width:130px;font-size:12px"><b>Visit ${i + 1} Check-Out</b><br/><span style="color:#555;font-size:11px">${v.punchOutLocationName || ""}</span></div>`); infoWindow.open(map, m); });
-      }
-    });
-
-    // Active trip: live person icon at last GPS point
-    if (isActive && gpsPoints.length > 0) {
-      const last = gpsPoints[gpsPoints.length - 1];
-      new google.maps.Marker({
-        position: last,
-        map,
-        zIndex: 1000,
-        icon: {
-          url: `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">` +
-            `<circle cx="19" cy="19" r="18" fill="#1d4ed8" stroke="white" stroke-width="3"/>` +
-            `<path d="M19 10c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/>` +
-            `</svg>`
-          ),
-          scaledSize: new google.maps.Size(38, 38),
-          anchor: new google.maps.Point(19, 19),
-        },
-      });
-    }
-
-  }, [ready, trip, locationPoints, isActive]);
-
-  if (!ready) return (
-    <div className="h-[480px] w-full rounded-md flex items-center justify-center bg-muted/30">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  return (
+    <div className="h-[480px] w-full rounded-lg border shadow-sm overflow-hidden">
+      <MapContainer center={defaultCenter} zoom={14} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+        <TripMapInner
+          trip={trip}
+          locationPoints={locationPoints}
+          isActive={isActive}
+          snappedTrail={snappedTrail}
+          snappedGaps={snappedGaps}
+        />
+        <ZoomControl position="bottomright" />
+      </MapContainer>
     </div>
   );
-  return <div ref={mapRef} className="h-[480px] w-full rounded-lg border shadow-sm" />;
 }
 
 function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void }) {

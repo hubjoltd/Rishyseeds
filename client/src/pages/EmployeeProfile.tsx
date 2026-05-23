@@ -244,6 +244,7 @@ function LiveMapInner({
   autoFollow,
   snappedSegments,
   travelSegmentsPoints,
+  snappedGapSegments,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -256,6 +257,7 @@ function LiveMapInner({
   autoFollow: boolean;
   snappedSegments: [number, number][][];
   travelSegmentsPoints: [number, number][][];
+  snappedGapSegments: { path: [number, number][]; gapMins: number }[];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -390,21 +392,26 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — solid red route lines (same weight as blue route) */}
-      {signalGapLines.map((gap, i) => (
-        <Fragment key={`gap-${i}`}>
-          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
-            <Popup>
-              <div style={{ fontSize: 13, minWidth: 150 }}>
-                <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
-                <span style={{ fontSize: 12 }}>No GPS for <b>{gap.gapMins} min{gap.gapMins !== 1 ? "s" : ""}</b></span><br />
-                <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
-              </div>
-            </Popup>
-          </Polyline>
-        </Fragment>
-      ))}
+      {/* Signal-drop gaps — road-snapped red lines (falls back to straight when snapping pending) */}
+      {signalGapLines.map((gap, i) => {
+        const snapped = snappedGapSegments[i];
+        const positions = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
+        const gapMins = snapped ? snapped.gapMins : gap.gapMins;
+        return (
+          <Fragment key={`gap-${i}`}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+              <Popup>
+                <div style={{ fontSize: 13, minWidth: 150 }}>
+                  <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
+                  <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
+                  <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
+                </div>
+              </Popup>
+            </Polyline>
+          </Fragment>
+        );
+      })}
 
       {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
@@ -494,6 +501,7 @@ function LiveMap({
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
+  const [snappedGapSegments, setSnappedGapSegments] = useState<{ path: [number, number][]; gapMins: number }[]>([]);
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
@@ -608,6 +616,40 @@ function LiveMap({
     return () => { cancelled = true; };
   }, [totalTravelCount]);
 
+  // Snap signal-gap lines to roads so red lines follow roads (not straight lines)
+  const signalGapPairsForSnap = useMemo(() => {
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < valid.length; i++) {
+      const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
+      if (gap > SIGNAL_GAP_MS) {
+        gaps.push({
+          pair: [
+            [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)],
+            [Number(valid[i].latitude),     Number(valid[i].longitude)],
+          ],
+          gapMins: Math.round(gap / 60000),
+        });
+      }
+    }
+    return gaps;
+  }, [locationPoints]);
+
+  useEffect(() => {
+    if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
+    let cancelled = false;
+    Promise.all(signalGapPairsForSnap.map(g => osrmSnap(g.pair))).then(results => {
+      if (!cancelled) {
+        setSnappedGapSegments(results.map((r, i) => ({
+          path: r.coords.length > 1 ? r.coords : signalGapPairsForSnap[i].pair,
+          gapMins: signalGapPairsForSnap[i].gapMins,
+        })));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [signalGapPairsForSnap.length]);
+
   const defaultCenter: [number, number] = gpsPoints.length > 0 ? gpsPoints[gpsPoints.length - 1]
     : punchInLat && punchInLng ? [punchInLat, punchInLng]
     : [22.8, 80.0];
@@ -627,6 +669,7 @@ function LiveMap({
           autoFollow={autoFollow}
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
+          snappedGapSegments={snappedGapSegments}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -1270,7 +1313,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   }, [playing, routeWithTime.length, speedMult]);
 
   // Reset playback when date changes
-  useEffect(() => { setPlaybackIdx(0); setPlaying(false); setSnappedPoints([]); }, [date]);
+  useEffect(() => { setPlaybackIdx(0); setPlaying(false); setSnappedSegments([]); }, [date]);
 
   // Speed at current playback position (km/h)
   // Priority: GPS Doppler speed from device (most accurate) → computed from position diff
