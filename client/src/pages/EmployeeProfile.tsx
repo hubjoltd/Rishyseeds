@@ -521,8 +521,6 @@ function LiveMap({
       if (seg.type !== "travelled") continue;
       if (((seg as any).distanceKm ?? 0) < 0.05) continue;
 
-      let pts: [number, number][];
-
       const segStart = new Date(seg.startTime).getTime();
       const segEnd   = new Date(seg.endTime).getTime();
       const segPings = locationPoints.filter(p =>
@@ -531,18 +529,37 @@ function LiveMap({
         new Date(p.recordedAt).getTime() <= segEnd
       );
 
-      // Always use centroid binning: pick the ping closest to each 60-second bin
-      // centroid as the representative waypoint sent to OSRM.  This works for every
-      // GPS type — cellular, WiFi, and Doppler-speed — because:
-      //   • Raw pings (even ±10 m) can place the employee off the road momentarily,
-      //     causing OSRM to route through a side road and add phantom detours.
-      //   • 1 clean rep-ping per minute gives OSRM ~N stable waypoints that stay on
-      //     the actual road without zigzag noise or brief off-road drift.
+      // Split segPings at signal gaps (>5 min) BEFORE sending to OSRM.
+      // Without this, OSRM routes a continuous blue road line through the gap,
+      // producing both blue and red lines on the same section — confusing.
+      // Each sub-group gets its own OSRM call → separate blue lines.
+      // Red lines (rendered in LiveMapInner) cover the gaps between sub-groups.
+      const LIVE_SPLIT_MS = 5 * 60 * 1000;
+      const sorted = [...segPings].sort(
+        (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+      );
+      const subGroups: (typeof segPings)[] = [];
       {
-        const BIN_MS = 60_000;
+        let cur: typeof segPings = [];
+        for (const ping of sorted) {
+          if (cur.length > 0) {
+            const gap = new Date(ping.recordedAt).getTime() - new Date(cur[cur.length - 1].recordedAt).getTime();
+            if (gap > LIVE_SPLIT_MS) { subGroups.push(cur); cur = []; }
+          }
+          cur.push(ping);
+        }
+        if (cur.length > 0) subGroups.push(cur);
+      }
+
+      // Apply 1-min centroid binning to each sub-group independently
+      const BIN_MS = 60_000;
+      for (const group of subGroups) {
+        if (group.length === 0) continue;
+        const gStart = new Date(group[0].recordedAt).getTime();
+        const gEnd   = new Date(group[group.length - 1].recordedAt).getTime();
         const repPings: [number, number][] = [];
-        for (let t = segStart; t <= segEnd + BIN_MS; t += BIN_MS) {
-          const bin = segPings.filter(p => {
+        for (let t = gStart; t <= gEnd + BIN_MS; t += BIN_MS) {
+          const bin = group.filter(p => {
             const pt = new Date(p.recordedAt).getTime();
             return pt >= t && pt < t + BIN_MS;
           });
@@ -556,10 +573,8 @@ function LiveMap({
           }
           repPings.push([Number(best.latitude), Number(best.longitude)]);
         }
-        pts = repPings;
+        if (repPings.length >= 2) result.push(repPings);
       }
-
-      if (pts.length >= 2) result.push(pts);
     }
     return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
   }, [locationPoints, segments, gpsPoints]);
@@ -898,8 +913,8 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
 
 // Inner layer — must be inside MapContainer so Leaflet hooks work
 function PlaybackMapInner({
-  rawPoints,
-  snappedPoints,
+  rawSegments,
+  snappedSegments,
   chkStops,
   stoppages,
   mapTypeId,
@@ -915,8 +930,8 @@ function PlaybackMapInner({
   punchOutTime,
   signalGapLines = [],
 }: {
-  rawPoints: [number, number][];
-  snappedPoints: [number, number][];
+  rawSegments: [number, number][][];
+  snappedSegments: [number, number][][];
   chkStops: { pos: [number, number]; num: number; inTime: string; outTime: string; loc: string }[];
   stoppages: { pos: [number, number]; num: number; durationStr: string; startTs: string; endTs: string }[];
   mapTypeId: string;
@@ -940,7 +955,11 @@ function PlaybackMapInner({
     return () => clearTimeout(t);
   }, [map]);
 
-  const routeLine = snappedPoints.length > 1 ? snappedPoints : rawPoints;
+  // Flat arrays for bounds fitting and start/end marker fallbacks
+  const rawPointsFlat = rawSegments.flat();
+  const allRoutePts = snappedSegments.some(s => s.length > 1)
+    ? snappedSegments.flat()
+    : rawPointsFlat;
 
   const startIcon = L.divIcon({
     html: `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52"><ellipse cx="18" cy="49" rx="6" ry="3" fill="rgba(0,0,0,0.2)"/><path d="M18 0C10.27 0 4 6.27 4 14c0 10.5 14 36 14 36S32 24.5 32 14C32 6.27 25.73 0 18 0z" fill="#15803d" stroke="white" stroke-width="2"/><circle cx="18" cy="14" r="9" fill="white"/><text x="18" y="18" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold" font-family="sans-serif">START</text></svg>`,
@@ -956,19 +975,27 @@ function PlaybackMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
       <MapRefCapture onReady={onMapReady} />
-      <PbBoundsFitter points={routeLine} />
+      <PbBoundsFitter points={allRoutePts} />
 
-      {/* ── Route line — OLA/Google Maps style (white border + blue fill) ── */}
-      {/* While OSRM snap is pending: show raw GPS so track is never invisible */}
-      {rawPoints.length > 1 && snappedPoints.length <= 1 && <>
-        <Polyline positions={rawPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={rawPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
-      {/* Once OSRM returns: show ONLY the road-snapped line */}
-      {snappedPoints.length > 1 && <>
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-        <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-      </>}
+      {/* ── Route lines — one per sub-segment (split at signal gaps) ── */}
+      {/* While OSRM snap is pending: show raw GPS per segment */}
+      {snappedSegments.every(s => s.length <= 1) && rawSegments.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`pb-raw-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
+      {/* Once OSRM returns: snapped road lines per segment */}
+      {snappedSegments.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`pb-snap-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
 
       {/* Signal-drop gaps — solid red route lines (same weight as blue route) */}
       {signalGapLines.map((gap, i) => (
@@ -1033,8 +1060,8 @@ function PlaybackMapInner({
               </div>
             </Popup>
           </Marker>
-        : rawPoints.length > 0
-          ? <Marker position={rawPoints[0]} icon={startIcon} zIndexOffset={200}>
+        : rawPointsFlat.length > 0
+          ? <Marker position={rawPointsFlat[0]} icon={startIcon} zIndexOffset={200}>
               <Popup><b style={{ color: "#15803d" }}>▶ Trip Start</b></Popup>
             </Marker>
           : null
@@ -1051,8 +1078,8 @@ function PlaybackMapInner({
               </div>
             </Popup>
           </Marker>
-        : rawPoints.length > 1
-          ? <Marker position={rawPoints[rawPoints.length - 1]} icon={endIcon} zIndexOffset={200}>
+        : rawPointsFlat.length > 1
+          ? <Marker position={rawPointsFlat[rawPointsFlat.length - 1]} icon={endIcon} zIndexOffset={200}>
               <Popup><b style={{ color: "#dc2626" }}>⬛ Last Position</b></Popup>
             </Marker>
           : null
@@ -1083,7 +1110,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   const [playbackIdx, setPlaybackIdx] = useState(0);
   const [speedMult, setSpeedMult] = useState(1);
   const [speedOpen, setSpeedOpen] = useState(false);
-  const [snappedPoints, setSnappedPoints] = useState<[number, number][]>([]);
+  const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
   const [snapping, setSnapping] = useState(false);
   const playTimerRef = useRef<any>(null);
   const leafletMap = useRef<any>(null);
@@ -1146,16 +1173,38 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
 
   const rawPoints = useMemo(() => routeWithTime.map(r => r.pos), [routeWithTime]);
 
-  // Road-snap whenever rawPoints change
+  // Split routeWithTime into sub-segments at signal gaps (>5 min) before OSRM,
+  // so the blue snapped line never bridges a gap — red lines cover the gaps.
+  const rawSegments = useMemo(() => {
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const segs: [number, number][][] = [];
+    let cur: [number, number][] = [];
+    for (let i = 0; i < routeWithTime.length; i++) {
+      if (cur.length > 0) {
+        const gap = new Date(routeWithTime[i].ts).getTime() - new Date(routeWithTime[i - 1].ts).getTime();
+        if (gap > SIGNAL_GAP_MS) { segs.push(cur); cur = []; }
+      }
+      cur.push(routeWithTime[i].pos);
+    }
+    if (cur.length > 0) segs.push(cur);
+    return segs.filter(s => s.length > 0);
+  }, [routeWithTime]);
+
+  // Snap each sub-segment independently so blue road lines stop at gap boundaries
   useEffect(() => {
-    if (rawPoints.length < 2) { setSnappedPoints([]); return; }
+    if (rawSegments.every(s => s.length < 2)) { setSnappedSegments([]); return; }
     let cancelled = false;
     setSnapping(true);
-    osrmSnap(rawPoints).then(({ coords }) => {
-      if (!cancelled) { setSnappedPoints(coords); setSnapping(false); }
+    Promise.all(
+      rawSegments.map(seg => seg.length >= 2
+        ? osrmSnap(seg)
+        : Promise.resolve({ coords: [] as [number, number][], distanceM: 0 })
+      )
+    ).then(results => {
+      if (!cancelled) { setSnappedSegments(results.map(r => r.coords)); setSnapping(false); }
     });
     return () => { cancelled = true; };
-  }, [JSON.stringify(rawPoints)]);
+  }, [JSON.stringify(rawSegments)]);
 
   // Build numbered stoppages from segments
   const stoppages = useMemo(() => {
@@ -1255,10 +1304,12 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
 
   const fitAll = () => {
     const m = leafletMap.current;
-    const pts = snappedPoints.length > 1 ? snappedPoints : rawPoints;
-    if (!m || pts.length < 1) return;
-    if (pts.length === 1) { m.setView(pts[0], 15); return; }
-    m.fitBounds(L.latLngBounds(pts.map(p => L.latLng(p[0], p[1]))), { padding: [50, 50] });
+    const flat = snappedSegments.some(s => s.length > 1)
+      ? snappedSegments.flat()
+      : rawPoints;
+    if (!m || flat.length < 1) return;
+    if (flat.length === 1) { m.setView(flat[0], 15); return; }
+    m.fitBounds(L.latLngBounds(flat.map(p => L.latLng(p[0], p[1]))), { padding: [50, 50] });
   };
 
   const toggleFullscreen = () => {
@@ -1280,8 +1331,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
         zoomControl={false}
       >
         <PlaybackMapInner
-          rawPoints={rawPoints}
-          snappedPoints={snappedPoints}
+          rawSegments={rawSegments}
+          snappedSegments={snappedSegments}
           chkStops={chkStops}
           stoppages={stoppages}
           mapTypeId={mapTypeId}
