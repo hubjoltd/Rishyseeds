@@ -535,10 +535,24 @@ function LiveMap({
 
       const segStart = new Date(seg.startTime).getTime();
       const segEnd   = new Date(seg.endTime).getTime();
+
+      // Extend the ping window by up to 2 minutes past the server-computed segEnd.
+      // GPS pings at the START of the next stoppage cluster (the "approach" phase) still
+      // show real movement — the employee hasn't fully stopped yet. Without them OSRM
+      // only receives waypoints up to the last travel ping, anchoring the route short of
+      // the actual arrival point and under-counting the final 200-400 m of every leg.
+      // Cap the extension at the next travel segment's start so we never borrow pings
+      // from a completely different trip leg.
+      const nextTravelSeg = allSegs.slice(i + 1).find(s => s.type === "travelled");
+      const nextTravelStartMs = nextTravelSeg
+        ? new Date(nextTravelSeg.startTime).getTime()
+        : Infinity;
+      const segEndExtended = Math.min(segEnd + 2 * 60 * 1000, nextTravelStartMs - 1000);
+
       const segPings = locationPoints.filter(p =>
         p.latitude && p.longitude && p.recordedAt &&
         new Date(p.recordedAt).getTime() >= segStart &&
-        new Date(p.recordedAt).getTime() <= segEnd
+        new Date(p.recordedAt).getTime() <= segEndExtended
       );
 
       // Split segPings at signal gaps (>5 min) BEFORE sending to OSRM.
