@@ -806,7 +806,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
       const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const radiuses = sample.map(() => "150").join(";"); // 150 m radius handles cellular GPS ±83 m noise
+      const radiuses = sample.map(() => "100").join(";");
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
       const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
@@ -823,14 +823,36 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     } catch { return null; }
   };
 
-  // Use map-match for >= 6 points (follows actual path taken, not optimal route).
-  // Route-only for sparse GPS (< 6 pts) where match would have too few anchors.
-  if (points.length >= 6) {
-    const matched = await tryMatch(points);
+  // ── Outlier filter: remove pings that jump > 8× the median consecutive distance ──
+  // This catches tower-switching teleports (e.g. 5 km jump when median is 100 m)
+  // without removing legitimate fast movement, keeping OSRM routes clean.
+  const filterOutlierPts = (pts: [number, number][]): [number, number][] => {
+    if (pts.length <= 2) return pts;
+    const dists: number[] = [];
+    for (let i = 1; i < pts.length; i++) {
+      dists.push(haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) * 1000);
+    }
+    const sorted = [...dists].sort((a, b) => a - b);
+    const medianM = sorted[Math.floor(sorted.length / 2)];
+    const maxGapM = Math.max(500, medianM * 8); // never reject jumps < 500 m
+    const out: [number, number][] = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const last = out[out.length - 1];
+      const d = haversineKm(last[0], last[1], pts[i][0], pts[i][1]) * 1000;
+      if (d <= maxGapM) out.push(pts[i]);
+    }
+    return out.length >= 2 ? out : pts; // fallback to original if too many removed
+  };
+  const cleanPoints = filterOutlierPts(points);
+
+  // Use map-match for >= 10 points (follows actual path taken, not optimal route).
+  // Route-only for sparse GPS (< 10 pts) where match would have too few anchors.
+  if (cleanPoints.length >= 10) {
+    const matched = await tryMatch(cleanPoints);
     if (matched) return matched;
   }
-  const routed = await tryRoute(points);
-  return routed ?? { coords: points, distanceM: 0 };
+  const routed = await tryRoute(cleanPoints);
+  return routed ?? { coords: cleanPoints, distanceM: 0 };
 }
 
 // Inner layer — must be inside MapContainer so Leaflet hooks work
@@ -1908,10 +1930,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(liveSnappedKm !== null
-                      ? liveSnappedKm
-                      : locationData?.totalKm ?? 0
-                    ).toFixed(2)} Km
+                    {(locationData?.totalKm ?? 0).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
