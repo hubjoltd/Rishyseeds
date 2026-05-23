@@ -2903,7 +2903,7 @@ export async function registerRoutes(
       // 200 m radius: balances GPS drift containment with short-trip detection.
       // At 80–90 m accuracy, random-walk drift stays within 200 m for ~5–6 pings (~3 min).
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
+      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min minimum — filters traffic lights & brief pauses
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
         const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -3010,7 +3010,7 @@ export async function registerRoutes(
         if (cluster.startIdx > prevEnd + 1) {
           // Travel pings strictly between the two stoppage clusters — no stoppage anchors.
           const actualTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          if (actualTravelPts.length >= 2) {
+          if (actualTravelPts.length >= 1) {
             const lastTp = actualTravelPts[actualTravelPts.length - 1];
             gpsSegments.push({
               type: "travelled",
@@ -3026,7 +3026,7 @@ export async function registerRoutes(
       if (prevEnd < points.length - 1 && points.length > 0) {
         // Tail travel after last stoppage — no stoppage anchor.
         const actualTailPts = points.slice(prevEnd + 1);
-        if (actualTailPts.length >= 2) {
+        if (actualTailPts.length >= 1) {
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
@@ -4240,7 +4240,7 @@ export async function registerRoutes(
       }
 
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
+      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min minimum — filters traffic lights & brief pauses
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
@@ -4342,8 +4342,10 @@ export async function registerRoutes(
           // Distance is computed from ONLY these travel pings — no stoppage anchor
           // points are included, so stoppage GPS drift never inflates or deflates
           // the reported travel distance.
+          // We include single-ping segments (distance = 0) so travel time is preserved
+          // in the timeline and those km aren't silently dropped from the total.
           const actualTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          if (actualTravelPts.length >= 2) {
+          if (actualTravelPts.length >= 1) {
             const distanceKm = totalDistKm(actualTravelPts);
             segments.push({
               type: "travelled",
@@ -4368,7 +4370,7 @@ export async function registerRoutes(
       if (prevEndIdx < points.length - 1) {
         // Tail: only actual tail pings — no stoppage anchor — same principle as between clusters.
         const actualTailPts = points.slice(prevEndIdx + 1);
-        if (actualTailPts.length >= 2) {
+        if (actualTailPts.length >= 1) {
           const tailDistKm = totalDistKm(actualTailPts);
           segments.push({
             type: "travelled",
