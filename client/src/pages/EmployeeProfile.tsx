@@ -2344,19 +2344,14 @@ export default function EmployeeProfile() {
 
                       /* ── STOPPAGE ── */
                       if (seg.type === "stoppage") {
-                        const totalSecs = seg.durationSecs;
-                        const hh = Math.floor(totalSecs / 3600);
-                        const mm = Math.floor((totalSecs % 3600) / 60);
-                        const ss = Math.round(totalSecs % 60);
-                        const durLabel = hh > 0
-                          ? `${hh}h ${String(mm).padStart(2,"0")}m`
-                          : `${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+                        const mm = Math.floor(seg.durationSecs / 60);
+                        const ss = Math.round(seg.durationSecs % 60);
                         return (
                           <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-gray-50 transition-colors">
                             {dot("bg-gray-400", <Timer className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-bold text-gray-700 leading-tight">
-                                Stoppage of {durLabel}
+                                Stoppage of {String(mm).padStart(2,"0")}:{String(ss).padStart(2,"0")}
                               </p>
                               {timeRow(new Date(seg.startTime), new Date(seg.endTime))}
                               <StoppageAddress lat={seg.lat} lng={seg.lng} />
@@ -2394,9 +2389,7 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       const distKm: number = (seg as any).distanceKm ?? 0;
-                      // Hide zero-distance entries — single-ping segments with no measurable travel
-                      if (distKm === 0) return null;
-                      const distLabel = distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
+                      const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       return (
                         <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
