@@ -2344,14 +2344,19 @@ export default function EmployeeProfile() {
 
                       /* ── STOPPAGE ── */
                       if (seg.type === "stoppage") {
-                        const mm = Math.floor(seg.durationSecs / 60);
-                        const ss = Math.round(seg.durationSecs % 60);
+                        const totalSecs = seg.durationSecs;
+                        const hh = Math.floor(totalSecs / 3600);
+                        const mm = Math.floor((totalSecs % 3600) / 60);
+                        const ss = Math.round(totalSecs % 60);
+                        const durLabel = hh > 0
+                          ? `${hh}h ${String(mm).padStart(2,"0")}m`
+                          : `${String(mm).padStart(2,"0")}m ${String(ss).padStart(2,"0")}s`;
                         return (
                           <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-gray-50 transition-colors">
                             {dot("bg-gray-400", <Timer className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-bold text-gray-700 leading-tight">
-                                Stoppage of {String(mm).padStart(2,"0")}:{String(ss).padStart(2,"0")}
+                                Stoppage of {durLabel}
                               </p>
                               {timeRow(new Date(seg.startTime), new Date(seg.endTime))}
                               <StoppageAddress lat={seg.lat} lng={seg.lng} />

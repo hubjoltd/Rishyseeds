@@ -2966,6 +2966,10 @@ export async function registerRoutes(
       // Each new ping is compared to the ROLLING CENTROID of the growing cluster,
       // not to the first ping.  This prevents GPS random walk from slowly drifting
       // the cluster out of the radius even when the employee is fully stationary.
+      // SIGNAL-GAP GUARD: break the cluster if consecutive pings are > 5 min apart.
+      // Without this, a GPS gap of several hours could merge two separate stops at the
+      // same location into one giant "stoppage", swallowing all travel in between.
+      const CLUSTER_GAP_SECS = 5 * 60; // 5 minutes — same as totalDistKm signal-gap threshold
       const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
       let ci = 0;
       while (ci < points.length) {
@@ -2974,6 +2978,9 @@ export async function registerRoutes(
         let cnt = 1;
         let cj = ci + 1;
         while (cj < points.length) {
+          // Break cluster at signal gaps — travel during a gap must not be hidden inside a stoppage
+          const gapSec = (new Date(points[cj].recordedAt).getTime() - new Date(points[cj - 1].recordedAt).getTime()) / 1000;
+          if (gapSec > CLUSTER_GAP_SECS) break;
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
           if (haversineM(centLat, centLng, Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) {
@@ -4313,6 +4320,10 @@ export async function registerRoutes(
       // Each new ping is compared to the ROLLING CENTROID of the growing cluster,
       // not to the first ping.  This prevents GPS random walk from slowly drifting
       // the cluster out of the radius even when the employee is fully stationary.
+      // SIGNAL-GAP GUARD: break the cluster if consecutive pings are > 5 min apart.
+      // Without this, a GPS gap of several hours could merge two separate stops at the
+      // same location into one giant "stoppage", swallowing all travel in between.
+      const CLUSTER_GAP_SECS = 5 * 60; // 5 minutes — same as totalDistKm signal-gap threshold
       const clusters: StoppageCluster[] = [];
       let i = 0;
       while (i < points.length) {
@@ -4321,6 +4332,9 @@ export async function registerRoutes(
         let cnt = 1;
         let j = i + 1;
         while (j < points.length) {
+          // Break cluster at signal gaps — travel during a gap must not be hidden inside a stoppage
+          const gapSec = (new Date(points[j].recordedAt).getTime() - new Date(points[j - 1].recordedAt).getTime()) / 1000;
+          if (gapSec > CLUSTER_GAP_SECS) break;
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
           if (haversineM(centLat, centLng, Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
