@@ -2909,15 +2909,19 @@ export async function registerRoutes(
       let prevEnd = -1;
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
+          // Actual travel pings (strictly between the two stoppage clusters) define the time range.
+          const actualTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
+          // Distance uses prev-stoppage-last + travel pings + next-stoppage-first as anchors.
+          // This correctly handles sparse GPS where there may be only 1 travel ping between
+          // stoppages: without the endpoint anchors, slice(1) would leave 1 pt → 0 km.
           const distStart = prevEnd < 0 ? 0 : prevEnd;
-          const tPts = points.slice(distStart, cluster.startIdx);
-          if (tPts.length >= 2) {
-            const timeOffset = prevEnd >= 0 ? 1 : 0;
-            const distanceKm = totalDistKm(tPts.slice(timeOffset));
+          const distPts = points.slice(distStart, cluster.startIdx + 1);
+          if (distPts.length >= 2 && actualTravelPts.length >= 1) {
+            const distanceKm = totalDistKm(distPts);
             gpsSegments.push({
               type: "travelled",
-              startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
-              endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
+              startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
+              endTime: new Date(actualTravelPts[actualTravelPts.length - 1].recordedAt).toISOString(),
               distanceKm,
             });
           }
@@ -2926,15 +2930,16 @@ export async function registerRoutes(
         prevEnd = cluster.endIdx;
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
+        // Tail: use last stoppage ping as distance anchor, actual tail pings define time range.
+        const actualTailPts = points.slice(prevEnd + 1);
         const distStart = prevEnd < 0 ? 0 : prevEnd;
         const tPts = points.slice(distStart);
-        if (tPts.length >= 2) {
-          const timeOffset = prevEnd >= 0 ? 1 : 0;
-          const tailDistKm = totalDistKm(tPts.slice(timeOffset));
+        if (tPts.length >= 2 && actualTailPts.length >= 1) {
+          const tailDistKm = totalDistKm(tPts);
           gpsSegments.push({
             type: "travelled",
-            startTime: new Date(tPts[timeOffset].recordedAt).toISOString(),
-            endTime: new Date(tPts[tPts.length - 1].recordedAt).toISOString(),
+            startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
+            endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
             distanceKm: tailDistKm,
           });
         }
@@ -4146,15 +4151,19 @@ export async function registerRoutes(
 
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
+          // Actual travel pings (strictly between the two stoppage clusters) define the time range.
+          const actualTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
+          // Distance uses prev-stoppage-last + travel pings + next-stoppage-first as anchors.
+          // This correctly handles sparse GPS where there may be only 1 travel ping between
+          // stoppages: without the endpoint anchors, slice(1) would leave 1 pt → 0 km.
           const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-          const travelPts = points.slice(distStart, cluster.startIdx);
-          if (travelPts.length >= 2) {
-            const timeOffset = prevEndIdx >= 0 ? 1 : 0;
-            const distanceKm = totalDistKm(travelPts.slice(timeOffset));
+          const distPts = points.slice(distStart, cluster.startIdx + 1);
+          if (distPts.length >= 2 && actualTravelPts.length >= 1) {
+            const distanceKm = totalDistKm(distPts);
             segments.push({
               type: "travelled",
-              startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
-              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+              startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
+              endTime: new Date(actualTravelPts[actualTravelPts.length - 1].recordedAt).toISOString(),
               distanceKm,
             });
           }
@@ -4172,15 +4181,16 @@ export async function registerRoutes(
 
       // Travel segment after last stoppage
       if (prevEndIdx < points.length - 1) {
+        // Tail: use last stoppage ping as distance anchor, actual tail pings define time range.
+        const actualTailPts = points.slice(prevEndIdx + 1);
         const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
         const travelPts = points.slice(distStart);
-        if (travelPts.length >= 2) {
-          const timeOffset = prevEndIdx >= 0 ? 1 : 0;
-          const tailDistKm = totalDistKm(travelPts.slice(timeOffset));
+        if (travelPts.length >= 2 && actualTailPts.length >= 1) {
+          const tailDistKm = totalDistKm(travelPts);
           segments.push({
             type: "travelled",
-            startTime: new Date(travelPts[timeOffset].recordedAt).toISOString(),
-            endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+            startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
+            endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
             distanceKm: tailDistKm,
           });
         }
