@@ -91,6 +91,7 @@ export interface IStorage {
   // Attendance
   markAttendance(record: typeof attendance.$inferInsert): Promise<typeof attendance.$inferSelect>;
   getAttendance(date?: string): Promise<typeof attendance.$inferSelect[]>;
+  getAttendanceRange(startDate: string, endDate: string, employeeId?: number): Promise<typeof attendance.$inferSelect[]>;
   getAttendanceByEmployee(employeeId: number): Promise<typeof attendance.$inferSelect[]>;
   getAttendanceByEmployeeAndDate(employeeId: number, date: string): Promise<typeof attendance.$inferSelect | undefined>;
   updateAttendance(id: number, updates: Partial<typeof attendance.$inferInsert>): Promise<typeof attendance.$inferSelect | undefined>;
@@ -548,6 +549,12 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(attendance).where(eq(attendance.date, dateStr));
     }
     return await db.select().from(attendance).orderBy(desc(attendance.date));
+  }
+
+  async getAttendanceRange(startDate: string, endDate: string, employeeId?: number): Promise<typeof attendance.$inferSelect[]> {
+    const conditions: any[] = [gte(attendance.date, startDate), lte(attendance.date, endDate)];
+    if (employeeId) conditions.push(eq(attendance.employeeId, employeeId));
+    return db.select().from(attendance).where(and(...conditions)).orderBy(asc(attendance.date), asc(attendance.employeeId));
   }
 
   async getAttendanceByEmployee(employeeId: number): Promise<typeof attendance.$inferSelect[]> {

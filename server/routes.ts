@@ -1225,6 +1225,49 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  // Attendance report with date range + KM travelled (from trips)
+  app.get("/api/attendance/report", checkPermission('attendance', 'view'), async (req, res) => {
+    try {
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const empIdParam = typeof req.query.employeeId === 'string' && req.query.employeeId ? Number(req.query.employeeId) : undefined;
+      if (!startDate || !endDate) return res.status(400).json({ message: "startDate and endDate required" });
+
+      const [records, tripRows] = await Promise.all([
+        storage.getAttendanceRange(startDate, endDate, empIdParam),
+        (async () => {
+          const { db } = await import("./db");
+          const { trips } = await import("@shared/schema");
+          const { and: drAnd, gte: drGte, lte: drLte, eq: drEq } = await import("drizzle-orm");
+          const dayStart = new Date(startDate + 'T00:00:00+05:30');
+          const dayEnd = new Date(endDate + 'T23:59:59+05:30');
+          const conds: any[] = [drGte(trips.startTime, dayStart), drLte(trips.startTime, dayEnd)];
+          if (empIdParam) conds.push(drEq(trips.employeeId, empIdParam));
+          return db.select({ employeeId: trips.employeeId, startTime: trips.startTime, totalKm: trips.totalKm })
+            .from(trips).where(drAnd(...conds));
+        })(),
+      ]);
+
+      // Build km map: "empId:YYYY-MM-DD" -> totalKm
+      const kmMap = new Map<string, number>();
+      for (const t of tripRows) {
+        if (!t.startTime || t.totalKm == null) continue;
+        const istMs = t.startTime.getTime() + 5.5 * 60 * 60 * 1000;
+        const dateStr = new Date(istMs).toISOString().slice(0, 10);
+        const key = `${t.employeeId}:${dateStr}`;
+        kmMap.set(key, (kmMap.get(key) || 0) + Number(t.totalKm));
+      }
+
+      const enriched = records.map(r => ({
+        ...r,
+        kmTravelled: kmMap.has(`${r.employeeId}:${r.date}`) ? Math.round(kmMap.get(`${r.employeeId}:${r.date}`)! * 10) / 10 : null,
+      }));
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch report" });
+    }
+  });
+
   app.patch("/api/attendance/:id", checkPermission('attendance', 'edit'), async (req, res) => {
     try {
       const id = Number(req.params.id);
