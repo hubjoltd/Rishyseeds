@@ -43,6 +43,7 @@ import {
   Signal,
   Radio,
   Activity,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -52,8 +53,19 @@ interface TripWithEmployee extends Trip {
   visitCount: number;
 }
 
+interface SignalGap {
+  fromTime: string;
+  toTime: string;
+  fromLat: number;
+  fromLng: number;
+  toLat: number;
+  toLng: number;
+  gapSecs: number;
+}
+
 interface TripDetail extends TripWithEmployee {
   visits: TripVisit[];
+  signalGaps?: SignalGap[];
 }
 
 function formatDateTime(dt: string | Date | null | undefined) {
@@ -125,7 +137,7 @@ function loadGoogleMaps(callback: () => void) {
   document.head.appendChild(script);
 }
 
-function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number }[]; isActive?: boolean }) {
+function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDetail; locationPoints?: { lat: number; lng: number; recordedAt?: string }[]; isActive?: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(googleMapsLoaded);
 
@@ -165,38 +177,91 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
 
     const infoWindow = new google.maps.InfoWindow();
 
-    // Road-snapped GPS trail using Directions API
-    if (gpsPoints.length > 1) {
-      const MAX_PTS = 23;
-      const step = Math.max(1, Math.ceil(gpsPoints.length / MAX_PTS));
+    // Split GPS trail into consecutive segments separated by signal gaps (> 5 min)
+    // Gaps are drawn in red dashed lines; normal segments are road-snapped orange.
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const normalSegments: { lat: number; lng: number }[][] = [];
+    const gapPairs: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; gapMins: number }[] = [];
+
+    if (gpsPoints.length > 0) {
+      let current: { lat: number; lng: number }[] = [gpsPoints[0]];
+      for (let i = 1; i < gpsPoints.length; i++) {
+        const prev = gpsPoints[i - 1];
+        const curr = gpsPoints[i];
+        if (prev.recordedAt && curr.recordedAt) {
+          const gap = new Date(curr.recordedAt).getTime() - new Date(prev.recordedAt).getTime();
+          if (gap > SIGNAL_GAP_MS) {
+            normalSegments.push(current);
+            gapPairs.push({ from: { lat: prev.lat, lng: prev.lng }, to: { lat: curr.lat, lng: curr.lng }, gapMins: Math.round(gap / 60000) });
+            current = [curr];
+            continue;
+          }
+        }
+        current.push(curr);
+      }
+      normalSegments.push(current);
+    }
+
+    // Draw orange road-snapped trail for each normal segment
+    const ds = new google.maps.DirectionsService();
+    const CHUNK = 23;
+    const MAX_PTS = 23;
+
+    const drawChunk = (pts: { lat: number; lng: number }[]) => {
+      if (pts.length < 2) return;
+      const origin = pts[0];
+      const destination = pts[pts.length - 1];
+      const waypoints = pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const }));
+      ds.route(
+        { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
+        (result, status) => {
+          if (status === "OK" && result) {
+            new google.maps.DirectionsRenderer({ map, directions: result, suppressMarkers: true, polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 } });
+          } else {
+            new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
+          }
+        },
+      );
+    };
+
+    for (const seg of normalSegments) {
+      if (seg.length < 2) continue;
+      const step = Math.max(1, Math.ceil(seg.length / MAX_PTS));
       const sampled: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < gpsPoints.length; i += step) sampled.push(gpsPoints[i]);
-      const lastPt = gpsPoints[gpsPoints.length - 1];
+      for (let i = 0; i < seg.length; i += step) sampled.push(seg[i]);
+      const lastPt = seg[seg.length - 1];
       if (sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
-
-      const ds = new google.maps.DirectionsService();
-      const CHUNK = 23;
-
-      const drawChunk = (pts: { lat: number; lng: number }[]) => {
-        if (pts.length < 2) return;
-        const origin = pts[0];
-        const destination = pts[pts.length - 1];
-        const waypoints = pts.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: false as const }));
-        ds.route(
-          { origin, destination, waypoints, travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false },
-          (result, status) => {
-            if (status === "OK" && result) {
-              new google.maps.DirectionsRenderer({ map, directions: result, suppressMarkers: true, polylineOptions: { strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4 } });
-            } else {
-              new google.maps.Polyline({ path: pts, geodesic: true, strokeColor: "#e67c22", strokeOpacity: 0.95, strokeWeight: 4, map });
-            }
-          },
-        );
-      };
-
       for (let i = 0; i < sampled.length - 1; i += CHUNK) {
         drawChunk(sampled.slice(i, Math.min(i + CHUNK + 1, sampled.length)));
       }
+    }
+
+    // Draw red dashed lines for signal-drop gaps + info window on click
+    for (const gap of gapPairs) {
+      const line = new google.maps.Polyline({
+        path: [gap.from, gap.to],
+        geodesic: true,
+        strokeColor: "#ef4444",
+        strokeOpacity: 0,
+        icons: [{
+          icon: { path: "M 0,-1 0,1", strokeOpacity: 0.9, strokeColor: "#ef4444", scale: 4 },
+          offset: "0",
+          repeat: "12px",
+        }],
+        map,
+        zIndex: 5,
+      });
+      line.addListener("click", (e: google.maps.MapMouseEvent) => {
+        const mins = gap.gapMins;
+        infoWindow.setContent(
+          `<div style="font-size:13px;min-width:160px">` +
+          `<b style="color:#dc2626">📵 Signal Lost</b><br/>` +
+          `<span style="color:#555;font-size:11px">No GPS for <b>${mins} min${mins !== 1 ? "s" : ""}</b></span><br/>` +
+          `<span style="color:#888;font-size:10px">Background tracking gap</span></div>`
+        );
+        infoWindow.setPosition(e.latLng);
+        infoWindow.open(map);
+      });
     }
 
     // Start marker — IN badge (green)
@@ -332,7 +397,7 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
 
   const gpsPoints = (locationData?.points ?? [])
     .filter((p: any) => p.latitude && p.longitude)
-    .map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+    .map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude), recordedAt: p.recordedAt as string | undefined }));
 
   const { data: comments } = useQuery<TripComment[]>({
     queryKey: ["/api/trips", tripId, "comments"],
@@ -638,6 +703,12 @@ function TripDetailPage({ tripId, onBack }: { tripId: number; onBack: () => void
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-600 inline-block" /> Check Out</span>
                   <span className="flex items-center gap-1"><span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-600 text-white leading-none">OUT</span> End</span>
                   <span className="flex items-center gap-1"><span className="w-6 h-1 rounded bg-orange-500 inline-block" /> GPS Trail</span>
+                  {(trip.signalGaps?.length ?? 0) > 0 && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-6 border-t-2 border-dashed border-red-500 inline-block" />
+                      <span className="text-red-600 font-medium">Signal Lost ({trip.signalGaps!.length})</span>
+                    </span>
+                  )}
                   {isActiveTrip && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block" /> Live Location</span>}
                 </div>
               </div>
@@ -927,12 +998,29 @@ function LiveEmployeeStatus() {
   );
 }
 
+function downloadBackup(days: 30 | 60) {
+  const token = localStorage.getItem("auth_token");
+  const a = document.createElement("a");
+  a.href = `/api/trips/backup?days=${days}`;
+  // pass auth header via a hidden fetch + blob approach
+  fetch(`/api/trips/backup?days=${days}`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = `trips-backup-${days}days.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+}
+
 export default function Trips() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [backupOpen, setBackupOpen] = useState(false);
 
   const { data: trips, isLoading } = useQuery<TripWithEmployee[]>({
     queryKey: ["/api/trips"],
@@ -973,6 +1061,36 @@ export default function Trips() {
             </h2>
             <p className="text-muted-foreground text-sm">Employee field trip tracking</p>
           </div>
+        </div>
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setBackupOpen(v => !v)}
+          >
+            <Download className="h-4 w-4" />
+            Download Backup
+            <ChevronDown className="h-3.5 w-3.5 ml-0.5" />
+          </Button>
+          {backupOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-card border rounded-lg shadow-lg overflow-hidden min-w-[160px]">
+              <button
+                className="w-full px-4 py-2.5 text-sm text-left hover:bg-muted transition-colors flex items-center gap-2"
+                onClick={() => { downloadBackup(30); setBackupOpen(false); }}
+              >
+                <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                Last 30 Days
+              </button>
+              <button
+                className="w-full px-4 py-2.5 text-sm text-left hover:bg-muted transition-colors flex items-center gap-2 border-t"
+                onClick={() => { downloadBackup(60); setBackupOpen(false); }}
+              >
+                <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                Last 60 Days
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

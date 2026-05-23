@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs";
 import express from "express";
 import webpush from "web-push";
+import * as XLSX from "xlsx";
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "gnULZuZ-jGv4b3KBumeqgiYYWqP5qlo9meA-ltqcfeE";
@@ -2907,40 +2908,76 @@ export async function registerRoutes(
       // not disable the accurate centroid-to-centroid path for travel segments.
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
+      // Track the centroid of the previous stoppage as a stable departure anchor.
+      // Using the raw last GPS point (prevEnd) causes 0.7–0.8 km errors because
+      // GPS drifts within the 250 m cluster radius during long stops, so the last
+      // ping can be hundreds of metres from where the employee actually departed.
+      // The centroid (rolling average of all cluster pings) is far more stable.
+      let prevCentroid: { lat: number; lng: number } | null = null;
+
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
-          // Actual travel pings (strictly between the two stoppage clusters) define the time range.
           const actualTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          // Distance uses prev-stoppage-last + travel pings + next-stoppage-first as anchors.
-          // This correctly handles sparse GPS where there may be only 1 travel ping between
-          // stoppages: without the endpoint anchors, slice(1) would leave 1 pt → 0 km.
-          const distStart = prevEnd < 0 ? 0 : prevEnd;
-          const distPts = points.slice(distStart, cluster.startIdx + 1);
-          if (distPts.length >= 2 && actualTravelPts.length >= 1) {
-            const distanceKm = totalDistKm(distPts);
+          if (actualTravelPts.length >= 1) {
+            // Departure anchor: previous stoppage centroid (stable) or first travel ping
+            const fromLat = prevCentroid ? prevCentroid.lat : Number(actualTravelPts[0].latitude);
+            const fromLng = prevCentroid ? prevCentroid.lng : Number(actualTravelPts[0].longitude);
+            // Arrival anchor: current stoppage centroid (stable)
+            const toLat = cluster.lat;
+            const toLng = cluster.lng;
+            let distanceKm = 0;
+            // Leg 1: departure centroid → first travel GPS ping
+            distanceKm += haversineM(fromLat, fromLng, Number(actualTravelPts[0].latitude), Number(actualTravelPts[0].longitude)) / 1000;
+            // Middle: GPS trail through actual travel pings (road-following accuracy)
+            distanceKm += totalDistKm(actualTravelPts);
+            // Leg 3: last travel GPS ping → arrival centroid
+            const lastTp = actualTravelPts[actualTravelPts.length - 1];
+            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude), toLat, toLng) / 1000;
             gpsSegments.push({
               type: "travelled",
               startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
-              endTime: new Date(actualTravelPts[actualTravelPts.length - 1].recordedAt).toISOString(),
+              endTime: new Date(lastTp.recordedAt).toISOString(),
               distanceKm,
             });
           }
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
+        prevCentroid = { lat: cluster.lat, lng: cluster.lng };
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
-        // Tail: use last stoppage ping as distance anchor, actual tail pings define time range.
+        // Tail travel after last stoppage: depart from last stoppage centroid
         const actualTailPts = points.slice(prevEnd + 1);
-        const distStart = prevEnd < 0 ? 0 : prevEnd;
-        const tPts = points.slice(distStart);
-        if (tPts.length >= 2 && actualTailPts.length >= 1) {
-          const tailDistKm = totalDistKm(tPts);
+        if (actualTailPts.length >= 1) {
+          const fromLat = prevCentroid ? prevCentroid.lat : Number(actualTailPts[0].latitude);
+          const fromLng = prevCentroid ? prevCentroid.lng : Number(actualTailPts[0].longitude);
+          let tailDistKm = 0;
+          tailDistKm += haversineM(fromLat, fromLng, Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000;
+          tailDistKm += totalDistKm(actualTailPts);
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
             endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
             distanceKm: tailDistKm,
+          });
+        }
+      }
+
+      // Detect signal gaps: consecutive GPS points more than 5 minutes apart
+      // indicate background tracking dropped signal (tunnel, building, network loss).
+      const SIGNAL_GAP_SECS = 300;
+      const signalGaps: { fromTime: string; toTime: string; fromLat: number; fromLng: number; toLat: number; toLng: number; gapSecs: number }[] = [];
+      for (let gi = 1; gi < points.length; gi++) {
+        const dt = (new Date(points[gi].recordedAt).getTime() - new Date(points[gi - 1].recordedAt).getTime()) / 1000;
+        if (dt > SIGNAL_GAP_SECS) {
+          signalGaps.push({
+            fromTime: new Date(points[gi - 1].recordedAt).toISOString(),
+            toTime: new Date(points[gi].recordedAt).toISOString(),
+            fromLat: Number(points[gi - 1].latitude),
+            fromLng: Number(points[gi - 1].longitude),
+            toLat: Number(points[gi].latitude),
+            toLng: Number(points[gi].longitude),
+            gapSecs: Math.round(dt),
           });
         }
       }
@@ -2956,9 +2993,75 @@ export async function registerRoutes(
           if (!endMeterReading   && exp.endOdometer)      endMeterReading   = exp.endOdometer;
         }
       }
-      res.json({ ...trip, startMeterReading, endMeterReading, visits: allVisits, gpsSegments });
+      res.json({ ...trip, startMeterReading, endMeterReading, visits: allVisits, gpsSegments, signalGaps });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch trip" });
+    }
+  });
+
+  // === TRIP BACKUP / REPORT EXPORT ===
+  app.get("/api/trips/backup", async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ message: "Authentication required" });
+      const user = await storage.getUser(userId);
+      if (!user || !["admin", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const days = Math.min(parseInt(req.query.days as string) || 30, 90);
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - days);
+
+      const allTrips = await storage.getTrips();
+      const employees = await storage.getEmployees();
+      const employeeMap = new Map(employees.map(e => [e.id, e]));
+
+      const filtered = allTrips.filter(t => t.startTime && new Date(t.startTime) >= sinceDate);
+
+      const headers = [
+        "Trip ID", "Employee Name", "Employee Code", "Date",
+        "Status", "Start Location", "End Location",
+        "Start Odometer (km)", "End Odometer (km)", "Total KM",
+        "Expense (₹)", "Start Time", "End Time",
+      ];
+
+      const toIST = (dt: Date | string | null | undefined) => {
+        if (!dt) return "-";
+        const d = new Date(dt);
+        return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: true });
+      };
+
+      const rows = filtered.map(t => {
+        const emp = employeeMap.get(t.employeeId);
+        return [
+          `TRP-${String(t.id).padStart(4, "0")}`,
+          emp?.fullName || "Unknown",
+          emp?.employeeId || "N/A",
+          t.startTime ? new Date(t.startTime).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) : "-",
+          t.status,
+          t.startLocationName || "-",
+          t.endLocationName || "-",
+          t.startMeterReading ? Number(t.startMeterReading).toFixed(1) : "-",
+          t.endMeterReading ? Number(t.endMeterReading).toFixed(1) : "-",
+          t.totalKm ? Number(t.totalKm).toFixed(1) : "-",
+          t.expenseAmount ? Number(t.expenseAmount).toFixed(0) : "-",
+          toIST(t.startTime),
+          toIST(t.endTime),
+        ];
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws["!cols"] = headers.map((h, i) => ({ wch: [12, 22, 14, 12, 12, 22, 22, 18, 16, 12, 14, 22, 22][i] || 14 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `Trips (${days}d)`);
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+      const label = days === 30 ? "30days" : days === 60 ? "60days" : `${days}days`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="trips-backup-${label}.xlsx"`);
+      res.send(buf);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to generate backup" });
     }
   });
 
