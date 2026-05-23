@@ -1250,8 +1250,8 @@ export async function registerRoutes(
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches (Doppler)
         const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 60;
-        const MIN_MOVE_MS    = 1.5;
+        const MIN_DIST_M     = 20;   // 20m/10s = 7.2 km/h min — counts slow city traffic
+        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h min implied speed for longer ping gaps
         const MIN_SPEED_MS   = 0.5;
         const SIGNAL_GAP_SEC = 300;  // 5-minute gap = signal drop, skip
         let d = 0, last = 0;
@@ -2931,8 +2931,10 @@ export async function registerRoutes(
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
         const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 60;   // min movement for no-speed pings (raised from 30 to cut cellular drift)
-        const MIN_MOVE_MS    = 1.5;  // 5.4 km/h — min implied speed to count no-speed ping as movement
+        const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
+                                     // 20m/10s = 2 m/s = 7.2 km/h — rejects walking/drift,
+                                     // counts slow city traffic (previously 60m cut off anything < 22 km/h)
+        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
         const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
@@ -4278,8 +4280,10 @@ export async function registerRoutes(
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
         const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 60;   // min movement for no-speed pings (raised from 30 to cut cellular drift)
-        const MIN_MOVE_MS    = 1.5;  // 5.4 km/h — min implied speed to count no-speed ping as movement
+        const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
+                                     // 20m/10s = 2 m/s = 7.2 km/h — rejects walking/drift,
+                                     // counts slow city traffic (previously 60m cut off anything < 22 km/h)
+        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
         const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
@@ -4346,22 +4350,31 @@ export async function registerRoutes(
 
       const segments: Segment[] = [];
       let prevEndIdx = -1;
+      let prevCluster: StoppageCluster | null = null;
 
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
-          // Actual travel pings (strictly between the two stoppage clusters) define the time range.
+          // Actual travel pings strictly between the two stoppage clusters.
           const actualTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          // Distance uses prev-stoppage-last + travel pings + next-stoppage-first as anchors.
-          // This correctly handles sparse GPS where there may be only 1 travel ping between
-          // stoppages: without the endpoint anchors, slice(1) would leave 1 pt → 0 km.
-          const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-          const distPts = points.slice(distStart, cluster.startIdx + 1);
-          if (distPts.length >= 2 && actualTravelPts.length >= 1) {
-            const distanceKm = totalDistKm(distPts);
+          if (actualTravelPts.length >= 1) {
+            // Distance: centroid-to-first-ping + GPS trail + last-ping-to-centroid.
+            // Using centroid anchors instead of raw stoppage cluster pings prevents
+            // GPS drift from inside stoppages from leaking into the travel total.
+            let distanceKm = 0;
+            if (prevCluster) {
+              distanceKm += haversineM(prevCluster.lat, prevCluster.lng,
+                Number(actualTravelPts[0].latitude), Number(actualTravelPts[0].longitude)) / 1000;
+            }
+            if (actualTravelPts.length >= 2) {
+              distanceKm += totalDistKm(actualTravelPts);
+            }
+            const lastTp = actualTravelPts[actualTravelPts.length - 1];
+            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude),
+              cluster.lat, cluster.lng) / 1000;
             segments.push({
               type: "travelled",
               startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
-              endTime: new Date(actualTravelPts[actualTravelPts.length - 1].recordedAt).toISOString(),
+              endTime: new Date(lastTp.recordedAt).toISOString(),
               distanceKm,
             });
           }
@@ -4375,16 +4388,21 @@ export async function registerRoutes(
           lng: cluster.lng,
         });
         prevEndIdx = cluster.endIdx;
+        prevCluster = cluster;
       }
 
       // Travel segment after last stoppage
       if (prevEndIdx < points.length - 1) {
-        // Tail: use last stoppage ping as distance anchor, actual tail pings define time range.
         const actualTailPts = points.slice(prevEndIdx + 1);
-        const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-        const travelPts = points.slice(distStart);
-        if (travelPts.length >= 2 && actualTailPts.length >= 1) {
-          const tailDistKm = totalDistKm(travelPts);
+        if (actualTailPts.length >= 1) {
+          let tailDistKm = 0;
+          if (prevCluster) {
+            tailDistKm += haversineM(prevCluster.lat, prevCluster.lng,
+              Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000;
+          }
+          if (actualTailPts.length >= 2) {
+            tailDistKm += totalDistKm(actualTailPts);
+          }
           segments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
