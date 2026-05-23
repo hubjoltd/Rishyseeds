@@ -1875,6 +1875,11 @@ export default function EmployeeProfile() {
     return ev;
   });
 
+  // Sum OSRM-enriched travelled distances — this matches what the segments list shows
+  const enrichedTotalKm = enrichedTimelineEvents
+    .filter(ev => ev.type === "travelled")
+    .reduce((sum, ev) => sum + ((ev as any).distanceKm ?? 0), 0);
+
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
@@ -2100,7 +2105,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(locationData?.totalKm ?? 0).toFixed(2)} Km
+                    {enrichedTotalKm.toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
