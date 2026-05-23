@@ -516,14 +516,18 @@ function LiveMap({
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
   // Falls back to [gpsPoints] (single array) when segments haven't loaded yet.
   //
-  const travelSegmentsPoints = useMemo(() => {
+  // Returns both the flat sub-group point arrays (for OSRM snapping / map rendering)
+  // AND subGroupCounts[i] = how many sub-groups server segment i produced.
+  // This lets the OSRM effect aggregate sub-group distances back to per-segment totals
+  // so the distance enrichment index never gets out of sync.
+  const travelSegmentsData = useMemo(() => {
     const allSegs = segments ?? [];
-    // Only use segments with meaningful distance — zero-distance segments are GPS drift
-    // during long rural stoppages that escaped the cluster and must not reach OSRM.
     const hasMeaningfulTravel = allSegs.some(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
-    if (!hasMeaningfulTravel) return [gpsPoints]; // no segment info yet — show all as one
+    if (!hasMeaningfulTravel) return { points: [gpsPoints], subGroupCounts: [1] };
 
     const result: [number, number][][] = [];
+    const subGroupCounts: number[] = [];
+
     for (let i = 0; i < allSegs.length; i++) {
       const seg = allSegs[i];
       if (seg.type !== "travelled") continue;
@@ -561,6 +565,7 @@ function LiveMap({
 
       // Apply 1-min centroid binning to each sub-group independently
       const BIN_MS = 60_000;
+      let pushedCount = 0;
       for (const group of subGroups) {
         if (group.length === 0) continue;
         const gStart = new Date(group[0].recordedAt).getTime();
@@ -581,11 +586,18 @@ function LiveMap({
           }
           repPings.push([Number(best.latitude), Number(best.longitude)]);
         }
-        if (repPings.length >= 2) result.push(repPings);
+        if (repPings.length >= 2) { result.push(repPings); pushedCount++; }
       }
+      // Record how many sub-groups were actually pushed for this server segment
+      // (used to aggregate OSRM distances back to per-segment totals)
+      subGroupCounts.push(pushedCount > 0 ? pushedCount : 0);
     }
-    return result.length > 0 ? result : [gpsPoints]; // guard: never return empty
+
+    if (result.length > 0) return { points: result, subGroupCounts };
+    return { points: [gpsPoints], subGroupCounts: [1] }; // guard: never return empty
   }, [locationPoints, segments, gpsPoints]);
+
+  const travelSegmentsPoints = travelSegmentsData.points;
 
   // Total travel point count across all segments — used to detect new data without re-snapping
   const totalTravelCount = useMemo(
@@ -606,9 +618,26 @@ function LiveMap({
     Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve({ coords: [] as [number,number][], distanceM: 0 }))).then(results => {
       if (!cancelled) {
         setSnappedSegments(results.map(r => r.coords));
-        const distances = results.map(r => r.distanceM / 1000);
-        if (onOsrmSegmentDistances) onOsrmSegmentDistances(distances);
-        if (onSnappedKm) onSnappedKm(distances.reduce((s, d) => s + d, 0));
+        const subGroupDistances = results.map(r => r.distanceM / 1000);
+        const totalOsrmKm = subGroupDistances.reduce((s, d) => s + d, 0);
+
+        // Aggregate sub-group distances back to per-server-segment totals.
+        // A single server "travelled" segment may have been split into multiple
+        // OSRM sub-groups (at signal gaps). Without aggregating, the enrichment
+        // index (_tIdx) gets out of sync and wrong distances are shown.
+        const { subGroupCounts } = travelSegmentsData;
+        const perSegmentDistances: number[] = [];
+        let flatIdx = 0;
+        for (const count of subGroupCounts) {
+          let segKm = 0;
+          for (let k = 0; k < count; k++) {
+            segKm += subGroupDistances[flatIdx++] ?? 0;
+          }
+          perSegmentDistances.push(segKm);
+        }
+
+        if (onOsrmSegmentDistances) onOsrmSegmentDistances(perSegmentDistances);
+        if (onSnappedKm) onSnappedKm(totalOsrmKm);
         setSnapping(false);
         lastSnapCount.current = totalTravelCount;
       }
