@@ -1904,10 +1904,30 @@ export default function EmployeeProfile() {
     return ev;
   });
 
-  // Sum OSRM-enriched travelled distances — this matches what the segments list shows
-  const enrichedTotalKm = enrichedTimelineEvents
-    .filter(ev => ev.type === "travelled")
-    .reduce((sum, ev) => sum + ((ev as any).distanceKm ?? 0), 0);
+  // Sum all distances shown in the timeline panel — both "travelled" (server GPS segments
+  // with optional OSRM enrichment) AND "gap_travel" (client-synthesised gaps between events
+  // that are also displayed as "Travelled (X Km)" in the panel).
+  // Previously gap_travel distances were shown in the list but excluded from the total.
+  const enrichedTotalKm = enrichedTimelineEvents.reduce((sum, ev) => {
+    if (ev.type === "travelled") {
+      return sum + ((ev as any).distanceKm ?? 0);
+    }
+    if (ev.type === "gap_travel") {
+      const gapStart = new Date(ev.startTime).getTime();
+      const gapEnd   = new Date((ev as any).endTime).getTime();
+      const gapPts   = (locationData?.points ?? [])
+        .filter((p: any) => {
+          const t = new Date(p.recordedAt).getTime();
+          return t >= gapStart && t <= gapEnd && p.latitude && p.longitude;
+        })
+        .map((p: any) => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+      let gapKm = 0;
+      for (let gi = 1; gi < gapPts.length; gi++)
+        gapKm += haversineKm(gapPts[gi-1][0], gapPts[gi-1][1], gapPts[gi][0], gapPts[gi][1]);
+      return sum + gapKm;
+    }
+    return sum;
+  }, 0);
 
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
