@@ -200,6 +200,7 @@ export interface IStorage {
   // Employee Locations (GPS tracking)
   addEmployeeLocation(data: InsertEmployeeLocation): Promise<EmployeeLocation>;
   getEmployeeLocationsForDate(employeeId: number, date: string): Promise<EmployeeLocation[]>;
+  getEmployeeLocationsForDateRange(startDate: string, endDate: string, employeeId?: number): Promise<EmployeeLocation[]>;
   getLatestLocationsAllEmployees(): Promise<{ employeeId: number; latitude: string; longitude: string; accuracy: string | null; speed: string | null; recordedAt: Date }[]>;
 
   // Dryer
@@ -1027,6 +1028,27 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(employeeLocations.recordedAt);
+  }
+
+  async getEmployeeLocationsForDateRange(startDate: string, endDate: string, employeeId?: number): Promise<EmployeeLocation[]> {
+    const start = new Date(`${startDate}T00:00:00+05:30`);
+    const end = new Date(`${endDate}T23:59:59.999+05:30`);
+    const conds: any[] = [gte(employeeLocations.recordedAt, start), lte(employeeLocations.recordedAt, end)];
+    if (employeeId) conds.push(eq(employeeLocations.employeeId, employeeId));
+    return db.select({
+      id: employeeLocations.id,
+      employeeId: employeeLocations.employeeId,
+      latitude: employeeLocations.latitude,
+      longitude: employeeLocations.longitude,
+      speed: employeeLocations.speed,
+      accuracy: employeeLocations.accuracy,
+      batteryLevel: employeeLocations.batteryLevel,
+      isCharging: employeeLocations.isCharging,
+      networkType: employeeLocations.networkType,
+      recordedAt: employeeLocations.recordedAt,
+    }).from(employeeLocations)
+      .where(and(...conds))
+      .orderBy(employeeLocations.employeeId, employeeLocations.recordedAt);
   }
 
   async getLatestLocationsAllEmployees() {

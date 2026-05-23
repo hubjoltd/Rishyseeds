@@ -1,4 +1,4 @@
-import { useAttendance, useEmployees } from "@/hooks/use-hrms";
+import { useEmployees } from "@/hooks/use-hrms";
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, subMonths, subQuarters, parseISO } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,9 +99,8 @@ export default function Attendance() {
   const endStr = isoDate(endDate);
   const empIdNum = filterEmpId !== "all" ? Number(filterEmpId) : undefined;
 
-  // Single day uses existing attendance API; range uses report API
-  const { data: singleDayData, isLoading: singleLoading } = useAttendance(isSingleDay ? startStr : undefined);
-  const { data: rangeData, isLoading: rangeLoading } = useQuery<AttendanceRecord[]>({
+  // Always use the report endpoint — it computes KM from GPS points (same as Live tab)
+  const { data: reportData, isLoading } = useQuery<AttendanceRecord[]>({
     queryKey: ["/api/attendance/report", startStr, endStr, filterEmpId],
     queryFn: async () => {
       const params = new URLSearchParams({ startDate: startStr, endDate: endStr });
@@ -110,13 +109,9 @@ export default function Attendance() {
       if (!res.ok) throw new Error("Failed to fetch report");
       return res.json();
     },
-    enabled: !isSingleDay,
   });
 
-  const isLoading = isSingleDay ? singleLoading : rangeLoading;
-  const rawRecords: AttendanceRecord[] = isSingleDay
-    ? ((singleDayData as AttendanceRecord[] || []).filter(r => !empIdNum || r.employeeId === empIdNum))
-    : (rangeData || []);
+  const rawRecords: AttendanceRecord[] = reportData || [];
 
   const getEmployeeName = (empId: number) => {
     const emp = allEmployees.find(e => e.id === empId);

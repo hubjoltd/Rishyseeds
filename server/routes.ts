@@ -1225,7 +1225,7 @@ export async function registerRoutes(
     res.json(list);
   });
 
-  // Attendance report with date range + KM travelled (from trips)
+  // Attendance report with date range + KM travelled (computed from GPS location points, same as Live tab)
   app.get("/api/attendance/report", checkPermission('attendance', 'view'), async (req, res) => {
     try {
       const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
@@ -1233,34 +1233,74 @@ export async function registerRoutes(
       const empIdParam = typeof req.query.employeeId === 'string' && req.query.employeeId ? Number(req.query.employeeId) : undefined;
       if (!startDate || !endDate) return res.status(400).json({ message: "startDate and endDate required" });
 
-      const [records, tripRows] = await Promise.all([
+      // Haversine distance (metres) — identical to the Live tab route
+      function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371000;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      // Same filtering logic as Live tab totalDistKm — rejects GPS glitches, tower jumps, drift
+      type LocPt = { latitude: string; longitude: string; speed: string | null; recordedAt: Date };
+      function computeKm(pts: LocPt[]): number {
+        if (pts.length < 2) return 0;
+        const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches (Doppler)
+        const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
+        const MIN_DIST_M     = 60;
+        const MIN_MOVE_MS    = 1.5;
+        const MIN_SPEED_MS   = 0.5;
+        const SIGNAL_GAP_SEC = 300;  // 5-minute gap = signal drop, skip
+        let d = 0, last = 0;
+        for (let k = 1; k < pts.length; k++) {
+          const distM = haversineM(
+            Number(pts[last].latitude), Number(pts[last].longitude),
+            Number(pts[k].latitude),    Number(pts[k].longitude)
+          );
+          const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
+          const spd = pts[k].speed != null ? Number(pts[k].speed) : null;
+          const hasSpeed = spd != null && spd > MIN_SPEED_MS;
+          if (hasSpeed) {
+            if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+            d += distM / 1000; last = k;
+          } else {
+            if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
+            const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
+          }
+        }
+        return d;
+      }
+
+      const [records, locPoints] = await Promise.all([
         storage.getAttendanceRange(startDate, endDate, empIdParam),
-        (async () => {
-          const { db } = await import("./db");
-          const { trips } = await import("@shared/schema");
-          const { and: drAnd, gte: drGte, lte: drLte, eq: drEq } = await import("drizzle-orm");
-          const dayStart = new Date(startDate + 'T00:00:00+05:30');
-          const dayEnd = new Date(endDate + 'T23:59:59+05:30');
-          const conds: any[] = [drGte(trips.startTime, dayStart), drLte(trips.startTime, dayEnd)];
-          if (empIdParam) conds.push(drEq(trips.employeeId, empIdParam));
-          return db.select({ employeeId: trips.employeeId, startTime: trips.startTime, totalKm: trips.totalKm })
-            .from(trips).where(drAnd(...conds));
-        })(),
+        storage.getEmployeeLocationsForDateRange(startDate, endDate, empIdParam),
       ]);
 
-      // Build km map: "empId:YYYY-MM-DD" -> totalKm
-      const kmMap = new Map<string, number>();
-      for (const t of tripRows) {
-        if (!t.startTime || t.totalKm == null) continue;
-        const istMs = t.startTime.getTime() + 5.5 * 60 * 60 * 1000;
+      // Group location points by "empId:YYYY-MM-DD" (IST date)
+      const locMap = new Map<string, LocPt[]>();
+      for (const p of locPoints) {
+        const istMs = new Date(p.recordedAt).getTime() + 5.5 * 60 * 60 * 1000;
         const dateStr = new Date(istMs).toISOString().slice(0, 10);
-        const key = `${t.employeeId}:${dateStr}`;
-        kmMap.set(key, (kmMap.get(key) || 0) + Number(t.totalKm));
+        const key = `${p.employeeId}:${dateStr}`;
+        if (!locMap.has(key)) locMap.set(key, []);
+        locMap.get(key)!.push(p as LocPt);
+      }
+
+      // Compute km per employee per day
+      const kmMap = new Map<string, number>();
+      for (const [key, pts] of locMap.entries()) {
+        const km = computeKm(pts);
+        if (km > 0) kmMap.set(key, Math.round(km * 10) / 10);
       }
 
       const enriched = records.map(r => ({
         ...r,
-        kmTravelled: kmMap.has(`${r.employeeId}:${r.date}`) ? Math.round(kmMap.get(`${r.employeeId}:${r.date}`)! * 10) / 10 : null,
+        kmTravelled: kmMap.get(`${r.employeeId}:${r.date}`) ?? null,
       }));
       res.json(enriched);
     } catch (e: any) {
