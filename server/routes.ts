@@ -2903,7 +2903,7 @@ export async function registerRoutes(
       // 200 m radius: balances GPS drift containment with short-trip detection.
       // At 80–90 m accuracy, random-walk drift stays within 200 m for ~5–6 pings (~3 min).
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min minimum — filters traffic lights & brief pauses
+      const STOPPAGE_MIN_SECS = 3 * 60; // 3 min minimum — filters traffic lights, keeps real stops
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
         const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -4240,7 +4240,7 @@ export async function registerRoutes(
       }
 
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min minimum — filters traffic lights & brief pauses
+      const STOPPAGE_MIN_SECS = 3 * 60; // 3 min minimum — filters traffic lights, keeps real stops
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;

@@ -2350,7 +2350,7 @@ export default function EmployeeProfile() {
                         const ss = Math.round(totalSecs % 60);
                         const durLabel = hh > 0
                           ? `${hh}h ${String(mm).padStart(2,"0")}m`
-                          : `${String(mm).padStart(2,"0")}m ${String(ss).padStart(2,"0")}s`;
+                          : `${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
                         return (
                           <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-gray-50 transition-colors">
                             {dot("bg-gray-400", <Timer className="w-2.5 h-2.5 text-white" />)}
@@ -2394,7 +2394,9 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       const distKm: number = (seg as any).distanceKm ?? 0;
-                      const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
+                      // Hide zero-distance entries — single-ping segments with no measurable travel
+                      if (distKm === 0) return null;
+                      const distLabel = distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       return (
                         <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
