@@ -806,7 +806,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
       const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const radiuses = sample.map(() => "100").join(";");
+      const radiuses = sample.map(() => "150").join(";"); // 150 m radius handles cellular GPS ±83 m noise
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
       const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
@@ -823,8 +823,9 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     } catch { return null; }
   };
 
-  // Dense GPS → try match first, fall back to route; Sparse → go straight to route
-  if (points.length >= 15) {
+  // Use map-match for >= 6 points (follows actual path taken, not optimal route).
+  // Route-only for sparse GPS (< 6 pts) where match would have too few anchors.
+  if (points.length >= 6) {
     const matched = await tryMatch(points);
     if (matched) return matched;
   }
@@ -1907,10 +1908,10 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {enrichedTimelineEvents
-                      .filter((s: any) => s.type === "travelled")
-                      .reduce((acc: number, s: any) => acc + (Number(s.distanceKm) || 0), 0)
-                      .toFixed(2)} Km
+                    {(liveSnappedKm !== null
+                      ? liveSnappedKm
+                      : locationData?.totalKm ?? 0
+                    ).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>

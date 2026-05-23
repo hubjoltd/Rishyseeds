@@ -2839,9 +2839,10 @@ export async function registerRoutes(
       //     of 57 min covering 103 km at ~108 km/h — all below 120 km/h).
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS   = 55.6; // 200 km/h — GPS glitch / timestamp error
-        const MAX_NOSPEED_MS = 33.3; // 120 km/h — tower-jump rejection (no Doppler)
-        const MIN_DIST_M     = 30;   // minimum movement without speed data
+        const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
+        const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
+        const MIN_DIST_M     = 60;   // min movement for no-speed pings (raised from 30 to cut cellular drift)
+        const MIN_MOVE_MS    = 1.5;  // 5.4 km/h — min implied speed to count no-speed ping as movement
         const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
@@ -2852,14 +2853,16 @@ export async function registerRoutes(
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
-            // Satellite GPS: trust Doppler, only reject GPS glitches
+            // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
             d += distM / 1000;
             last = k;
           } else {
-            // No Doppler: reject noise (< 30 m) and tower jumps (> 120 km/h equiv)
+            // No Doppler: reject tower jumps, then require both distance AND implied speed
+            // to be meaningful — prevents stationary GPS random-walk from accumulating
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
-            if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
           }
         }
         return d;
@@ -4072,9 +4075,10 @@ export async function registerRoutes(
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS   = 55.6; // 200 km/h — GPS glitch / timestamp error
-        const MAX_NOSPEED_MS = 33.3; // 120 km/h — tower-jump rejection (no Doppler)
-        const MIN_DIST_M     = 30;   // minimum movement without speed data
+        const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
+        const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
+        const MIN_DIST_M     = 60;   // min movement for no-speed pings (raised from 30 to cut cellular drift)
+        const MIN_MOVE_MS    = 1.5;  // 5.4 km/h — min implied speed to count no-speed ping as movement
         const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
@@ -4085,12 +4089,16 @@ export async function registerRoutes(
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
+            // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
             d += distM / 1000;
             last = k;
           } else {
+            // No Doppler: reject tower jumps, then require both distance AND implied speed
+            // to be meaningful — prevents stationary GPS random-walk from accumulating
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
-            if (distM >= MIN_DIST_M) { d += distM / 1000; last = k; }
+            const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
           }
         }
         return d;
