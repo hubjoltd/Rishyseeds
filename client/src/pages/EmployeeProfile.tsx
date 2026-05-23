@@ -273,6 +273,27 @@ function LiveMapInner({
     [locationPoints]
   );
 
+  // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart
+  // indicate background tracking lost signal (tunnel, building, network outage).
+  const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  const signalGapLines = useMemo(() => {
+    const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < valid.length; i++) {
+      const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
+      if (gap > SIGNAL_GAP_MS) {
+        gaps.push({
+          path: [
+            [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)],
+            [Number(valid[i].latitude),     Number(valid[i].longitude)],
+          ],
+          gapMins: Math.round(gap / 60000),
+        });
+      }
+    }
+    return gaps;
+  }, [locationPoints]);
+
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
     const all: [number, number][] = [...gpsPoints];
@@ -368,6 +389,24 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
+
+      {/* Signal-drop gaps — red dashed lines where GPS tracking was lost */}
+      {signalGapLines.map((gap, i) => (
+        <Fragment key={`gap-${i}`}>
+          <Polyline
+            positions={gap.path}
+            pathOptions={{ color: "#ef4444", weight: 4, opacity: 0.9, dashArray: "10 8", lineCap: "round", lineJoin: "round" }}
+          >
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 150 }}>
+                <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
+                <span style={{ fontSize: 12 }}>No GPS for <b>{gap.gapMins} min{gap.gapMins !== 1 ? "s" : ""}</b></span><br />
+                <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
+              </div>
+            </Popup>
+          </Polyline>
+        </Fragment>
+      ))}
 
       {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {segments.filter(s => s.type === "stoppage" && s.lat && s.lng).map((s, i) => {
@@ -625,6 +664,10 @@ function LiveMap({
         </div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500"/><span>Stoppage</span></div>
         <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-green-600"/><span>CHK Visit</span></div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-6 border-t-2 border-dashed border-red-500" style={{ height: 0 }}/>
+          <span className="text-red-600 font-medium">Signal Lost</span>
+        </div>
       </div>
 
       {/* No-data badge — bottom-center */}
@@ -872,6 +915,7 @@ function PlaybackMapInner({
   punchOutLng,
   punchOutLocation,
   punchOutTime,
+  signalGapLines = [],
 }: {
   rawPoints: [number, number][];
   snappedPoints: [number, number][];
@@ -888,6 +932,7 @@ function PlaybackMapInner({
   punchOutLng?: number | null;
   punchOutLocation?: string | null;
   punchOutTime?: string | null;
+  signalGapLines?: { path: [[number, number], [number, number]]; gapMins: number }[];
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
   const map = useMap();
@@ -926,6 +971,24 @@ function PlaybackMapInner({
         <Polyline positions={snappedPoints} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={snappedPoints} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
+
+      {/* Signal-drop gaps — red dashed lines where GPS tracking was lost */}
+      {signalGapLines.map((gap, i) => (
+        <Fragment key={`pb-gap-${i}`}>
+          <Polyline
+            positions={gap.path}
+            pathOptions={{ color: "#ef4444", weight: 4, opacity: 0.9, dashArray: "10 8", lineCap: "round", lineJoin: "round" }}
+          >
+            <Popup>
+              <div style={{ fontSize: 13, minWidth: 150 }}>
+                <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
+                <span style={{ fontSize: 12 }}>No GPS for <b>{gap.gapMins} min{gap.gapMins !== 1 ? "s" : ""}</b></span><br />
+                <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
+              </div>
+            </Popup>
+          </Polyline>
+        </Fragment>
+      ))}
 
       {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {stoppages.map(s => (
@@ -1116,6 +1179,22 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
       });
   }, [locationData]);
 
+  // Signal-drop gaps for playback view (same 5-min threshold as Live map)
+  const pbSignalGapLines = useMemo(() => {
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < routeWithTime.length; i++) {
+      const gap = new Date(routeWithTime[i].ts).getTime() - new Date(routeWithTime[i - 1].ts).getTime();
+      if (gap > SIGNAL_GAP_MS) {
+        gaps.push({
+          path: [routeWithTime[i - 1].pos, routeWithTime[i].pos],
+          gapMins: Math.round(gap / 60000),
+        });
+      }
+    }
+    return gaps;
+  }, [routeWithTime]);
+
   // Build CHK stop list
   const chkStops = useMemo(() => {
     let num = 1;
@@ -1220,6 +1299,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
           punchOutLng={pbPunchOutLng}
           punchOutLocation={pbAttendance?.checkOutLocation || null}
           punchOutTime={pbAttendance?.checkOut ? String(pbAttendance.checkOut) : null}
+          signalGapLines={pbSignalGapLines}
         />
       </MapContainer>
 
