@@ -7,7 +7,7 @@ import {
   ArrowLeft, Loader2, MapPin, Gauge,
   Navigation, Play, Square,
   ChevronRight, LogIn, LogOut, Timer, Car,
-  UserCheck, UserX, Building2, X,
+  UserCheck, UserX, Building2, X, WifiOff,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getEmployeeToken } from "../EmployeeLogin";
@@ -416,20 +416,27 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
           {/* Unified Trip Timeline */}
           {(() => {
             const gpsSegs: any[] = trip.gpsSegments || [];
-            // Build a merged timeline: GPS segments + visits, all sorted by time
+            const gpsGaps: any[] = trip.signalGaps || [];
+            // Build a merged timeline: GPS segments + signal gaps + visits, all sorted by time
             type TLItem =
               | { kind: "gps_stop"; seg: any }
               | { kind: "gps_travel"; seg: any }
+              | { kind: "gps_gap"; gap: any }
               | { kind: "visit"; v: any; idx: number };
             const items: TLItem[] = [
               ...gpsSegs.map(seg => ({
                 kind: (seg.type === "stoppage" ? "gps_stop" : "gps_travel") as TLItem["kind"],
-                seg, v: undefined as any, idx: 0,
+                seg, gap: undefined as any, v: undefined as any, idx: 0,
                 _t: new Date(seg.startTime).getTime(),
+              })),
+              ...gpsGaps.map((gap: any) => ({
+                kind: "gps_gap" as const,
+                seg: undefined as any, gap, v: undefined as any, idx: 0,
+                _t: new Date(gap.fromTime).getTime(),
               })),
               ...visits.map((v: any, idx: number) => ({
                 kind: "visit" as const,
-                seg: undefined as any, v, idx,
+                seg: undefined as any, gap: undefined as any, v, idx,
                 _t: new Date(v.punchInTime || 0).getTime(),
               })),
             ].sort((a, b) => a._t - b._t);
@@ -495,6 +502,24 @@ export default function EmployeeTrips({ employee }: EmployeeTripsProps) {
                                 ? `${Math.round(item.seg.distanceKm * 1000)} m travelled`
                                 : `${Number(item.seg.distanceKm).toFixed(2)} km travelled`}
                               <span className="text-gray-400 font-normal ml-1">· {fmtTime(item.seg.startTime)}–{fmtTime(item.seg.endTime)}</span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (item.kind === "gps_gap") {
+                      const gapMins = Math.round(item.gap.gapSecs / 60);
+                      return (
+                        <div key={`gap-${ii}`} className="flex items-start gap-2 px-3 py-1.5 relative z-10">
+                          <div className="w-9 flex justify-center shrink-0 pt-0.5">
+                            <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mt-1">
+                              <WifiOff className="w-2.5 h-2.5 text-amber-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0 pt-1">
+                            <p className="text-[10px] text-amber-500 font-medium">
+                              GPS signal lost · {gapMins}m gap
+                              <span className="text-gray-400 font-normal ml-1">· {fmtTime(item.gap.fromTime)}–{fmtTime(item.gap.toTime)}</span>
                             </p>
                           </div>
                         </div>
