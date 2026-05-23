@@ -101,7 +101,7 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "outline" | "
   rejected: "destructive",
 };
 
-const GOOGLE_MAPS_API_KEY = "AIzaSyBrXqf4qkgKxH6eIqCv0QnxPx7X-59qPQ8";
+declare global { interface Window { __GMAPS_KEY__?: string; } }
 
 let googleMapsLoaded = false;
 let googleMapsLoading = false;
@@ -113,7 +113,8 @@ function loadGoogleMaps(callback: () => void) {
   if (googleMapsLoading) return;
   googleMapsLoading = true;
   const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+  const key = window.__GMAPS_KEY__ || "";
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
   script.async = true;
   script.onload = () => {
     googleMapsLoaded = true;
