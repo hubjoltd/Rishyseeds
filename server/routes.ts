@@ -2926,16 +2926,14 @@ export async function registerRoutes(
       //     (background kill, network loss, tunnel).  The straight-line distance across
       //     the gap must NOT be counted as travel — it inflates the total by kilometres.
       //     We advance `last` to the post-gap point so subsequent hops measure correctly.
-      const SIGNAL_GAP_SEC = 300; // 5 minutes
+      const SIGNAL_GAP_SEC  = 300;  // 5 minutes
+      const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
+      const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
+      const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
+      const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
+      const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
-        const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
-                                     // 20m/10s = 2 m/s = 7.2 km/h — rejects walking/drift,
-                                     // counts slow city traffic (previously 60m cut off anything < 22 km/h)
-        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
-        const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
           const distM = haversineM(
@@ -4300,16 +4298,14 @@ export async function registerRoutes(
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       // Signal-drop guard: skip any hop > 5 min (GPS tracking gap) — don't count as travel.
-      const SIGNAL_GAP_SEC = 300; // 5 minutes
+      const SIGNAL_GAP_SEC  = 300;  // 5 minutes
+      const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
+      const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
+      const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
+      const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
+      const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
-        const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
-        const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
-                                     // 20m/10s = 2 m/s = 7.2 km/h — rejects walking/drift,
-                                     // counts slow city traffic (previously 60m cut off anything < 22 km/h)
-        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
-        const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
           const distM = haversineM(
