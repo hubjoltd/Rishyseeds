@@ -577,13 +577,19 @@ function LiveMap({
         if (cur.length > 0) subGroups.push(cur);
       }
 
-      // Apply 1-min centroid binning to each sub-group independently
-      const BIN_MS = 60_000;
+      // Apply centroid binning to each sub-group independently.
+      // Short sub-groups (≤ 5 min) use 30-second bins so map-match gets more anchor
+      // points and can follow a winding road more faithfully. Longer groups stay on
+      // 60-second bins to keep OSRM requests lean while still smoothing GPS noise.
       let pushedCount = 0;
       for (const group of subGroups) {
         if (group.length === 0) continue;
         const gStart = new Date(group[0].recordedAt).getTime();
         const gEnd   = new Date(group[group.length - 1].recordedAt).getTime();
+        const groupDurMs = gEnd - gStart;
+        // Short legs (≤ 5 min): 30-second bins → more OSRM anchors for winding roads.
+        // Longer legs: 60-second bins to keep requests lean.
+        const BIN_MS = groupDurMs <= 5 * 60_000 ? 30_000 : 60_000;
         const repPings: [number, number][] = [];
         for (let t = gStart; t <= gEnd + BIN_MS; t += BIN_MS) {
           const bin = group.filter(p => {
@@ -987,9 +993,13 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   };
   const cleanPoints = filterOutlierPts(points);
 
-  // Use map-match for >= 10 points (follows actual path taken, not optimal route).
-  // Route-only for sparse GPS (< 10 pts) where match would have too few anchors.
-  if (cleanPoints.length >= 10) {
+  // Always try map-match first (≥ 2 points).
+  // Map-match forces OSRM to route near each GPS waypoint IN ORDER, so it follows
+  // the actual road taken rather than finding a shorter shortcut between start and end.
+  // This is the key difference vs route/v1 which picks the optimal (shortest) path and
+  // can under-count a winding 2.0 km route as 1.72 km if a straighter road exists.
+  // Falls back to route/v1 if match fails (network error, too sparse for OSRM matcher).
+  if (cleanPoints.length >= 2) {
     const matched = await tryMatch(cleanPoints);
     if (matched) return matched;
   }
