@@ -2838,6 +2838,12 @@ export async function registerRoutes(
       //     tower-switching noise (e.g. 1 km jump in 10 s ≈ 360 km/h) while still
       //     counting legitimate driving (80–110 km/h highway, or a long ping gap
       //     of 57 min covering 103 km at ~108 km/h — all below 120 km/h).
+      // Signal-drop guard:
+      //   • Any hop where consecutive pings are > 5 min apart is a GPS tracking gap
+      //     (background kill, network loss, tunnel).  The straight-line distance across
+      //     the gap must NOT be counted as travel — it inflates the total by kilometres.
+      //     We advance `last` to the post-gap point so subsequent hops measure correctly.
+      const SIGNAL_GAP_SEC = 300; // 5 minutes
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
@@ -2852,6 +2858,8 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
+          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
             // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
@@ -4181,6 +4189,8 @@ export async function registerRoutes(
 
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
+      // Signal-drop guard: skip any hop > 5 min (GPS tracking gap) — don't count as travel.
+      const SIGNAL_GAP_SEC = 300; // 5 minutes
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
@@ -4195,6 +4205,8 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
+          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
+          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
             // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
