@@ -3006,57 +3006,32 @@ export async function registerRoutes(
       // not disable the accurate centroid-to-centroid path for travel segments.
       const gpsSegments: GpsSeg[] = [];
       let prevEnd = -1;
-      // Track the centroid of the previous stoppage as a stable departure anchor.
-      // Using the raw last GPS point (prevEnd) causes 0.7–0.8 km errors because
-      // GPS drifts within the 250 m cluster radius during long stops, so the last
-      // ping can be hundreds of metres from where the employee actually departed.
-      // The centroid (rolling average of all cluster pings) is far more stable.
-      let prevCentroid: { lat: number; lng: number } | null = null;
-
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
+          // Travel pings strictly between the two stoppage clusters — no stoppage anchors.
           const actualTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          if (actualTravelPts.length >= 1) {
-            // Departure anchor: previous stoppage centroid (stable) or first travel ping
-            const fromLat = prevCentroid ? prevCentroid.lat : Number(actualTravelPts[0].latitude);
-            const fromLng = prevCentroid ? prevCentroid.lng : Number(actualTravelPts[0].longitude);
-            // Arrival anchor: current stoppage centroid (stable)
-            const toLat = cluster.lat;
-            const toLng = cluster.lng;
-            let distanceKm = 0;
-            // Leg 1: departure centroid → first travel GPS ping
-            distanceKm += haversineM(fromLat, fromLng, Number(actualTravelPts[0].latitude), Number(actualTravelPts[0].longitude)) / 1000;
-            // Middle: GPS trail through actual travel pings (road-following accuracy)
-            distanceKm += totalDistKm(actualTravelPts);
-            // Leg 3: last travel GPS ping → arrival centroid
+          if (actualTravelPts.length >= 2) {
             const lastTp = actualTravelPts[actualTravelPts.length - 1];
-            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude), toLat, toLng) / 1000;
             gpsSegments.push({
               type: "travelled",
               startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
               endTime: new Date(lastTp.recordedAt).toISOString(),
-              distanceKm,
+              distanceKm: totalDistKm(actualTravelPts),
             });
           }
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
         prevEnd = cluster.endIdx;
-        prevCentroid = { lat: cluster.lat, lng: cluster.lng };
       }
       if (prevEnd < points.length - 1 && points.length > 0) {
-        // Tail travel after last stoppage: depart from last stoppage centroid
+        // Tail travel after last stoppage — no stoppage anchor.
         const actualTailPts = points.slice(prevEnd + 1);
-        if (actualTailPts.length >= 1) {
-          const fromLat = prevCentroid ? prevCentroid.lat : Number(actualTailPts[0].latitude);
-          const fromLng = prevCentroid ? prevCentroid.lng : Number(actualTailPts[0].longitude);
-          let tailDistKm = 0;
-          tailDistKm += haversineM(fromLat, fromLng, Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000;
-          tailDistKm += totalDistKm(actualTailPts);
+        if (actualTailPts.length >= 2) {
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
             endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: tailDistKm,
+            distanceKm: totalDistKm(actualTailPts),
           });
         }
       }
@@ -4363,15 +4338,13 @@ export async function registerRoutes(
 
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
-          // Actual travel pings (strictly between the two stoppage clusters) define the time range.
+          // Actual travel pings strictly between the two stoppage clusters.
+          // Distance is computed from ONLY these travel pings — no stoppage anchor
+          // points are included, so stoppage GPS drift never inflates or deflates
+          // the reported travel distance.
           const actualTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          // Distance uses prev-stoppage-last + travel pings + next-stoppage-first as anchors.
-          // This correctly handles sparse GPS where there may be only 1 travel ping between
-          // stoppages: without the endpoint anchors, slice(1) would leave 1 pt → 0 km.
-          const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-          const distPts = points.slice(distStart, cluster.startIdx + 1);
-          if (distPts.length >= 2 && actualTravelPts.length >= 1) {
-            const distanceKm = totalDistKm(distPts);
+          if (actualTravelPts.length >= 2) {
+            const distanceKm = totalDistKm(actualTravelPts);
             segments.push({
               type: "travelled",
               startTime: new Date(actualTravelPts[0].recordedAt).toISOString(),
@@ -4393,12 +4366,10 @@ export async function registerRoutes(
 
       // Travel segment after last stoppage
       if (prevEndIdx < points.length - 1) {
-        // Tail: use last stoppage ping as distance anchor, actual tail pings define time range.
+        // Tail: only actual tail pings — no stoppage anchor — same principle as between clusters.
         const actualTailPts = points.slice(prevEndIdx + 1);
-        const distStart = prevEndIdx < 0 ? 0 : prevEndIdx;
-        const travelPts = points.slice(distStart);
-        if (travelPts.length >= 2 && actualTailPts.length >= 1) {
-          const tailDistKm = totalDistKm(travelPts);
+        if (actualTailPts.length >= 2) {
+          const tailDistKm = totalDistKm(actualTailPts);
           segments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
