@@ -1920,52 +1920,12 @@ export default function EmployeeProfile() {
     }
   }
 
-  // Inject OSRM road distances into travelled segments (index matches order of OSRM snapping).
-  // OSRM map-matches GPS points to real roads (same as Google Maps), so its distance is the
-  // authoritative value. We trust it whenever OSRM returns a positive result — the old
-  // 0.70–1.50 ratio guard was incorrectly discarding correct OSRM values when GPS noise
-  // caused the server estimate to be far from the real road distance (e.g. 19 km GPS vs 8 km
-  // actual road → ratio 0.41, below the old 0.70 floor → OSRM was rejected → showed 19 km).
-  let _tIdx = 0;
-  const enrichedTimelineEvents = allTimelineEvents.map(ev => {
-    if (ev.type === "travelled") {
-      const serverKm = (ev as any).distanceKm ?? 0;
-      if (serverKm < 0.05) return ev; // also skipped in travelSegmentsPoints — don't advance index
-      const osrmKm = osrmSegmentDistances[_tIdx++];
-      // Trust OSRM whenever it succeeds — it routes on real roads like Google Maps does
-      if (osrmKm != null && osrmKm > 0) {
-        return { ...ev, distanceKm: osrmKm };
-      }
-      return ev;
-    }
-    return ev;
-  });
+  const enrichedTimelineEvents = allTimelineEvents;
 
-  // Sum all distances shown in the timeline panel — both "travelled" (server GPS segments
-  // with optional OSRM enrichment) AND "gap_travel" (client-synthesised gaps between events
-  // that are also displayed as "Travelled (X Km)" in the panel).
-  // Previously gap_travel distances were shown in the list but excluded from the total.
+  // Sum only "travelled" segments using server-provided distances
   const enrichedTotalKm = enrichedTimelineEvents.reduce((sum, ev) => {
     if (ev.type === "travelled") {
       return sum + ((ev as any).distanceKm ?? 0);
-    }
-    if (ev.type === "gap_travel") {
-      const gapStart = new Date(ev.startTime).getTime();
-      const gapEnd   = new Date((ev as any).endTime).getTime();
-      const gapPts   = (locationData?.points ?? [])
-        .filter((p: any) => {
-          const t = new Date(p.recordedAt).getTime();
-          if (!(t >= gapStart && t <= gapEnd && p.latitude && p.longitude)) return false;
-          // Skip poor-accuracy points — same 80 m threshold as server
-          const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
-          if (acc !== null && acc > 80) return false;
-          return true;
-        })
-        .map((p: any) => [Number(p.latitude), Number(p.longitude)] as [number, number]);
-      let gapKm = 0;
-      for (let gi = 1; gi < gapPts.length; gi++)
-        gapKm += haversineKm(gapPts[gi-1][0], gapPts[gi-1][1], gapPts[gi][0], gapPts[gi][1]);
-      return sum + gapKm;
     }
     return sum;
   }, 0);
@@ -1973,8 +1933,7 @@ export default function EmployeeProfile() {
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
-  // Prefer OSRM road-snapped km (same method Google Maps uses) over server GPS estimate
-  const playbackKm = playbackOsrmKm ?? playbackLocationData?.totalKm ?? playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
+  const playbackKm = playbackLocationData?.totalKm ?? playbackDateTrips.reduce((s, t) => s + Number(t.totalKm || 0), 0);
   const playbackCheckIns = playbackCheckins.filter((c: any) => c.checkedInAt).length;
   const playbackCheckOuts = playbackCheckins.filter((c: any) => c.checkedOutAt).length;
   const speedViolations = (playbackLocationData?.points ?? []).filter(p => p.speed && Number(p.speed) * 3.6 > speedLimitKm).length;
