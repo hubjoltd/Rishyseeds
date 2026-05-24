@@ -1274,7 +1274,26 @@ export async function registerRoutes(
           } else {
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
             const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
-            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) {
+              // Bounce detection: if the next valid ping returns close to `last`, this is a
+              // GPS outlier (tower switch / multipath) — skip without advancing last
+              if (distM >= 150) {
+                let nk = k + 1;
+                while (nk < pts.length) {
+                  const nacc = pts[nk].accuracy != null ? Number(pts[nk].accuracy) : null;
+                  if (nacc === null || nacc <= MAX_ACCURACY_M) break;
+                  nk++;
+                }
+                if (nk < pts.length) {
+                  const returnDist = haversineM(
+                    Number(pts[last].latitude), Number(pts[last].longitude),
+                    Number(pts[nk].latitude),   Number(pts[nk].longitude)
+                  );
+                  if (returnDist < distM * 0.5) continue;
+                }
+              }
+              d += distM / 1000; last = k;
+            }
           }
         }
         return d;
@@ -2962,7 +2981,26 @@ export async function registerRoutes(
             // to be meaningful — prevents stationary GPS random-walk from accumulating
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
             const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
-            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) {
+              // Bounce detection: if next valid ping returns close to `last`, this is a
+              // GPS outlier (tower switch / multipath) — skip without advancing last
+              if (distM >= 150) {
+                let nk = k + 1;
+                while (nk < pts.length) {
+                  const nacc = pts[nk].accuracy != null ? Number(pts[nk].accuracy) : null;
+                  if (nacc === null || nacc <= MAX_ACCURACY_M) break;
+                  nk++;
+                }
+                if (nk < pts.length) {
+                  const returnDist = haversineM(
+                    Number(pts[last].latitude), Number(pts[last].longitude),
+                    Number(pts[nk].latitude),   Number(pts[nk].longitude)
+                  );
+                  if (returnDist < distM * 0.5) continue;
+                }
+              }
+              d += distM / 1000; last = k;
+            }
           }
         }
         return d;
@@ -4338,7 +4376,26 @@ export async function registerRoutes(
             // to be meaningful — prevents stationary GPS random-walk from accumulating
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
             const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
-            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) { d += distM / 1000; last = k; }
+            if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) {
+              // Bounce detection: if next valid ping returns close to `last`, this is a
+              // GPS outlier (tower switch / multipath) — skip without advancing last
+              if (distM >= 150) {
+                let nk = k + 1;
+                while (nk < pts.length) {
+                  const nacc = pts[nk].accuracy != null ? Number(pts[nk].accuracy) : null;
+                  if (nacc === null || nacc <= MAX_ACCURACY_M) break;
+                  nk++;
+                }
+                if (nk < pts.length) {
+                  const returnDist = haversineM(
+                    Number(pts[last].latitude), Number(pts[last].longitude),
+                    Number(pts[nk].latitude),   Number(pts[nk].longitude)
+                  );
+                  if (returnDist < distM * 0.5) continue;
+                }
+              }
+              d += distM / 1000; last = k;
+            }
           }
         }
         return d;
