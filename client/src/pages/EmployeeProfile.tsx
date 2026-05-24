@@ -1245,8 +1245,15 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
 
   // Build timestamped route from GPS points → fallback to waypoints
   const routeWithTime = useMemo(() => {
+    const MAX_ACCURACY_M = 80; // skip pings worse than 80 m — same threshold as server
     const gpsPts = (locationData?.points ?? [])
-      .filter(p => p.latitude && p.longitude)
+      .filter(p => {
+        if (!p.latitude || !p.longitude) return false;
+        // Drop poor-accuracy points to prevent zigzag inflation on the map and in distance
+        const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
+        if (acc !== null && acc > MAX_ACCURACY_M) return false;
+        return true;
+      })
       .map(p => ({
         pos: [Number(p.latitude), Number(p.longitude)] as [number, number],
         ts: p.recordedAt,
@@ -1942,7 +1949,11 @@ export default function EmployeeProfile() {
       const gapPts   = (locationData?.points ?? [])
         .filter((p: any) => {
           const t = new Date(p.recordedAt).getTime();
-          return t >= gapStart && t <= gapEnd && p.latitude && p.longitude;
+          if (!(t >= gapStart && t <= gapEnd && p.latitude && p.longitude)) return false;
+          // Skip poor-accuracy points — same 80 m threshold as server
+          const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
+          if (acc !== null && acc > 80) return false;
+          return true;
         })
         .map((p: any) => [Number(p.latitude), Number(p.longitude)] as [number, number]);
       let gapKm = 0;
