@@ -549,11 +549,15 @@ function LiveMap({
         : Infinity;
       const segEndExtended = Math.min(segEnd + 2 * 60 * 1000, nextTravelStartMs - 1000);
 
-      const segPings = locationPoints.filter(p =>
-        p.latitude && p.longitude && p.recordedAt &&
-        new Date(p.recordedAt).getTime() >= segStart &&
-        new Date(p.recordedAt).getTime() <= segEndExtended
-      );
+      const segPings = locationPoints.filter(p => {
+        if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+        const t = new Date(p.recordedAt).getTime();
+        if (t < segStart || t > segEndExtended) return false;
+        // Skip poor-accuracy pings — same 80 m threshold as server — reduces map noise
+        const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
+        if (acc !== null && acc > 80) return false;
+        return true;
+      });
 
       // Split segPings at signal gaps (>5 min) BEFORE sending to OSRM.
       // Without this, OSRM routes a continuous blue road line through the gap,
@@ -971,9 +975,8 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     } catch { return null; }
   };
 
-  // ── Outlier filter: remove pings that jump > 5× the median consecutive distance ──
-  // This catches tower-switching teleports (e.g. 5 km jump when median is 100 m)
-  // without removing legitimate fast movement, keeping OSRM routes clean.
+  // ── Outlier filter: remove pings that jump > 3× the median consecutive distance,
+  //    plus bounce detection (jump-and-return pattern = GPS noise on nearby road) ──
   const filterOutlierPts = (pts: [number, number][]): [number, number][] => {
     if (pts.length <= 2) return pts;
     const dists: number[] = [];
@@ -982,12 +985,20 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     }
     const sorted = [...dists].sort((a, b) => a - b);
     const medianM = sorted[Math.floor(sorted.length / 2)];
-    const maxGapM = Math.max(200, medianM * 5); // tighter: reject jumps > 5× median, min 200 m
+    const maxGapM = Math.max(150, medianM * 3); // reject jumps > 3× median, min 150 m
     const out: [number, number][] = [pts[0]];
     for (let i = 1; i < pts.length; i++) {
       const last = out[out.length - 1];
       const d = haversineKm(last[0], last[1], pts[i][0], pts[i][1]) * 1000;
-      if (d <= maxGapM) out.push(pts[i]);
+      if (d <= maxGapM) {
+        // Bounce detection: if next ping returns within 50% of this jump back to `last`,
+        // this ping is a GPS tower-switch noise spike — skip it
+        if (d >= 100 && i + 1 < pts.length) {
+          const returnD = haversineKm(last[0], last[1], pts[i+1][0], pts[i+1][1]) * 1000;
+          if (returnD < d * 0.5) continue;
+        }
+        out.push(pts[i]);
+      }
     }
     return out.length >= 2 ? out : pts; // fallback to original if too many removed
   };
@@ -1247,7 +1258,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   // Build timestamped route from GPS points → fallback to waypoints
   const routeWithTime = useMemo(() => {
     const MAX_ACCURACY_M = 80; // skip pings worse than 80 m — same threshold as server
-    const gpsPts = (locationData?.points ?? [])
+    const raw = (locationData?.points ?? [])
       .filter(p => {
         if (!p.latitude || !p.longitude) return false;
         // Drop poor-accuracy points to prevent zigzag inflation on the map and in distance
@@ -1260,6 +1271,21 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
         ts: p.recordedAt,
         speedMs: p.speed != null && p.speed !== "" ? Number(p.speed) : null,
       }));
+
+    // Bounce detection: if a ping jumps far but the NEXT ping returns near the previous
+    // position, it is GPS noise (tower-switch / multipath) — drop it from the route.
+    const gpsPts: typeof raw = [];
+    for (let i = 0; i < raw.length; i++) {
+      if (gpsPts.length === 0) { gpsPts.push(raw[i]); continue; }
+      const last = gpsPts[gpsPts.length - 1];
+      const dM = haversineKm(last.pos[0], last.pos[1], raw[i].pos[0], raw[i].pos[1]) * 1000;
+      if (dM >= 100 && i + 1 < raw.length) {
+        const returnM = haversineKm(last.pos[0], last.pos[1], raw[i + 1].pos[0], raw[i + 1].pos[1]) * 1000;
+        if (returnM < dM * 0.5) continue; // GPS bounce — skip this ping
+      }
+      gpsPts.push(raw[i]);
+    }
+
     if (gpsPts.length > 0) return gpsPts;
     const wps: { pos: [number, number]; ts: string; speedMs: null }[] = [];
     filtered.forEach(trip => {
