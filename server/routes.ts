@@ -1245,17 +1245,21 @@ export async function registerRoutes(
       }
 
       // Same filtering logic as Live tab totalDistKm — rejects GPS glitches, tower jumps, drift
-      type LocPt = { latitude: string; longitude: string; speed: string | null; recordedAt: Date };
+      type LocPt = { latitude: string; longitude: string; speed: string | null; accuracy: string | null; recordedAt: Date };
       function computeKm(pts: LocPt[]): number {
         if (pts.length < 2) return 0;
         const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches (Doppler)
         const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-        const MIN_DIST_M     = 20;   // 20m/10s = 7.2 km/h min — counts slow city traffic
-        const MIN_MOVE_MS    = 0.8;  // 2.9 km/h min implied speed for longer ping gaps
+        const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
+        const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
         const MIN_SPEED_MS   = 0.5;
+        const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
         const SIGNAL_GAP_SEC = 300;  // 5-minute gap = signal drop, skip
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
+          // Skip poor-accuracy GPS readings — they contribute most to distance inflation
+          const acc = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
+          if (acc !== null && acc > MAX_ACCURACY_M) continue;
           const distM = haversineM(
             Number(pts[last].latitude), Number(pts[last].longitude),
             Number(pts[k].latitude),    Number(pts[k].longitude)
@@ -2929,13 +2933,17 @@ export async function registerRoutes(
       const SIGNAL_GAP_SEC  = 300;  // 5 minutes
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
-      const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
+      const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
+      const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
+      const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
+          // Skip poor-accuracy GPS readings — they contribute most to distance inflation
+          const acc = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
+          if (acc !== null && acc > MAX_ACCURACY_M) continue;
           const distM = haversineM(
             Number(pts[last].latitude), Number(pts[last].longitude),
             Number(pts[k].latitude),    Number(pts[k].longitude)
@@ -4301,13 +4309,17 @@ export async function registerRoutes(
       const SIGNAL_GAP_SEC  = 300;  // 5 minutes
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 20;   // min movement per hop for no-speed pings
-      const MIN_MOVE_MS    = 0.8;  // 2.9 km/h — min implied speed for longer ping gaps
+      const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
+      const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
+      const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
+          // Skip poor-accuracy GPS readings — they contribute most to distance inflation
+          const acc = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
+          if (acc !== null && acc > MAX_ACCURACY_M) continue;
           const distM = haversineM(
             Number(pts[last].latitude), Number(pts[last].longitude),
             Number(pts[k].latitude),    Number(pts[k].longitude)

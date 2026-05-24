@@ -971,7 +971,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     } catch { return null; }
   };
 
-  // ── Outlier filter: remove pings that jump > 8× the median consecutive distance ──
+  // ── Outlier filter: remove pings that jump > 5× the median consecutive distance ──
   // This catches tower-switching teleports (e.g. 5 km jump when median is 100 m)
   // without removing legitimate fast movement, keeping OSRM routes clean.
   const filterOutlierPts = (pts: [number, number][]): [number, number][] => {
@@ -982,7 +982,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     }
     const sorted = [...dists].sort((a, b) => a - b);
     const medianM = sorted[Math.floor(sorted.length / 2)];
-    const maxGapM = Math.max(500, medianM * 8); // never reject jumps < 500 m
+    const maxGapM = Math.max(200, medianM * 5); // tighter: reject jumps > 5× median, min 200 m
     const out: [number, number][] = [pts[0]];
     for (let i = 1; i < pts.length; i++) {
       const last = out[out.length - 1];
