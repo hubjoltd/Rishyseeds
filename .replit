@@ -42,8 +42,5 @@ build = ["npm", "run", "build"]
 [userenv]
 
 [userenv.production]
-NEON_DATABASE_URL = "postgresql://neondb_owner:npg_W08UEVucqjfr@ep-royal-forest-ant41g59.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
 [userenv.shared]
-VAPID_PUBLIC_KEY = "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw"
-VAPID_PRIVATE_KEY = "gnULZuZ-jGv4b3KBumeqgiYYWqP5qlo9meA-ltqcfeE"
