@@ -245,6 +245,7 @@ function LiveMapInner({
   snappedSegments,
   travelSegmentsPoints,
   snappedGapSegments,
+  rawLatestPoint,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -257,6 +258,7 @@ function LiveMapInner({
   autoFollow: boolean;
   snappedSegments: [number, number][][];
   travelSegmentsPoints: [number, number][][];
+  rawLatestPoint?: [number, number] | null;
   snappedGapSegments: { path: [number, number][]; gapMins: number }[];
 }) {
   const map = useMap();
@@ -347,11 +349,13 @@ function LiveMapInner({
   const startPos: [number, number] | null = punchInLat && punchInLng
     ? [punchInLat, punchInLng]
     : gpsPoints.length > 0 ? gpsPoints[0] : null;
+  // END marker only when employee has actually punched out — never fall back to last GPS point
   const endPos: [number, number] | null = punchOutLat && punchOutLng
     ? [punchOutLat, punchOutLng]
-    : gpsPoints.length > 1 ? gpsPoints[gpsPoints.length - 1] : null;
-  const currentPos: [number, number] | null = !punchOutLat && gpsPoints.length > 0
-    ? gpsPoints[gpsPoints.length - 1] : null;
+    : null;
+  // Live dot: use rawLatestPoint (unfiltered) so stoppage-suppression doesn't stale the position
+  const currentPos: [number, number] | null = !punchOutLat && rawLatestPoint
+    ? rawLatestPoint : null;
 
   // Fallback waypoint route: punch-in → visits → punch-out (used when GPS data is sparse)
   const waypointLine = useMemo<[number, number][]>(() => {
@@ -536,6 +540,15 @@ function LiveMap({
       .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
     [filteredLocationPoints]
   );
+
+  // Latest raw GPS point (unfiltered) — used for the live person dot so stoppage suppression
+  // doesn't freeze the marker at the first entry ping of the current stoppage
+  const rawLatestPoint = useMemo<[number, number] | null>(() => {
+    const valid = locationPoints.filter(p => p.latitude && p.longitude);
+    if (valid.length === 0) return null;
+    const last = valid[valid.length - 1];
+    return [Number(last.latitude), Number(last.longitude)];
+  }, [locationPoints]);
 
   // One GPS-point array per travel segment — excludes stoppage pings entirely.
   // Keeping segments separate prevents OSRM from routing between them and drawing loops.
@@ -748,6 +761,7 @@ function LiveMap({
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
           snappedGapSegments={snappedGapSegments}
+          rawLatestPoint={rawLatestPoint}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
