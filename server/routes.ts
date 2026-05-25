@@ -3097,12 +3097,18 @@ export async function registerRoutes(
             if (approachEndIdx < cluster.startIdx) {
               distanceKm += haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude), cluster.lat, cluster.lng) / 1000;
             }
-            gpsSegments.push({
-              type: "travelled",
-              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
-              endTime: new Date(lastExtTp.recordedAt).toISOString(),
-              distanceKm,
-            });
+            // Segment-level speed gate: skip if average speed < 5 km/h (walking).
+            // This prevents plant/home roaming from appearing as vehicle travel.
+            const segTimeSec = (new Date(lastExtTp.recordedAt).getTime() - new Date(extendedTravelPts[0].recordedAt).getTime()) / 1000;
+            const segSpeedMs = segTimeSec > 0 ? (distanceKm * 1000) / segTimeSec : Infinity;
+            if (segSpeedMs >= MIN_MOVE_MS) {
+              gpsSegments.push({
+                type: "travelled",
+                startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+                endTime: new Date(lastExtTp.recordedAt).toISOString(),
+                distanceKm,
+              });
+            }
           }
         }
         gpsSegments.push({ type: "stoppage", startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(), endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(), durationSecs: cluster.durationSecs, lat: cluster.lat, lng: cluster.lng });
@@ -3118,12 +3124,16 @@ export async function registerRoutes(
           let tailDistKm = 0;
           tailDistKm += haversineM(fromLat, fromLng, Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000;
           tailDistKm += totalDistKm(actualTailPts);
-          gpsSegments.push({
-            type: "travelled",
-            startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
-            endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: tailDistKm,
-          });
+          const tailTimeSec = (new Date(actualTailPts[actualTailPts.length - 1].recordedAt).getTime() - new Date(actualTailPts[0].recordedAt).getTime()) / 1000;
+          const tailSpeedMs = tailTimeSec > 0 ? (tailDistKm * 1000) / tailTimeSec : Infinity;
+          if (tailSpeedMs >= MIN_MOVE_MS) {
+            gpsSegments.push({
+              type: "travelled",
+              startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
+              endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
+              distanceKm: tailDistKm,
+            });
+          }
         }
       }
 
@@ -4519,12 +4529,18 @@ export async function registerRoutes(
               distanceKm += haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude),
                 cluster.lat, cluster.lng) / 1000;
             }
-            segments.push({
-              type: "travelled",
-              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
-              endTime: new Date(lastExtTp.recordedAt).toISOString(),
-              distanceKm,
-            });
+            // Segment-level speed gate: skip if average speed < 5 km/h (walking).
+            // This prevents plant/home roaming from appearing as vehicle travel.
+            const segTimeSec = (new Date(lastExtTp.recordedAt).getTime() - new Date(extendedTravelPts[0].recordedAt).getTime()) / 1000;
+            const segSpeedMs = segTimeSec > 0 ? (distanceKm * 1000) / segTimeSec : Infinity;
+            if (segSpeedMs >= MIN_MOVE_MS) {
+              segments.push({
+                type: "travelled",
+                startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+                endTime: new Date(lastExtTp.recordedAt).toISOString(),
+                distanceKm,
+              });
+            }
           }
         }
         segments.push({
@@ -4551,12 +4567,16 @@ export async function registerRoutes(
           if (actualTailPts.length >= 2) {
             tailDistKm += totalDistKm(actualTailPts);
           }
-          segments.push({
-            type: "travelled",
-            startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
-            endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: tailDistKm,
-          });
+          const tailTimeSec = (new Date(actualTailPts[actualTailPts.length - 1].recordedAt).getTime() - new Date(actualTailPts[0].recordedAt).getTime()) / 1000;
+          const tailSpeedMs = tailTimeSec > 0 ? (tailDistKm * 1000) / tailTimeSec : Infinity;
+          if (tailSpeedMs >= MIN_MOVE_MS) {
+            segments.push({
+              type: "travelled",
+              startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
+              endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
+              distanceKm: tailDistKm,
+            });
+          }
         }
       }
 
