@@ -301,8 +301,14 @@ function LiveMapInner({
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if this gap falls within any known segment (just sparse pings in travel)
-        if (segRanges.some(s => s.start <= t1 && s.end >= t2)) continue;
+        // Skip if t1 falls WITHIN any known segment (travelled or stoppage).
+        // This covers two cases:
+        //  (a) sparse GPS pings within a travel segment — t1 is between segment start & end
+        //  (b) filteredLocationPoints entry ping for a stoppage — t1 == stoppage.startTime,
+        //      the gap to the next travel start is the stoppage duration, not signal loss.
+        // Using s.end > t1 (strict) so we don't suppress genuine gaps that begin
+        // exactly at the last ping of a segment (where s.end == t1).
+        if (segRanges.some(s => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -741,8 +747,9 @@ function LiveMap({
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if gap falls within a known segment (sparse pings during normal travel)
-        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
+        // Skip if t1 falls within any known segment (s.end > t1 strict so genuine
+        // gaps starting exactly at a segment's last ping are still shown)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -1501,8 +1508,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
         const p1 = routeWithTime[i - 1].pos;
         const p2 = routeWithTime[i].pos;
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if gap falls within a known segment (sparse pings during normal travel)
-        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
+        // Skip if t1 falls within any known segment (s.end > t1 strict)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -2128,7 +2135,8 @@ export default function EmployeeProfile() {
           Number(pts[i].latitude), Number(pts[i].longitude)
         );
         if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
-        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
+        // Skip if t1 falls within any known segment (s.end > t1 strict)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
         count++;
         totalMins += Math.round(gap / 60000);
       }
