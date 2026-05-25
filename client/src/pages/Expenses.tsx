@@ -691,16 +691,17 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
 }
 
 // ===== Create Expense Dialog =====
-function FareInput({ label, value, onChange, remarks, onRemarksChange }: {
+function FareInput({ label, value, onChange, remarks, onRemarksChange, placeholder }: {
   label: string; value: string; onChange: (v: string) => void;
   remarks?: string; onRemarksChange?: (v: string) => void;
+  placeholder?: string;
 }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground w-36 shrink-0">{label}</span>
         <Input type="number" min="0" value={value} onChange={e => onChange(e.target.value)}
-          placeholder="₹ 0" className="h-8 text-sm" />
+          placeholder={placeholder ?? "₹ 0"} className="h-8 text-sm" />
       </div>
       {onRemarksChange && (
         <Input value={remarks || ""} onChange={e => onRemarksChange(e.target.value)}
@@ -739,6 +740,7 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
     busFare: "",
     trainAirFare: "",
     hotelFare: "",
+    daAmount: "",
     conveyanceFare: "",
     postageFare: "",
     otherFare: "",
@@ -778,7 +780,7 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
   const totalDist = Math.max(0, Number(form.endOdometer) - Number(form.startingOdometer));
   const travelAmt = totalDist > 0 ? totalDist * (Number(form.amountPerKm) || 1) : 0;
   const otherTotal = (Number(form.busFare) || 0) + (Number(form.trainAirFare) || 0) +
-    (Number(form.hotelFare) || 0) + effectiveDaRate +
+    (Number(form.hotelFare) || 0) + (Number(form.daAmount) || 0) +
     (Number(form.conveyanceFare) || 0) + (Number(form.postageFare) || 0) + (Number(form.otherFare) || 0);
   const grandTotal = travelAmt + otherTotal;
 
@@ -795,7 +797,7 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
         totalTravelAmount: travelAmt > 0 ? String(travelAmt) : undefined,
         amountPerKm: form.amountPerKm || "1",
       };
-      if (effectiveDaRate > 0) payload.daAmount = String(effectiveDaRate);
+      if (form.daAmount && Number(form.daAmount) > 0) payload.daAmount = String(form.daAmount);
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -926,23 +928,17 @@ function CreateExpenseModal({ onClose, onCreated }: { onClose: () => void; onCre
           <div className="border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 bg-muted/50 border-b flex items-center justify-between">
               <h4 className="text-sm font-semibold">Other Expenses Breakdown</h4>
-              {effectiveDaRate > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  D.A.: ₹{effectiveDaRate} {employeeDaRate > 0 ? "(employee-specific)" : "(global)"}
-                </span>
-              )}
             </div>
             <div className="p-4 space-y-3">
               <FareInput label="Bus" value={form.busFare} onChange={v => set("busFare", v)} />
               <FareInput label="Train / Air" value={form.trainAirFare} onChange={v => set("trainAirFare", v)} />
               <FareInput label="Hotel" value={form.hotelFare} onChange={v => set("hotelFare", v)} />
-              <div className="flex items-center gap-3 border-t pt-3">
-                <span className="text-xs text-muted-foreground w-36 shrink-0">D.A.</span>
-                <span className={`text-sm font-bold ${effectiveDaRate > 0 ? "text-primary" : "text-muted-foreground"}`}>
-                  {effectiveDaRate > 0 ? `₹${effectiveDaRate}` : "Not configured"}
-                </span>
-                {effectiveDaRate > 0 && <span className="text-xs text-muted-foreground">(fixed)</span>}
-              </div>
+              <FareInput
+                label="D.A."
+                value={form.daAmount}
+                onChange={v => set("daAmount", v)}
+                placeholder={effectiveDaRate > 0 ? `e.g. ${effectiveDaRate}` : "Optional"}
+              />
               <FareInput label="Conveyance on Tour" value={form.conveyanceFare} onChange={v => set("conveyanceFare", v)} />
               <FareInput label="Postage" value={form.postageFare} onChange={v => set("postageFare", v)} />
               <FareInput label="Other" value={form.otherFare} onChange={v => set("otherFare", v)}
