@@ -1066,7 +1066,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
 async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
   try {
     const coordStr = `${p1[1]},${p1[0]};${p2[1]},${p2[0]}`;
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=simplified&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));

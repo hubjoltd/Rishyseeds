@@ -312,7 +312,7 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
       try {
         const [p1, p2] = g.pair;
         const coordStr = `${p1[1]},${p1[0]};${p2[1]},${p2[0]}`;
-        const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=simplified&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 8000);
         const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
