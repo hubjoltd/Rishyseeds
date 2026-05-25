@@ -1286,7 +1286,37 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
       gpsPts.push(raw[i]);
     }
 
-    if (gpsPts.length > 0) return gpsPts;
+    // Stationary noise suppression: the server detects stoppages (person not moving).
+    // During those periods the GPS keeps drifting ±50–100 m, creating spurious blue/red
+    // noise loops on the map even though the person never left the building.
+    // Fix: keep only the FIRST point entering a stoppage window; skip all subsequent
+    // drift pings inside it.  Travel lines still connect cleanly to the entry point,
+    // and the stoppage orange marker shows exactly where they were.
+    const stoppageRanges = (locationData?.segments ?? [])
+      .filter((s: any) => s.type === "stoppage")
+      .map((s: any) => ({
+        start: new Date(s.startTime).getTime(),
+        end: new Date(s.endTime).getTime(),
+      }));
+
+    const inStoppage = (ts: string) => {
+      const t = new Date(ts).getTime();
+      return stoppageRanges.some((r: any) => t >= r.start && t <= r.end);
+    };
+
+    const routePts: typeof gpsPts = [];
+    for (let i = 0; i < gpsPts.length; i++) {
+      if (!inStoppage(gpsPts[i].ts)) {
+        routePts.push(gpsPts[i]);
+      } else {
+        // Keep the first point that enters a stoppage window so the travel line
+        // leading up to it isn't left dangling, then skip all subsequent noise.
+        const prevInStoppage = i > 0 && inStoppage(gpsPts[i - 1].ts);
+        if (!prevInStoppage) routePts.push(gpsPts[i]);
+      }
+    }
+
+    if (routePts.length > 0) return routePts;
     const wps: { pos: [number, number]; ts: string; speedMs: null }[] = [];
     filtered.forEach(trip => {
       if (trip.startLatitude && trip.startLongitude)
