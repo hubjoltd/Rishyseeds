@@ -1956,6 +1956,38 @@ export default function EmployeeProfile() {
     enabled: !!empId && activeTab === "expense",
   });
 
+  // Signal lost stats for the Live tab summary panel
+  // Uses same segment-coverage filter: gaps inside a known segment are sparse travel pings, not lost signal.
+  const liveSignalLostStats = useMemo(() => {
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MIN_DIST_M = 500;
+    const pts = (locationData?.points ?? []).filter((p: any) => p.latitude && p.longitude && p.recordedAt);
+    const segs = locationData?.segments ?? [];
+    const segRanges = segs.map((s: any) => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
+    let count = 0;
+    let totalMins = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const t1 = new Date(pts[i - 1].recordedAt).getTime();
+      const t2 = new Date(pts[i].recordedAt).getTime();
+      const gap = t2 - t1;
+      if (gap > SIGNAL_GAP_MS) {
+        const distM = haversineM(
+          Number(pts[i - 1].latitude), Number(pts[i - 1].longitude),
+          Number(pts[i].latitude), Number(pts[i].longitude)
+        );
+        if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
+        // Skip if t1 falls within any known segment (s.end > t1 strict)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
+        count++;
+        totalMins += Math.round(gap / 60000);
+      }
+    }
+    return { count, totalMins };
+  }, [locationData]);
+
   if (empLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -2111,38 +2143,6 @@ export default function EmployeeProfile() {
     }
     return sum;
   }, 0);
-
-  // Signal lost stats for the Live tab summary panel
-  // Uses same segment-coverage filter: gaps inside a known segment are sparse travel pings, not lost signal.
-  const liveSignalLostStats = useMemo(() => {
-    const SIGNAL_GAP_MS = 5 * 60 * 1000;
-    const SIGNAL_GAP_MIN_DIST_M = 500;
-    const pts = (locationData?.points ?? []).filter((p: any) => p.latitude && p.longitude && p.recordedAt);
-    const segs = locationData?.segments ?? [];
-    const segRanges = segs.map((s: any) => ({
-      start: new Date(s.startTime).getTime(),
-      end:   new Date(s.endTime).getTime(),
-    }));
-    let count = 0;
-    let totalMins = 0;
-    for (let i = 1; i < pts.length; i++) {
-      const t1 = new Date(pts[i - 1].recordedAt).getTime();
-      const t2 = new Date(pts[i].recordedAt).getTime();
-      const gap = t2 - t1;
-      if (gap > SIGNAL_GAP_MS) {
-        const distM = haversineM(
-          Number(pts[i - 1].latitude), Number(pts[i - 1].longitude),
-          Number(pts[i].latitude), Number(pts[i].longitude)
-        );
-        if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if t1 falls within any known segment (s.end > t1 strict)
-        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
-        count++;
-        totalMins += Math.round(gap / 60000);
-      }
-    }
-    return { count, totalMins };
-  }, [locationData]);
 
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
