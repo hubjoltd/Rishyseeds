@@ -284,13 +284,21 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
   );
 
   const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  const SIGNAL_GAP_MIN_DIST_M = 500;
   const signalGaps = useMemo(() => {
     const valid = locationPoints.filter(p => p.lat && p.lng && p.recordedAt);
     const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const g = new Date(valid[i].recordedAt!).getTime() - new Date(valid[i - 1].recordedAt!).getTime();
       if (g > SIGNAL_GAP_MS) {
-        gaps.push({ pair: [[valid[i - 1].lat, valid[i - 1].lng], [valid[i].lat, valid[i].lng]], gapMins: Math.round(g / 60000) });
+        const p1: [number, number] = [valid[i - 1].lat, valid[i - 1].lng];
+        const p2: [number, number] = [valid[i].lat, valid[i].lng];
+        const dLat = (p2[0] - p1[0]) * Math.PI / 180;
+        const dLon = (p2[1] - p1[1]) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1[0] * Math.PI / 180) * Math.cos(p2[0] * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        const distM = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
+        gaps.push({ pair: [p1, p2], gapMins: Math.round(g / 60000) });
       }
     }
     return gaps;

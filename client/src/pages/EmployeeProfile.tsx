@@ -282,22 +282,32 @@ function LiveMapInner({
   // Minimum distance of 500m prevents stoppage-filter artifacts (where we keep only
   // the first ping of a stoppage, creating a large time gap between two geographically
   // close points) from drawing noisy red squiggles around stoppage locations.
+  // Segment-coverage check: skip gaps whose [t1,t2] window falls entirely within a
+  // known segment — those are just sparse pings during normal travel, not signal loss.
   const SIGNAL_GAP_MS = 5 * 60 * 1000;
   const SIGNAL_GAP_MIN_DIST_M = 500;
   const signalGapLines = useMemo(() => {
     const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    const segRanges = segments.map(s => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
     const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
-      const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
+      const t1 = new Date(valid[i - 1].recordedAt).getTime();
+      const t2 = new Date(valid[i].recordedAt).getTime();
+      const gap = t2 - t1;
       if (gap > SIGNAL_GAP_MS) {
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        // Skip if this gap falls within any known segment (just sparse pings in travel)
+        if (segRanges.some(s => s.start <= t1 && s.end >= t2)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
-  }, [locationPoints]);
+  }, [locationPoints, segments]);
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
@@ -717,18 +727,27 @@ function LiveMap({
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
     const SIGNAL_GAP_MIN_DIST_M = 500;
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    const segs = locationData?.segments ?? [];
+    const segRanges = segs.map((s: any) => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
     const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
-      const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
+      const t1 = new Date(valid[i - 1].recordedAt).getTime();
+      const t2 = new Date(valid[i].recordedAt).getTime();
+      const gap = t2 - t1;
       if (gap > SIGNAL_GAP_MS) {
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        // Skip if gap falls within a known segment (sparse pings during normal travel)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
         gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
-  }, [filteredLocationPoints]);
+  }, [filteredLocationPoints, locationData?.segments]);
 
   useEffect(() => {
     if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
@@ -1463,20 +1482,32 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   }, [locationData]);
 
   // Signal-drop gaps for playback view (same 5-min threshold as Live map)
+  // Segment-coverage check: skip gaps whose time window falls inside a known segment
+  // (those are just sparse pings during travel, not a real signal loss).
   const pbSignalGapLines = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MIN_DIST_M = 500;
+    const segs = locationData?.segments ?? [];
+    const segRanges = segs.map((s: any) => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
     const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < routeWithTime.length; i++) {
-      const gap = new Date(routeWithTime[i].ts).getTime() - new Date(routeWithTime[i - 1].ts).getTime();
+      const t1 = new Date(routeWithTime[i - 1].ts).getTime();
+      const t2 = new Date(routeWithTime[i].ts).getTime();
+      const gap = t2 - t1;
       if (gap > SIGNAL_GAP_MS) {
-        gaps.push({
-          path: [routeWithTime[i - 1].pos, routeWithTime[i].pos],
-          gapMins: Math.round(gap / 60000),
-        });
+        const p1 = routeWithTime[i - 1].pos;
+        const p2 = routeWithTime[i].pos;
+        if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        // Skip if gap falls within a known segment (sparse pings during normal travel)
+        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
+        gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
-  }, [routeWithTime]);
+  }, [routeWithTime, locationData?.segments]);
 
   // Snap playback gap lines to roads (route/v1 simplified — clean 2-point road route)
   useEffect(() => {
@@ -2075,20 +2106,29 @@ export default function EmployeeProfile() {
   }, 0);
 
   // Signal lost stats for the Live tab summary panel
+  // Uses same segment-coverage filter: gaps inside a known segment are sparse travel pings, not lost signal.
   const liveSignalLostStats = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
     const SIGNAL_GAP_MIN_DIST_M = 500;
     const pts = (locationData?.points ?? []).filter((p: any) => p.latitude && p.longitude && p.recordedAt);
+    const segs = locationData?.segments ?? [];
+    const segRanges = segs.map((s: any) => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
     let count = 0;
     let totalMins = 0;
     for (let i = 1; i < pts.length; i++) {
-      const gap = new Date(pts[i].recordedAt).getTime() - new Date(pts[i - 1].recordedAt).getTime();
+      const t1 = new Date(pts[i - 1].recordedAt).getTime();
+      const t2 = new Date(pts[i].recordedAt).getTime();
+      const gap = t2 - t1;
       if (gap > SIGNAL_GAP_MS) {
         const distM = haversineM(
           Number(pts[i - 1].latitude), Number(pts[i - 1].longitude),
           Number(pts[i].latitude), Number(pts[i].longitude)
         );
         if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
+        if (segRanges.some((s: any) => s.start <= t1 && s.end >= t2)) continue;
         count++;
         totalMins += Math.round(gap / 60000);
       }
