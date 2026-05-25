@@ -2953,6 +2953,7 @@ export async function registerRoutes(
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
       const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
+      const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
       const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
@@ -2972,8 +2973,9 @@ export async function registerRoutes(
           if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
-            // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
+            // Satellite GPS (Doppler speed available): trust speed, reject glitches and sub-20m jitter
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+            if (distM < MIN_DIST_SPEED_M) continue; // GPS can report non-zero speed when stationary
             d += distM / 1000;
             last = k;
           } else {
@@ -4348,6 +4350,7 @@ export async function registerRoutes(
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
       const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
+      const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
       const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
@@ -4367,8 +4370,9 @@ export async function registerRoutes(
           if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
-            // Satellite GPS (Doppler speed available): trust speed reading, only reject glitches
+            // Satellite GPS (Doppler speed available): trust speed, reject glitches and sub-20m jitter
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
+            if (distM < MIN_DIST_SPEED_M) continue; // GPS can report non-zero speed when stationary
             d += distM / 1000;
             last = k;
           } else {
@@ -4433,6 +4437,36 @@ export async function registerRoutes(
         }
       }
 
+      // Phase 1.5: Merge nearby consecutive stoppage clusters.
+      // GPS drift can push a ping outside the 250 m stoppage radius, splitting one
+      // continuous stay into two clusters with a short "travel" gap between them.
+      // Any two consecutive clusters whose centroids are within MERGE_RADIUS_M are
+      // treated as the same physical location — the pings between them are noise.
+      const MERGE_RADIUS_M = 400;
+      const mergedClusters: StoppageCluster[] = [];
+      for (const cluster of clusters) {
+        if (mergedClusters.length === 0) {
+          mergedClusters.push({ ...cluster });
+          continue;
+        }
+        const prev = mergedClusters[mergedClusters.length - 1];
+        const distBetween = haversineM(prev.lat, prev.lng, cluster.lat, cluster.lng);
+        if (distBetween <= MERGE_RADIUS_M) {
+          // Weighted centroid from point counts of both clusters
+          const prevCnt = prev.endIdx - prev.startIdx + 1;
+          const curCnt  = cluster.endIdx - cluster.startIdx + 1;
+          prev.lat = (prev.lat * prevCnt + cluster.lat * curCnt) / (prevCnt + curCnt);
+          prev.lng = (prev.lng * prevCnt + cluster.lng * curCnt) / (prevCnt + curCnt);
+          prev.endIdx = cluster.endIdx;
+          prev.durationSecs = (
+            new Date(points[cluster.endIdx].recordedAt).getTime() -
+            new Date(points[prev.startIdx].recordedAt).getTime()
+          ) / 1000;
+        } else {
+          mergedClusters.push({ ...cluster });
+        }
+      }
+
       // Phase 2: build timeline from clusters + travel segments between them
       type Segment =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
@@ -4442,7 +4476,7 @@ export async function registerRoutes(
       let prevEndIdx = -1;
       let prevCluster: StoppageCluster | null = null;
 
-      for (const cluster of clusters) {
+      for (const cluster of mergedClusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
           // Actual travel pings strictly between the two stoppage clusters.
           const baseTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
@@ -4527,7 +4561,7 @@ export async function registerRoutes(
       }
 
       const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
-      const stoppageCount = clusters.length;
+      const stoppageCount = mergedClusters.length;
 
       res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
     } catch (e: any) {
