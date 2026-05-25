@@ -505,11 +505,36 @@ function LiveMap({
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
+  // Suppress GPS noise during stoppage windows.
+  // Inside each server-detected stoppage, only the FIRST ping (entry point) is kept;
+  // all subsequent drift pings are discarded so they never produce blue loops or red lines.
+  const filteredLocationPoints = useMemo(() => {
+    const stoppages = (segments ?? []).filter(s => s.type === "stoppage");
+    if (stoppages.length === 0) return locationPoints;
+    const windows = stoppages.map(s => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
+    const seenWindow = new Set<number>();
+    return locationPoints.filter(p => {
+      if (!p.recordedAt) return true;
+      const t = new Date(p.recordedAt).getTime();
+      for (let i = 0; i < windows.length; i++) {
+        if (t >= windows[i].start && t <= windows[i].end) {
+          if (seenWindow.has(i)) return false; // discard drift ping
+          seenWindow.add(i);
+          return true; // keep only the first entry ping per stoppage
+        }
+      }
+      return true;
+    });
+  }, [locationPoints, segments]);
+
   const gpsPoints = useMemo(() =>
-    locationPoints
+    filteredLocationPoints
       .filter(p => p.latitude && p.longitude)
       .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]),
-    [locationPoints]
+    [filteredLocationPoints]
   );
 
   // One GPS-point array per travel segment — excludes stoppage pings entirely.
@@ -549,7 +574,7 @@ function LiveMap({
         : Infinity;
       const segEndExtended = Math.min(segEnd + 2 * 60 * 1000, nextTravelStartMs - 1000);
 
-      const segPings = locationPoints.filter(p => {
+      const segPings = filteredLocationPoints.filter(p => {
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
         if (t < segStart || t > segEndExtended) return false;
@@ -619,7 +644,7 @@ function LiveMap({
 
     if (result.length > 0) return { points: result, subGroupCounts };
     return { points: [gpsPoints], subGroupCounts: [1] }; // guard: never return empty
-  }, [locationPoints, segments, gpsPoints]);
+  }, [filteredLocationPoints, segments, gpsPoints]);
 
   const travelSegmentsPoints = travelSegmentsData.points;
 
@@ -672,7 +697,7 @@ function LiveMap({
   // Snap signal-gap lines to roads so red lines follow roads (not straight lines)
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
-    const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
@@ -687,7 +712,7 @@ function LiveMap({
       }
     }
     return gaps;
-  }, [locationPoints]);
+  }, [filteredLocationPoints]);
 
   useEffect(() => {
     if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
@@ -711,7 +736,7 @@ function LiveMap({
     <div className="relative h-full w-full">
       <MapContainer center={defaultCenter} zoom={14} style={{ height: "100%", width: "100%" }} zoomControl={false}>
         <LiveMapInner
-          locationPoints={locationPoints}
+          locationPoints={filteredLocationPoints}
           segments={segments}
           visitStops={visitStops}
           punchInLat={punchInLat}
