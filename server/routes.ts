@@ -3056,28 +3056,43 @@ export async function registerRoutes(
 
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
-          const travelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
-            let distanceKm = 0;
-
-            if (prevCentroid) {
-              // Both endpoints are stable centroids → centroid-to-centroid distance
-              // with adaptive road-tortuosity factor.  Raw ping-to-ping accumulation
-              // for cellular GPS inflates by 2-3× due to tower-switching zigzag.
-              const accs = travelPts.map(p => p.accuracy != null ? Number(p.accuracy) : 200);
-              const avgAcc = accs.reduce((s, a) => s + a, 0) / accs.length;
-              const tort = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgAcc) / 350));
-              const straightLineM = haversineM(prevCentroid.lat, prevCentroid.lng, cluster.lat, cluster.lng);
-              distanceKm = (straightLineM * tort) / 1000;
-            } else {
-              // No departure centroid (first leg of the day) — filtered ping-to-ping
-              distanceKm = totalDistKm(travelPts);
+          const baseTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
+          if (baseTravelPts.length >= 1) {
+            const fromLat = prevCentroid ? prevCentroid.lat : Number(baseTravelPts[0].latitude);
+            const fromLng = prevCentroid ? prevCentroid.lng : Number(baseTravelPts[0].longitude);
+            const MAX_APPROACH_PINGS = 10;
+            let approachEndIdx = cluster.startIdx - 1;
+            for (let ai = cluster.startIdx; ai <= Math.min(cluster.endIdx, cluster.startIdx + MAX_APPROACH_PINGS - 1); ai++) {
+              const prevPt = ai === cluster.startIdx ? baseTravelPts[baseTravelPts.length - 1] : points[ai - 1];
+              const curPt  = points[ai];
+              const distM  = haversineM(Number(prevPt.latitude), Number(prevPt.longitude), Number(curPt.latitude), Number(curPt.longitude));
+              const dtSec  = (new Date(curPt.recordedAt).getTime() - new Date(prevPt.recordedAt).getTime()) / 1000;
+              if (dtSec > SIGNAL_GAP_SEC) break;
+              const hasSpeed = curPt.speed != null && Number(curPt.speed) > MIN_SPEED_MS;
+              if (hasSpeed) {
+                if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) break;
+                approachEndIdx = ai;
+              } else {
+                if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) break;
+                if (distM >= MIN_DIST_M && (dtSec === 0 || distM / dtSec >= MIN_MOVE_MS)) approachEndIdx = ai;
+                else break;
+              }
             }
-
+            const extendedTravelPts = points.slice(prevEnd + 1, approachEndIdx + 1);
+            let distanceKm = 0;
+            // Departure bridge: centroid → first travel ping, capped at STOPPAGE_RADIUS_M
+            const depBridgeM = haversineM(fromLat, fromLng, Number(extendedTravelPts[0].latitude), Number(extendedTravelPts[0].longitude));
+            if (depBridgeM <= STOPPAGE_RADIUS_M) distanceKm += depBridgeM / 1000;
+            distanceKm += totalDistKm(extendedTravelPts);
+            const lastExtTp = extendedTravelPts[extendedTravelPts.length - 1];
+            if (approachEndIdx < cluster.startIdx) {
+              const arrBridgeM = haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude), cluster.lat, cluster.lng);
+              if (arrBridgeM <= STOPPAGE_RADIUS_M) distanceKm += arrBridgeM / 1000;
+            }
             gpsSegments.push({
               type: "travelled",
-              startTime: new Date(travelPts[0].recordedAt).toISOString(),
-              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+              endTime: new Date(lastExtTp.recordedAt).toISOString(),
               distanceKm,
             });
           }
@@ -4458,40 +4473,47 @@ export async function registerRoutes(
 
       for (const cluster of mergedClusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
-          // Travel pings between the two stoppage clusters.
-          const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
+          const baseTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
+          if (baseTravelPts.length >= 1) {
+            // Extend travel to include early cluster pings that still show movement.
+            const MAX_APPROACH_PINGS = 10;
+            let approachEndIdx = cluster.startIdx - 1;
+            for (let ai = cluster.startIdx; ai <= Math.min(cluster.endIdx, cluster.startIdx + MAX_APPROACH_PINGS - 1); ai++) {
+              const prevPt = ai === cluster.startIdx ? baseTravelPts[baseTravelPts.length - 1] : points[ai - 1];
+              const curPt  = points[ai];
+              const distM  = haversineM(Number(prevPt.latitude), Number(prevPt.longitude), Number(curPt.latitude), Number(curPt.longitude));
+              const dtSec  = (new Date(curPt.recordedAt).getTime() - new Date(prevPt.recordedAt).getTime()) / 1000;
+              if (dtSec > SIGNAL_GAP_SEC) break;
+              const hasSpeed = curPt.speed != null && Number(curPt.speed) > MIN_SPEED_MS;
+              if (hasSpeed) {
+                if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) break;
+                approachEndIdx = ai;
+              } else {
+                if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) break;
+                if (distM >= MIN_DIST_M && (dtSec === 0 || distM / dtSec >= MIN_MOVE_MS)) approachEndIdx = ai;
+                else break;
+              }
+            }
+            const extendedTravelPts = points.slice(prevEndIdx + 1, approachEndIdx + 1);
             let distanceKm = 0;
-
             if (prevCluster) {
-              // Both endpoints are known stable centroids → use centroid-to-centroid
-              // distance with an adaptive road-tortuosity factor.
-              // Raw ping-to-ping accumulation for cellular GPS inflates distance 2-3×
-              // due to tower-switching zigzag; centroids filter that noise out entirely.
-              // Tortuosity formula: 1.15 + 0.13 × clamp((500 – avgAccuracy) / 350, 0, 1)
-              //   ±500 m accuracy (rural/poor): → 1.15  (straight highways)
-              //   ±200 m accuracy (mixed):      → ~1.26
-              //   ±80 m accuracy (urban):        → ~1.28  (curvy streets)
-              const accs = travelPts.map(p => p.accuracy != null ? Number(p.accuracy) : 200);
-              const avgAcc = accs.reduce((s, a) => s + a, 0) / accs.length;
-              const tort = 1.15 + 0.13 * Math.max(0, Math.min(1, (500 - avgAcc) / 350));
-              const straightLineM = haversineM(prevCluster.lat, prevCluster.lng, cluster.lat, cluster.lng);
-              distanceKm = (straightLineM * tort) / 1000;
-            } else {
-              // No departure centroid (first leg of the day) — fall back to filtered
-              // ping-to-ping with a capped departure bridge.
-              const depBridgeM = haversineM(
-                Number(travelPts[0].latitude), Number(travelPts[0].longitude),
-                cluster.lat, cluster.lng
-              );
-              distanceKm = totalDistKm(travelPts);
+              // Departure bridge: centroid → first travel ping.
+              // Cap at STOPPAGE_RADIUS_M — larger jumps are GPS re-acquisition noise.
+              const depBridgeM = haversineM(prevCluster.lat, prevCluster.lng,
+                Number(extendedTravelPts[0].latitude), Number(extendedTravelPts[0].longitude));
               if (depBridgeM <= STOPPAGE_RADIUS_M) distanceKm += depBridgeM / 1000;
             }
-
+            distanceKm += totalDistKm(extendedTravelPts);
+            const lastExtTp = extendedTravelPts[extendedTravelPts.length - 1];
+            if (approachEndIdx < cluster.startIdx) {
+              const arrBridgeM = haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude),
+                cluster.lat, cluster.lng);
+              if (arrBridgeM <= STOPPAGE_RADIUS_M) distanceKm += arrBridgeM / 1000;
+            }
             segments.push({
               type: "travelled",
-              startTime: new Date(travelPts[0].recordedAt).toISOString(),
-              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
+              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+              endTime: new Date(lastExtTp.recordedAt).toISOString(),
               distanceKm,
             });
           }
