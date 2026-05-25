@@ -733,7 +733,7 @@ function LiveMap({
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
     const SIGNAL_GAP_MIN_DIST_M = 500;
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
-    const segs = locationData?.segments ?? [];
+    const segs = segments ?? [];
     const segRanges = segs.map((s: any) => ({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
@@ -754,7 +754,7 @@ function LiveMap({
       }
     }
     return gaps;
-  }, [filteredLocationPoints, locationData?.segments]);
+  }, [filteredLocationPoints, segments]);
 
   useEffect(() => {
     if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
