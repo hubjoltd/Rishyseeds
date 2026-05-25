@@ -218,11 +218,11 @@ function TripMapInner({ trip, locationPoints, isActive, snappedTrail, snappedGap
         </>
       )}
 
-      {/* Signal gap lines — road-snapped red dashed lines */}
+      {/* Signal gap lines — road-snapped solid red lines (same style as blue route) */}
       {gapLinesToRender.map((gap, i) => (
         <Fragment key={`gap-${i}`}>
-          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
-          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
+          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 150 }}>
                 <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />

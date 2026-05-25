@@ -399,15 +399,15 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — road-snapped via route/v1 simplified (falls back to straight dashes) */}
+      {/* Signal-drop gaps — road-snapped via route/v1 simplified (falls back to straight line) */}
       {signalGapLines.map((gap, i) => {
         const snapped = snappedGapSegments[i];
         const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
         const gapMins = snapped ? snapped.gapMins : gap.gapMins;
         return (
           <Fragment key={`gap-${i}`}>
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
                   <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
@@ -1170,15 +1170,15 @@ function PlaybackMapInner({
         ) : null
       )}
 
-      {/* Signal-drop gaps — road-snapped dashed red lines */}
+      {/* Signal-drop gaps — road-snapped solid red lines (same style as blue route) */}
       {signalGapLines.map((gap, i) => {
         const snapped = snappedGapLines[i];
         const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
         const gapMins = snapped ? snapped.gapMins : gap.gapMins;
         return (
           <Fragment key={`pb-gap-${i}`}>
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
                   <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
