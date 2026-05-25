@@ -2074,6 +2074,28 @@ export default function EmployeeProfile() {
     return sum;
   }, 0);
 
+  // Signal lost stats for the Live tab summary panel
+  const liveSignalLostStats = useMemo(() => {
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MIN_DIST_M = 500;
+    const pts = (locationData?.points ?? []).filter((p: any) => p.latitude && p.longitude && p.recordedAt);
+    let count = 0;
+    let totalMins = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const gap = new Date(pts[i].recordedAt).getTime() - new Date(pts[i - 1].recordedAt).getTime();
+      if (gap > SIGNAL_GAP_MS) {
+        const distM = haversineM(
+          Number(pts[i - 1].latitude), Number(pts[i - 1].longitude),
+          Number(pts[i].latitude), Number(pts[i].longitude)
+        );
+        if (distM < SIGNAL_GAP_MIN_DIST_M) continue;
+        count++;
+        totalMins += Math.round(gap / 60000);
+      }
+    }
+    return { count, totalMins };
+  }, [locationData]);
+
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
@@ -2303,6 +2325,15 @@ export default function EmployeeProfile() {
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
+                {liveSignalLostStats.count > 0 && (
+                  <div className="flex items-center gap-1 text-[11px] mt-0.5" data-testid="text-signal-lost-summary">
+                    <Signal className="h-3 w-3 text-red-500 shrink-0" />
+                    <span className="text-red-600 font-semibold">Signal Lost</span>
+                    <span className="font-bold text-red-700">{liveSignalLostStats.count}×</span>
+                    <span className="text-gray-300 mx-0.5">|</span>
+                    <span className="text-red-600">{liveSignalLostStats.totalMins} min</span>
+                  </div>
+                )}
 
                 {/* ── Device status strip (battery · network · GPS) ── */}
                 {(() => {
