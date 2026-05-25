@@ -354,20 +354,10 @@ function LiveMapInner({
   const endPos: [number, number] | null = punchOutLat && punchOutLng
     ? [punchOutLat, punchOutLng]
     : null;
-  // Live dot: end of the blue route line (snapped → raw travel → rawLatestPoint fallback)
-  // This places the person icon exactly where the blue line ends, not at a raw GPS ping
+  // Live dot: always placed at the latest raw GPS ping so the person icon
+  // reflects the most recent known position, not the end of the snapped route.
   const currentPos: [number, number] | null = !punchOutLat
-    ? (() => {
-        for (let i = snappedSegments.length - 1; i >= 0; i--) {
-          const seg = snappedSegments[i];
-          if (seg.length > 0) return seg[seg.length - 1];
-        }
-        for (let i = travelSegmentsPoints.length - 1; i >= 0; i--) {
-          const seg = travelSegmentsPoints[i];
-          if (seg.length > 0) return seg[seg.length - 1];
-        }
-        return rawLatestPoint ?? null;
-      })()
+    ? (rawLatestPoint ?? null)
     : null;
 
   // Fallback waypoint route: punch-in → visits → punch-out (used when GPS data is sparse)
@@ -409,15 +399,15 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — road-snapped red lines (falls back to straight when snapping pending) */}
+      {/* Signal-drop gaps — road-snapped via route/v1 simplified (falls back to straight dashes) */}
       {signalGapLines.map((gap, i) => {
         const snapped = snappedGapSegments[i];
-        const positions = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
+        const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
         const gapMins = snapped ? snapped.gapMins : gap.gapMins;
         return (
           <Fragment key={`gap-${i}`}>
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
                   <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
@@ -720,8 +710,9 @@ function LiveMap({
     return () => { cancelled = true; };
   }, [totalTravelCount]);
 
-  // Snap signal-gap lines to roads so red lines follow roads (not straight lines)
-  // Same 500m minimum distance as LiveMapInner — skips stoppage-filter artifacts
+
+  // Snap signal-gap endpoints to roads using route/v1 simplified (clean 2-point route).
+  // Using osrmSnapGap (not osrmSnap) avoids the map-match winding-path noise problem.
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
     const SIGNAL_GAP_MIN_DIST_M = 500;
@@ -742,10 +733,10 @@ function LiveMap({
   useEffect(() => {
     if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
     let cancelled = false;
-    Promise.all(signalGapPairsForSnap.map(g => osrmSnap(g.pair))).then(results => {
+    Promise.all(signalGapPairsForSnap.map(g => osrmSnapGap(g.pair[0], g.pair[1]))).then(results => {
       if (!cancelled) {
-        setSnappedGapSegments(results.map((r, i) => ({
-          path: r.coords.length > 1 ? r.coords : signalGapPairsForSnap[i].pair,
+        setSnappedGapSegments(results.map((path, i) => ({
+          path,
           gapMins: signalGapPairsForSnap[i].gapMins,
         })));
       }
@@ -772,8 +763,8 @@ function LiveMap({
           autoFollow={autoFollow}
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
-          snappedGapSegments={snappedGapSegments}
           rawLatestPoint={rawLatestPoint}
+          snappedGapSegments={snappedGapSegments}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -1069,6 +1060,28 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   return routed ?? { coords: cleanPoints, distanceM: 0 };
 }
 
+// Snaps a 2-point signal-gap pair to the road network using route/v1 only.
+// Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
+// it produces noisy winding paths. Route/v1 gives a clean simplified road route.
+async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
+  try {
+    const coordStr = `${p1[1]},${p1[0]};${p2[1]},${p2[0]}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=simplified&geometries=geojson`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    if (!res.ok) return [p1, p2];
+    const data = await res.json();
+    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return [p1, p2];
+    const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
+      ([lng, lat]: [number, number]) => [lat, lng]
+    );
+    return coords.length > 1 ? coords : [p1, p2];
+  } catch {
+    return [p1, p2]; // straight-line fallback on error
+  }
+}
+
 // Inner layer — must be inside MapContainer so Leaflet hooks work
 function PlaybackMapInner({
   rawSegments,
@@ -1087,6 +1100,7 @@ function PlaybackMapInner({
   punchOutLocation,
   punchOutTime,
   signalGapLines = [],
+  snappedGapLines = [],
 }: {
   rawSegments: [number, number][][];
   snappedSegments: [number, number][][];
@@ -1104,6 +1118,7 @@ function PlaybackMapInner({
   punchOutLocation?: string | null;
   punchOutTime?: string | null;
   signalGapLines?: { path: [[number, number], [number, number]]; gapMins: number }[];
+  snappedGapLines?: { path: [number, number][]; gapMins: number }[];
 }) {
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
   const map = useMap();
@@ -1155,21 +1170,26 @@ function PlaybackMapInner({
         ) : null
       )}
 
-      {/* Signal-drop gaps — solid red route lines (same weight as blue route) */}
-      {signalGapLines.map((gap, i) => (
-        <Fragment key={`pb-gap-${i}`}>
-          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
-            <Popup>
-              <div style={{ fontSize: 13, minWidth: 150 }}>
-                <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
-                <span style={{ fontSize: 12 }}>No GPS for <b>{gap.gapMins} min{gap.gapMins !== 1 ? "s" : ""}</b></span><br />
-                <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
-              </div>
-            </Popup>
-          </Polyline>
-        </Fragment>
-      ))}
+      {/* Signal-drop gaps — road-snapped dashed red lines */}
+      {signalGapLines.map((gap, i) => {
+        const snapped = snappedGapLines[i];
+        const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
+        const gapMins = snapped ? snapped.gapMins : gap.gapMins;
+        return (
+          <Fragment key={`pb-gap-${i}`}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
+              <Popup>
+                <div style={{ fontSize: 13, minWidth: 150 }}>
+                  <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
+                  <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
+                  <span style={{ fontSize: 11, color: "#888" }}>Background tracking gap</span>
+                </div>
+              </Popup>
+            </Polyline>
+          </Fragment>
+        );
+      })}
 
       {/* Stoppage markers — orange road-line style circle (white border + orange fill) */}
       {stoppages.map(s => (
@@ -1270,6 +1290,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   const [speedMult, setSpeedMult] = useState(1);
   const [speedOpen, setSpeedOpen] = useState(false);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
+  const [snappedPbGapSegments, setSnappedPbGapSegments] = useState<{ path: [number, number][]; gapMins: number }[]>([]);
   const [snapping, setSnapping] = useState(false);
   const playTimerRef = useRef<any>(null);
   const leafletMap = useRef<any>(null);
@@ -1457,6 +1478,21 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
     return gaps;
   }, [routeWithTime]);
 
+  // Snap playback gap lines to roads (route/v1 simplified — clean 2-point road route)
+  useEffect(() => {
+    if (pbSignalGapLines.length === 0) { setSnappedPbGapSegments([]); return; }
+    let cancelled = false;
+    Promise.all(pbSignalGapLines.map(g => osrmSnapGap(g.path[0], g.path[1]))).then(results => {
+      if (!cancelled) {
+        setSnappedPbGapSegments(results.map((path, i) => ({
+          path,
+          gapMins: pbSignalGapLines[i].gapMins,
+        })));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pbSignalGapLines.length]);
+
   // Build CHK stop list
   const chkStops = useMemo(() => {
     let num = 1;
@@ -1564,6 +1600,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
           punchOutLocation={pbAttendance?.checkOutLocation || null}
           punchOutTime={pbAttendance?.checkOut ? String(pbAttendance.checkOut) : null}
           signalGapLines={pbSignalGapLines}
+          snappedGapLines={snappedPbGapSegments}
         />
       </MapContainer>
 

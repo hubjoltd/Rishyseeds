@@ -218,11 +218,11 @@ function TripMapInner({ trip, locationPoints, isActive, snappedTrail, snappedGap
         </>
       )}
 
-      {/* Signal gap lines — red road-snapped */}
+      {/* Signal gap lines — road-snapped red dashed lines */}
       {gapLinesToRender.map((gap, i) => (
         <Fragment key={`gap-${i}`}>
-          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+          <Polyline positions={gap.path} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+          <Polyline positions={gap.path} pathOptions={{ color: "#ef4444", weight: 5, opacity: 1, dashArray: "12 7", lineCap: "round", lineJoin: "round" }}>
             <Popup>
               <div style={{ fontSize: 13, minWidth: 150 }}>
                 <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
@@ -304,11 +304,27 @@ function TripMap({ trip, locationPoints = [], isActive = false }: { trip: TripDe
     return () => { cancelled = true; };
   }, [gpsPoints.length]);
 
-  // Snap signal gap lines to roads
+  // Snap signal gap lines to roads using simplified route (2-point pairs only)
   useEffect(() => {
     if (signalGaps.length === 0) { setSnappedGaps([]); return; }
     let cancelled = false;
-    Promise.all(signalGaps.map(g => tripOsrmSnap(g.pair))).then(results => {
+    Promise.all(signalGaps.map(async g => {
+      try {
+        const [p1, p2] = g.pair;
+        const coordStr = `${p1[1]},${p1[0]};${p2[1]},${p2[0]}`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=simplified&geometries=geojson`;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+        const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+        if (!res.ok) return g.pair as [number, number][];
+        const data = await res.json();
+        if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return g.pair as [number, number][];
+        const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
+          ([lng, lat]: [number, number]) => [lat, lng]
+        );
+        return coords.length > 1 ? coords : (g.pair as [number, number][]);
+      } catch { return g.pair as [number, number][]; }
+    })).then(results => {
       if (!cancelled) setSnappedGaps(results.map((path, i) => ({ path, gapMins: signalGaps[i].gapMins })));
     });
     return () => { cancelled = true; };
