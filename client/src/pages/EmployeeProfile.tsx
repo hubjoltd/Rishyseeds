@@ -279,20 +279,21 @@ function LiveMapInner({
 
   // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart
   // indicate background tracking lost signal (tunnel, building, network outage).
+  // Minimum distance of 500m prevents stoppage-filter artifacts (where we keep only
+  // the first ping of a stoppage, creating a large time gap between two geographically
+  // close points) from drawing noisy red squiggles around stoppage locations.
   const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  const SIGNAL_GAP_MIN_DIST_M = 500;
   const signalGapLines = useMemo(() => {
     const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
       if (gap > SIGNAL_GAP_MS) {
-        gaps.push({
-          path: [
-            [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)],
-            [Number(valid[i].latitude),     Number(valid[i].longitude)],
-          ],
-          gapMins: Math.round(gap / 60000),
-        });
+        const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
+        const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
+        if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
@@ -353,9 +354,21 @@ function LiveMapInner({
   const endPos: [number, number] | null = punchOutLat && punchOutLng
     ? [punchOutLat, punchOutLng]
     : null;
-  // Live dot: use rawLatestPoint (unfiltered) so stoppage-suppression doesn't stale the position
-  const currentPos: [number, number] | null = !punchOutLat && rawLatestPoint
-    ? rawLatestPoint : null;
+  // Live dot: end of the blue route line (snapped → raw travel → rawLatestPoint fallback)
+  // This places the person icon exactly where the blue line ends, not at a raw GPS ping
+  const currentPos: [number, number] | null = !punchOutLat
+    ? (() => {
+        for (let i = snappedSegments.length - 1; i >= 0; i--) {
+          const seg = snappedSegments[i];
+          if (seg.length > 0) return seg[seg.length - 1];
+        }
+        for (let i = travelSegmentsPoints.length - 1; i >= 0; i--) {
+          const seg = travelSegmentsPoints[i];
+          if (seg.length > 0) return seg[seg.length - 1];
+        }
+        return rawLatestPoint ?? null;
+      })()
+    : null;
 
   // Fallback waypoint route: punch-in → visits → punch-out (used when GPS data is sparse)
   const waypointLine = useMemo<[number, number][]>(() => {
@@ -708,20 +721,19 @@ function LiveMap({
   }, [totalTravelCount]);
 
   // Snap signal-gap lines to roads so red lines follow roads (not straight lines)
+  // Same 500m minimum distance as LiveMapInner — skips stoppage-filter artifacts
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MIN_DIST_M = 500;
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const gap = new Date(valid[i].recordedAt).getTime() - new Date(valid[i - 1].recordedAt).getTime();
       if (gap > SIGNAL_GAP_MS) {
-        gaps.push({
-          pair: [
-            [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)],
-            [Number(valid[i].latitude),     Number(valid[i].longitude)],
-          ],
-          gapMins: Math.round(gap / 60000),
-        });
+        const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
+        const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
+        if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
