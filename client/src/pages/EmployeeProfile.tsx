@@ -613,6 +613,16 @@ function LiveMap({
       const segStart = new Date(seg.startTime).getTime();
       const segEnd   = new Date(seg.endTime).getTime();
 
+      // The stoppage immediately before this travel segment gives us the exact
+      // location where the employee was parked. We use it as an anchor so the
+      // blue line always starts from the stoppage point, even if the first GPS
+      // ping after the stoppage is late (cellular delay / phone wake-up lag).
+      const prevStoppage = allSegs.slice(0, i).reverse().find(s => s.type === "stoppage") as any;
+      const stopAnchor: [number, number] | null =
+        prevStoppage && prevStoppage.lat != null && prevStoppage.lng != null
+          ? [Number(prevStoppage.lat), Number(prevStoppage.lng)]
+          : null;
+
       // Extend the ping window by up to 2 minutes past the server-computed segEnd.
       // GPS pings at the START of the next stoppage cluster (the "approach" phase) still
       // show real movement — the employee hasn't fully stopped yet. Without them OSRM
@@ -668,7 +678,8 @@ function LiveMap({
       // points and can follow a winding road more faithfully. Longer groups stay on
       // 60-second bins to keep OSRM requests lean while still smoothing GPS noise.
       let pushedCount = 0;
-      for (const group of subGroups) {
+      for (let gi = 0; gi < subGroups.length; gi++) {
+        const group = subGroups[gi];
         if (group.length === 0) continue;
         const gStart = new Date(group[0].recordedAt).getTime();
         const gEnd   = new Date(group[group.length - 1].recordedAt).getTime();
@@ -691,6 +702,18 @@ function LiveMap({
             if (d < bestD) { bestD = d; best = p; }
           }
           repPings.push([Number(best.latitude), Number(best.longitude)]);
+        }
+        // Prepend the previous stoppage centroid to the FIRST sub-group of each travel
+        // segment. This anchors the route start exactly at where the employee was parked,
+        // preventing the blue line from vanishing when the first GPS ping after a stoppage
+        // is late (cellular wake-up lag) and repPings would otherwise have < 2 points.
+        if (gi === 0 && stopAnchor) {
+          // Only prepend if the anchor is meaningfully different from the first rep ping
+          // (> 20 m away) to avoid duplicating an identical coordinate.
+          const firstRepPing = repPings[0];
+          const tooClose = firstRepPing && Math.abs(firstRepPing[0] - stopAnchor[0]) < 0.0002
+            && Math.abs(firstRepPing[1] - stopAnchor[1]) < 0.0002;
+          if (!tooClose) repPings.unshift(stopAnchor);
         }
         if (repPings.length >= 2) { result.push(repPings); pushedCount++; }
       }
@@ -1113,9 +1136,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     if (matched150) return matched150;
     const matched250 = await tryMatch(cleanPoints, 250);
     if (matched250) return matched250;
-    // Rural Telangana roads can be >250m from OSRM road centre-lines — try wider radius
-    const matched500 = await tryMatch(cleanPoints, 500);
-    if (matched500) return matched500;
+    // 250m is the max safe radius — wider snaps to wrong parallel roads
   }
   const routed = await tryRoute(cleanPoints);
   return routed ?? { coords: cleanPoints, distanceM: 0 };
