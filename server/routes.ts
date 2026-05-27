@@ -2959,11 +2959,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 100;  // 100m min — raised from 50m to reduce cellular GPS jitter overcounting
+      const MIN_DIST_M     = 50;   // 50m min — rural winding roads have short segments; don't miss them
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 60;   // skip pings with accuracy worse than 60m (was 80m) — stricter to cut jitter
+      const MAX_ACCURACY_M = 80;   // rural cellular GPS typical 60–120 m; accept up to 80 m accuracy
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
@@ -4364,11 +4364,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 100;  // 100m min — raised from 50m to reduce cellular GPS jitter overcounting
+      const MIN_DIST_M     = 50;   // 50m min — rural winding roads have short segments; don't miss them
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 60;   // skip pings with accuracy worse than 60m (was 80m) — stricter to cut jitter
+      const MAX_ACCURACY_M = 80;   // rural cellular GPS typical 60–120 m; accept up to 80 m accuracy
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
