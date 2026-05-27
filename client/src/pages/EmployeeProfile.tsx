@@ -2494,7 +2494,7 @@ export default function EmployeeProfile() {
                     {/* Continuous vertical connector line, centred on icons at left=[19px] */}
                     <div className="absolute left-[19px] top-0 bottom-0 w-[2px] bg-gray-200 z-0" />
 
-                    {enrichedTimelineEvents.map((seg, idx) => {
+                    {(() => { let travelIdx = 0; return enrichedTimelineEvents.map((seg, idx) => {
                       const startT = new Date(seg.startTime);
                       const fmt  = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
                       const fmtS = (d: Date) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -2628,9 +2628,14 @@ export default function EmployeeProfile() {
                         );
                       }
 
-                      /* ── TRAVELLED (from GPS segments — server computed) ── */
+                      /* ── TRAVELLED ── */
                       const endT = new Date((seg as any).endTime);
-                      const distKm: number = (seg as any).distanceKm ?? 0;
+                      const curTIdx = travelIdx++;
+                      const serverKm: number = (seg as any).distanceKm ?? 0;
+                      // Use OSRM road distance when ready (matches Google Maps road distance).
+                      // Fall back to server GPS haversine while OSRM is still snapping.
+                      const osrmKm = osrmSegmentDistances[curTIdx];
+                      const distKm = (osrmKm != null && osrmKm > 0) ? osrmKm : serverKm;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       return (
                         <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
@@ -2644,7 +2649,7 @@ export default function EmployeeProfile() {
                           </div>
                         </div>
                       );
-                    })}
+                    }); })()}
 
                     {/* ── Nearest Location footer ── */}
                     {(locationData?.points?.length ?? 0) > 0 && (() => {
