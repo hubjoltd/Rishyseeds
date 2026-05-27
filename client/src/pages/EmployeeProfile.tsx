@@ -200,6 +200,22 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Reduce GPS ping-to-ping zigzag noise using a 3-point moving average.
+// Keeps first and last points unchanged so the route still connects correctly
+// to stoppage markers and segment boundaries.
+function smoothPolyline(pts: [number, number][], window = 3): [number, number][] {
+  if (pts.length <= 2) return pts;
+  const half = Math.floor(window / 2);
+  return pts.map((_, i) => {
+    const s = Math.max(0, i - half);
+    const e = Math.min(pts.length - 1, i + half);
+    const slice = pts.slice(s, e + 1);
+    const lat = slice.reduce((sum, p) => sum + p[0], 0) / slice.length;
+    const lng = slice.reduce((sum, p) => sum + p[1], 0) / slice.length;
+    return [lat, lng] as [number, number];
+  });
+}
+
 const MAP_TYPES = [
   { id: "roadmap",      label: "Google Maps"        },
   { id: "terrain",      label: "Google Terrain"     },
@@ -395,10 +411,11 @@ function LiveMapInner({
       {travelSegmentsPoints.map((seg, i) => {
         const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
         if (hasSnapped || seg.length <= 1) return null;
+        const smoothed = smoothPolyline(seg);
         return (
           <Fragment key={`raw-seg-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
@@ -1196,10 +1213,11 @@ function PlaybackMapInner({
       {rawSegments.map((seg, i) => {
         const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
         if (hasSnapped || seg.length <= 1) return null;
+        const smoothed = smoothPolyline(seg);
         return (
           <Fragment key={`pb-raw-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
