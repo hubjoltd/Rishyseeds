@@ -2368,8 +2368,8 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900">
-                    {enrichedTotalKm.toFixed(2)} Km
+                  <span className="font-bold text-gray-900" title={liveSnappedKm !== null ? "Road distance (OSRM)" : "GPS distance"}>
+                    {(liveSnappedKm !== null ? liveSnappedKm : enrichedTotalKm).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
