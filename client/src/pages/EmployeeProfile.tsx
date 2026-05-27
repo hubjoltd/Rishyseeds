@@ -623,16 +623,6 @@ function LiveMap({
           ? [Number(prevStoppage.lat), Number(prevStoppage.lng)]
           : null;
 
-      // The stoppage immediately AFTER this travel segment is the destination.
-      // Appending its centroid to the last sub-group pulls the blue line all the
-      // way to where the employee parked — even when the last GPS ping before
-      // arrival is several hundred metres short of the actual stoppage location.
-      const nextStoppage = allSegs.slice(i + 1).find(s => s.type === "stoppage") as any;
-      const destAnchor: [number, number] | null =
-        nextStoppage && nextStoppage.lat != null && nextStoppage.lng != null
-          ? [Number(nextStoppage.lat), Number(nextStoppage.lng)]
-          : null;
-
       // Extend the ping window by up to 2 minutes past the server-computed segEnd.
       // GPS pings at the START of the next stoppage cluster (the "approach" phase) still
       // show real movement — the employee hasn't fully stopped yet. Without them OSRM
@@ -722,15 +712,6 @@ function LiveMap({
           const tooClose = firstRepPing && Math.abs(firstRepPing[0] - stopAnchor[0]) < 0.0002
             && Math.abs(firstRepPing[1] - stopAnchor[1]) < 0.0002;
           if (!tooClose) repPings.unshift(stopAnchor);
-        }
-        // Append the next stoppage centroid to the LAST sub-group of each travel
-        // segment. This pulls the blue line all the way to where the employee parked,
-        // even when the last GPS ping before arrival is hundreds of metres short.
-        if (gi === subGroups.length - 1 && destAnchor) {
-          const lastRepPing = repPings[repPings.length - 1];
-          const tooClose = lastRepPing && Math.abs(lastRepPing[0] - destAnchor[0]) < 0.0002
-            && Math.abs(lastRepPing[1] - destAnchor[1]) < 0.0002;
-          if (!tooClose) repPings.push(destAnchor);
         }
         if (repPings.length >= 2) { result.push(repPings); pushedCount++; }
       }
