@@ -389,15 +389,19 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
-      {/* While OSRM snap is pending: show travel GPS lines per segment */}
-      {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
-        seg.length > 1 ? (
+      {/* Per-segment fallback: show raw GPS for any segment whose snapped result is not yet ready.
+          This prevents gaps during re-snapping when new GPS pings arrive: old snapped results
+          persist for already-snapped segments while new segments fall through to the raw fallback. */}
+      {travelSegmentsPoints.map((seg, i) => {
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
+        return (
           <Fragment key={`raw-seg-${i}`}>
             <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
             <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
-        ) : null
-      )}
+        );
+      })}
       {/* Once OSRM returns: one snapped polyline per segment */}
       {snappedSegments.map((seg, i) =>
         seg.length > 1 ? (
@@ -1188,15 +1192,17 @@ function PlaybackMapInner({
       <PbBoundsFitter points={allRoutePts} />
 
       {/* ── Route lines — one per sub-segment (split at signal gaps) ── */}
-      {/* While OSRM snap is pending: show raw GPS per segment */}
-      {snappedSegments.every(s => s.length <= 1) && rawSegments.map((seg, i) =>
-        seg.length > 1 ? (
+      {/* Per-segment fallback: show raw GPS for any segment whose snapped result is not yet ready */}
+      {rawSegments.map((seg, i) => {
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
+        return (
           <Fragment key={`pb-raw-${i}`}>
             <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
             <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
-        ) : null
-      )}
+        );
+      })}
       {/* Once OSRM returns: snapped road lines per segment */}
       {snappedSegments.map((seg, i) =>
         seg.length > 1 ? (
@@ -2378,8 +2384,8 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900" title={liveSnappedKm !== null ? "Road distance (OSRM)" : "GPS distance"}>
-                    {(liveSnappedKm !== null ? liveSnappedKm : enrichedTotalKm).toFixed(2)} Km
+                  <span className="font-bold text-gray-900" title="GPS distance (server-computed)">
+                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
@@ -2623,13 +2629,15 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       const distKm: number = (seg as any).distanceKm ?? 0;
-                      const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
+                      const distLabel = distKm === 0 ? "0 m"
+                        : distKm < 1 ? `${Math.round(distKm * 1000)} m`
+                        : `${distKm.toFixed(2)} Km`;
                       return (
                         <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline">
-                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel} Km)</p>
+                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel})</p>
                               {dur(formatDuration(startT, endT))}
                             </div>
                             {timeRow(startT, endT)}
