@@ -609,10 +609,16 @@ function LiveMap({
         : Infinity;
       const segEndExtended = Math.min(segEnd + 2 * 60 * 1000, nextTravelStartMs - 1000);
 
+      // Extend ping collection 2 min BEFORE segStart so OSRM receives the last ping
+      // from the preceding stoppage as a start anchor. Without it the blue line begins
+      // at the first travel GPS ping, leaving a visible gap between the orange stoppage
+      // circle and the start of the route. Stoppage suppression keeps only 1 ping per
+      // stoppage window, so we get at most 1 extra anchor point — never raw noise.
+      const EXTEND_BACK_MS = 2 * 60 * 1000;
       const segPings = filteredLocationPoints.filter(p => {
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
-        if (t < segStart || t > segEndExtended) return false;
+        if (t < segStart - EXTEND_BACK_MS || t > segEndExtended) return false;
         // 200 m threshold for OSRM: OSRM map-match snaps noisy pings to the road anyway,
         // and cellular GPS in motion often reads 100–300 m accuracy. Filtering at 80 m
         // was dropping most cellular travel pings, leaving OSRM with only start/end points.
@@ -1098,7 +1104,15 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     if (matched250) return matched250;
   }
   const routed = await tryRoute(cleanPoints);
-  return routed ?? { coords: cleanPoints, distanceM: 0 };
+  if (routed) return routed;
+
+  // All OSRM methods failed — fall back to GPS straight-line distance so the header
+  // total never drops to 0 for a failed segment (avoids large under-counts).
+  const fallbackDistM = cleanPoints.reduce((sum, p, i) => {
+    if (i === 0) return sum;
+    return sum + haversineM(cleanPoints[i - 1][0], cleanPoints[i - 1][1], p[0], p[1]);
+  }, 0);
+  return { coords: cleanPoints, distanceM: fallbackDistM };
 }
 
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
@@ -2384,8 +2398,8 @@ export default function EmployeeProfile() {
                   <span className="font-bold text-gray-900">{liveCheckins.length}</span>
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
-                  <span className="font-bold text-gray-900" title="GPS distance (server-computed)">
-                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
+                  <span className="font-bold text-gray-900" title={liveSnappedKm !== null ? "Road distance (OSRM — closer to odometer)" : "GPS distance (server-computed)"}>
+                    {(liveSnappedKm !== null ? liveSnappedKm : (locationData?.totalKm ?? enrichedTotalKm)).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
