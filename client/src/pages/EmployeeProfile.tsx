@@ -285,10 +285,13 @@ function LiveMapInner({
   // Segment-coverage check: skip gaps whose [t1,t2] window falls entirely within a
   // known segment — those are just sparse pings during normal travel, not signal loss.
   const SIGNAL_GAP_MS = 5 * 60 * 1000;
-  const SIGNAL_GAP_MIN_DIST_M = 500;
+  const SIGNAL_GAP_MIN_DIST_M = 200;
   const signalGapLines = useMemo(() => {
     const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
-    const segRanges = segments.map(s => ({
+    // Only suppress gaps that fall inside a STOPPAGE segment (employee is parked —
+    // the time gap is just the stoppage duration, not signal loss).
+    // Travel-segment gaps are genuine signal drops and must show the red line.
+    const stoppageRanges = segments.filter(s => s.type === "stoppage").map(s => ({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
@@ -301,14 +304,8 @@ function LiveMapInner({
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if t1 falls WITHIN any known segment (travelled or stoppage).
-        // This covers two cases:
-        //  (a) sparse GPS pings within a travel segment — t1 is between segment start & end
-        //  (b) filteredLocationPoints entry ping for a stoppage — t1 == stoppage.startTime,
-        //      the gap to the next travel start is the stoppage duration, not signal loss.
-        // Using s.end > t1 (strict) so we don't suppress genuine gaps that begin
-        // exactly at the last ping of a segment (where s.end == t1).
-        if (segRanges.some(s => s.start <= t1 && s.end > t1)) continue;
+        // Skip only if t1 falls inside a stoppage (not a travel segment).
+        if (stoppageRanges.some(s => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -731,10 +728,12 @@ function LiveMap({
   // Using osrmSnapGap (not osrmSnap) avoids the map-match winding-path noise problem.
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
-    const SIGNAL_GAP_MIN_DIST_M = 500;
+    const SIGNAL_GAP_MIN_DIST_M = 200;
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const segs = segments ?? [];
-    const segRanges = segs.map((s: any) => ({
+    // Only suppress gaps inside STOPPAGE segments — gaps inside travel segments are
+    // genuine signal drops that need the red line shown on the map.
+    const stoppageRanges = segs.filter((s: any) => s.type === "stoppage").map((s: any) => ({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
@@ -747,9 +746,7 @@ function LiveMap({
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if t1 falls within any known segment (s.end > t1 strict so genuine
-        // gaps starting exactly at a segment's last ping are still shown)
-        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
+        if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -1006,7 +1003,7 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
   const tryRoute = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      const step = Math.max(1, Math.ceil(pts.length / 25));
+      const step = Math.max(1, Math.ceil(pts.length / 50));
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
       const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
@@ -1021,12 +1018,14 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   };
 
   // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
-  const tryMatch = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
+  // Retried automatically with a larger snap radius when points are far from mapped roads
+  // (common in rural India where OSRM road coverage is sparse).
+  const tryMatch = async (pts: [number, number][], snapRadius = 150): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
       const step = Math.ceil(pts.length / 100);
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const radiuses = sample.map(() => "100").join(";");
+      const radiuses = sample.map(() => String(snapRadius)).join(";");
       const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
       const res = await fetchWithTimeout(url, 10000);
       if (!res.ok) return null;
@@ -1077,10 +1076,15 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   // the actual road taken rather than finding a shorter shortcut between start and end.
   // This is the key difference vs route/v1 which picks the optimal (shortest) path and
   // can under-count a winding 2.0 km route as 1.72 km if a straighter road exists.
-  // Falls back to route/v1 if match fails (network error, too sparse for OSRM matcher).
+  // Retry with progressively wider snap radii before falling back to route/v1.
+  // Rural India roads are sometimes >150 m from OSRM's mapped road centre-lines,
+  // causing the 100 m radius to fail. 250 m catches most cases while avoiding
+  // snapping to a completely wrong parallel road.
   if (cleanPoints.length >= 2) {
-    const matched = await tryMatch(cleanPoints);
-    if (matched) return matched;
+    const matched150 = await tryMatch(cleanPoints, 150);
+    if (matched150) return matched150;
+    const matched250 = await tryMatch(cleanPoints, 250);
+    if (matched250) return matched250;
   }
   const routed = await tryRoute(cleanPoints);
   return routed ?? { coords: cleanPoints, distanceM: 0 };
@@ -1493,9 +1497,10 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   // (those are just sparse pings during travel, not a real signal loss).
   const pbSignalGapLines = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
-    const SIGNAL_GAP_MIN_DIST_M = 500;
+    const SIGNAL_GAP_MIN_DIST_M = 200;
     const segs = locationData?.segments ?? [];
-    const segRanges = segs.map((s: any) => ({
+    // Only suppress gaps inside STOPPAGE segments — travel-segment gaps are real signal drops.
+    const stoppageRanges = segs.filter((s: any) => s.type === "stoppage").map((s: any) => ({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
@@ -1508,8 +1513,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
         const p1 = routeWithTime[i - 1].pos;
         const p2 = routeWithTime[i].pos;
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip if t1 falls within any known segment (s.end > t1 strict)
-        if (segRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
+        if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
