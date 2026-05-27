@@ -2966,53 +2966,77 @@ export async function registerRoutes(
       const MAX_ACCURACY_M = 75;   // rural cellular GPS: accept up to 75 m accuracy (rejects noisiest pings)
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
+
+        // ── Step 1: filter by accuracy and sort chronologically ──────────────
+        const sorted = [...pts]
+          .filter(p => { const acc = p.accuracy != null ? Number(p.accuracy) : null; return acc === null || acc <= MAX_ACCURACY_M; })
+          .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+        if (sorted.length < 2) return 0;
+
+        // ── Step 2: centroid-bin cellular GPS into 60-second windows ─────────
+        // Cellular/WiFi GPS drifts 50–200 m per 10-second ping even when the
+        // employee is stationary. Averaging all pings in a 60-second window into
+        // a single centroid suppresses this noise: the centroid of 6 scattered
+        // pings is ~10× more accurate than any individual ping.  Long customer-
+        // visit pauses no longer accumulate fake km.
+        // Satellite pings (Doppler speed > 0.5 m/s) pass through unchanged so
+        // that speed × time trapezoidal integration stays accurate.
+        const CELL_BIN_MS = 60_000;
+        const minT = new Date(sorted[0].recordedAt).getTime();
+        const maxT = new Date(sorted[sorted.length - 1].recordedAt).getTime();
+        const processed: typeof pts = [];
+
+        for (let binT = minT; binT <= maxT + CELL_BIN_MS; binT += CELL_BIN_MS) {
+          const bin = sorted.filter(p => {
+            const t = new Date(p.recordedAt).getTime();
+            return t >= binT && t < binT + CELL_BIN_MS;
+          });
+          if (bin.length === 0) continue;
+          const speedPings = bin.filter(p => p.speed != null && Number(p.speed) > MIN_SPEED_MS);
+          if (speedPings.length > 0) {
+            speedPings.forEach(p => processed.push(p));
+          } else {
+            const lat = bin.reduce((s, p) => s + Number(p.latitude),  0) / bin.length;
+            const lng = bin.reduce((s, p) => s + Number(p.longitude), 0) / bin.length;
+            let best = bin[0], bestDd = Infinity;
+            for (const p of bin) {
+              const dd = (Number(p.latitude) - lat) ** 2 + (Number(p.longitude) - lng) ** 2;
+              if (dd < bestDd) { bestDd = dd; best = p; }
+            }
+            processed.push({ ...best, latitude: String(lat), longitude: String(lng) });
+          }
+        }
+
+        if (processed.length < 2) return 0;
+
+        // ── Step 3: ping-to-ping haversine on smoothed (centroid) array ──────
         let d = 0, last = 0;
-        for (let k = 1; k < pts.length; k++) {
-          // Skip poor-accuracy GPS readings — they contribute most to distance inflation
-          const acc = pts[k].accuracy != null ? Number(pts[k].accuracy) : null;
-          if (acc !== null && acc > MAX_ACCURACY_M) continue;
+        for (let k = 1; k < processed.length; k++) {
           const distM = haversineM(
-            Number(pts[last].latitude), Number(pts[last].longitude),
-            Number(pts[k].latitude),    Number(pts[k].longitude)
+            Number(processed[last].latitude), Number(processed[last].longitude),
+            Number(processed[k].latitude),    Number(processed[k].longitude)
           );
-          const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          // Determine GPS type first so we can apply the right gap threshold
-          const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
-          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
+          const dtSec = (new Date(processed[k].recordedAt).getTime() - new Date(processed[last].recordedAt).getTime()) / 1000;
+          const hasSpeed = processed[k].speed != null && Number(processed[k].speed) > MIN_SPEED_MS;
           if (dtSec > (hasSpeed ? SIGNAL_GAP_SEC : CELLULAR_GAP_SEC)) { last = k; continue; }
           if (hasSpeed) {
-            // Satellite GPS (Doppler speed available): use speed × time instead of
-            // noisy coordinate distance — eliminates GPS jitter over-counting.
-            // GPS Doppler speed is accurate to ±0.1 m/s vs ±28 m position error.
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
-            if (distM < MIN_DIST_SPEED_M) continue; // reject stationary pings with phantom speed
-            const curSpd = Number(pts[k].speed);
-            const prevSpd = pts[last].speed != null && Number(pts[last].speed) > MIN_SPEED_MS
-              ? Number(pts[last].speed) : curSpd;
-            d += ((prevSpd + curSpd) / 2 * dtSec) / 1000; // trapezoidal integration
+            if (distM < MIN_DIST_SPEED_M) continue;
+            const curSpd = Number(processed[k].speed);
+            const prevSpd = processed[last].speed != null && Number(processed[last].speed) > MIN_SPEED_MS
+              ? Number(processed[last].speed) : curSpd;
+            d += ((prevSpd + curSpd) / 2 * dtSec) / 1000;
             last = k;
           } else {
-            // No Doppler: reject tower jumps, then require both distance AND implied speed
-            // to be meaningful — prevents stationary GPS random-walk from accumulating
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
             const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
             if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) {
-              // Bounce detection: if next valid ping returns close to `last`, this is a
-              // GPS outlier (tower switch / multipath) — skip without advancing last
-              if (distM >= 150) {
-                let nk = k + 1;
-                while (nk < pts.length) {
-                  const nacc = pts[nk].accuracy != null ? Number(pts[nk].accuracy) : null;
-                  if (nacc === null || nacc <= MAX_ACCURACY_M) break;
-                  nk++;
-                }
-                if (nk < pts.length) {
-                  const returnDist = haversineM(
-                    Number(pts[last].latitude), Number(pts[last].longitude),
-                    Number(pts[nk].latitude),   Number(pts[nk].longitude)
-                  );
-                  if (returnDist < distM * 0.5) continue;
-                }
+              if (distM >= 80 && k + 1 < processed.length) {
+                const returnDist = haversineM(
+                  Number(processed[last].latitude), Number(processed[last].longitude),
+                  Number(processed[k + 1].latitude), Number(processed[k + 1].longitude)
+                );
+                if (returnDist < distM * 0.5) continue;
               }
               d += distM / 1000; last = k;
             }
