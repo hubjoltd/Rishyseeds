@@ -27,6 +27,21 @@ function isStale(dateStr: string): boolean {
   return Date.now() - new Date(dateStr).getTime() > 10 * 60 * 1000; // > 10 min
 }
 
+// Inject pulsing CSS for active live markers
+if (typeof document !== "undefined" && !document.getElementById("livemap-pulse-css")) {
+  const s = document.createElement("style");
+  s.id = "livemap-pulse-css";
+  s.textContent = `
+    @keyframes livemap-ping {
+      0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.7), 0 2px 8px rgba(0,0,0,0.35); }
+      60%  { box-shadow: 0 0 0 10px rgba(255,255,255,0), 0 2px 8px rgba(0,0,0,0.35); }
+      100% { box-shadow: 0 0 0 0 rgba(255,255,255,0), 0 2px 8px rgba(0,0,0,0.35); }
+    }
+    .livemap-active-marker { animation: livemap-ping 1.6s ease-out infinite; }
+  `;
+  document.head.appendChild(s);
+}
+
 // Colour palette for markers
 const COLOURS = [
   "#1B5E20", "#1565C0", "#6A1B9A", "#E65100", "#00695C",
@@ -40,10 +55,10 @@ export default function LiveMap() {
   const [selected, setSelected] = useState<LiveLocation | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
 
-  // Fetch live locations — auto-refresh every 30 s
+  // Fetch live locations — auto-refresh every 15 s
   const { data: locations = [], dataUpdatedAt, refetch, isFetching } = useQuery<LiveLocation[]>({
     queryKey: ["/api/employees/live-locations"],
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
   // Load Leaflet dynamically
@@ -93,7 +108,7 @@ export default function LiveMap() {
         const colour = COLOURS[idx % COLOURS.length];
         const stale = isStale(loc.recordedAt);
         const iconHtml = `
-          <div style="
+          <div class="${stale ? "" : "livemap-active-marker"}" style="
             background:${stale ? "#9e9e9e" : colour};
             width:36px;height:36px;border-radius:50% 50% 50% 0;
             transform:rotate(-45deg);border:3px solid white;
@@ -137,7 +152,7 @@ export default function LiveMap() {
             Live Employee Map
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Real-time GPS locations · auto-refreshes every 30 seconds
+            Real-time GPS locations · auto-refreshes every 15 seconds
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -1052,9 +1052,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLatestLocationsAllEmployees() {
-    // Get the most recent GPS point per employee recorded today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Get the most recent GPS point per employee recorded today (IST = UTC+5:30)
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const istDateStr = nowIST.toISOString().slice(0, 10);
+    const todayStart = new Date(`${istDateStr}T00:00:00+05:30`);
     const rows = await db.select().from(employeeLocations)
       .where(gte(employeeLocations.recordedAt, todayStart))
       .orderBy(desc(employeeLocations.recordedAt));

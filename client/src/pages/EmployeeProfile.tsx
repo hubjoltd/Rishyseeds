@@ -1113,6 +1113,9 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     if (matched150) return matched150;
     const matched250 = await tryMatch(cleanPoints, 250);
     if (matched250) return matched250;
+    // Rural Telangana roads can be >250m from OSRM road centre-lines — try wider radius
+    const matched500 = await tryMatch(cleanPoints, 500);
+    if (matched500) return matched500;
   }
   const routed = await tryRoute(cleanPoints);
   return routed ?? { coords: cleanPoints, distanceM: 0 };
