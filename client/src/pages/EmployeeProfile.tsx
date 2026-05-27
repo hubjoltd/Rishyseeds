@@ -1094,7 +1094,15 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     if (matched250) return matched250;
   }
   const routed = await tryRoute(cleanPoints);
-  return routed ?? { coords: cleanPoints, distanceM: 0 };
+  if (routed) return routed;
+
+  // OSRM completely failed — compute straight-line GPS distance so this segment
+  // still contributes a real value to the header total instead of 0.
+  const fallbackM = cleanPoints.reduce((sum, p, i) => {
+    if (i === 0) return sum;
+    return sum + haversineM(cleanPoints[i - 1][0], cleanPoints[i - 1][1], p[0], p[1]);
+  }, 0);
+  return { coords: cleanPoints, distanceM: fallbackM };
 }
 
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
@@ -2379,7 +2387,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
+                    {(liveSnappedKm !== null ? liveSnappedKm : (locationData?.totalKm ?? enrichedTotalKm)).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
