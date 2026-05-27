@@ -1270,7 +1270,12 @@ export async function registerRoutes(
           const hasSpeed = spd != null && spd > MIN_SPEED_MS;
           if (hasSpeed) {
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
-            d += distM / 1000; last = k;
+            // Use Doppler speed × time (trapezoidal) — eliminates GPS coordinate noise.
+            // This matches odometer accuracy and removes the ~2 km over-count from jitter.
+            const prevSpd = pts[last].speed != null && Number(pts[last].speed) > MIN_SPEED_MS
+              ? Number(pts[last].speed) : spd;
+            d += ((prevSpd + spd) / 2 * dtSec) / 1000;
+            last = k;
           } else {
             if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) continue;
             const impliedMs = dtSec > 0 ? distM / dtSec : Infinity;
@@ -2973,10 +2978,15 @@ export async function registerRoutes(
           if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
-            // Satellite GPS (Doppler speed available): trust speed, reject glitches and sub-20m jitter
+            // Satellite GPS (Doppler speed available): use speed × time instead of
+            // noisy coordinate distance — eliminates GPS jitter over-counting.
+            // GPS Doppler speed is accurate to ±0.1 m/s vs ±28 m position error.
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
-            if (distM < MIN_DIST_SPEED_M) continue; // GPS can report non-zero speed when stationary
-            d += distM / 1000;
+            if (distM < MIN_DIST_SPEED_M) continue; // reject stationary pings with phantom speed
+            const curSpd = Number(pts[k].speed);
+            const prevSpd = pts[last].speed != null && Number(pts[last].speed) > MIN_SPEED_MS
+              ? Number(pts[last].speed) : curSpd;
+            d += ((prevSpd + curSpd) / 2 * dtSec) / 1000; // trapezoidal integration
             last = k;
           } else {
             // No Doppler: reject tower jumps, then require both distance AND implied speed
@@ -4370,10 +4380,14 @@ export async function registerRoutes(
           if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
           if (hasSpeed) {
-            // Satellite GPS (Doppler speed available): trust speed, reject glitches and sub-20m jitter
+            // Satellite GPS (Doppler speed available): use speed × time instead of
+            // noisy coordinate distance — eliminates GPS jitter over-counting.
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
-            if (distM < MIN_DIST_SPEED_M) continue; // GPS can report non-zero speed when stationary
-            d += distM / 1000;
+            if (distM < MIN_DIST_SPEED_M) continue; // reject stationary pings with phantom speed
+            const curSpd = Number(pts[k].speed);
+            const prevSpd = pts[last].speed != null && Number(pts[last].speed) > MIN_SPEED_MS
+              ? Number(pts[last].speed) : curSpd;
+            d += ((prevSpd + curSpd) / 2 * dtSec) / 1000; // trapezoidal integration
             last = k;
           } else {
             // No Doppler: reject tower jumps, then require both distance AND implied speed
