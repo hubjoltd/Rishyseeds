@@ -2427,11 +2427,8 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(liveSnappedKm ?? locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
+                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
                   </span>
-                  {liveSnappedKm != null
-                    ? <span className="text-[9px] text-blue-500 font-medium">road</span>
-                    : <span className="text-[9px] text-gray-400">gps</span>}
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
                 {liveSignalLostStats.count > 0 && (
@@ -2772,14 +2769,8 @@ export default function EmployeeProfile() {
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-[11px]">
                   <div className="flex flex-col items-center bg-white rounded border py-1">
-                    <span className="text-muted-foreground text-[9px]">
-                      Distance {playbackOsrmKm != null
-                        ? <span className="text-blue-500">road</span>
-                        : <span className="text-gray-400">gps</span>}
-                    </span>
-                    <span className="font-bold text-foreground">
-                      {(playbackOsrmKm ?? playbackKm).toFixed(2)} km
-                    </span>
+                    <span className="text-muted-foreground text-[9px]">Distance</span>
+                    <span className="font-bold text-foreground">{playbackKm.toFixed(2)} km</span>
                   </div>
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Stoppages</span>
