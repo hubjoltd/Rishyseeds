@@ -1254,7 +1254,8 @@ export async function registerRoutes(
         const MIN_MOVE_MS    = 1.4;  // 5 km/h min implied speed — rejects near-stationary drift
         const MIN_SPEED_MS   = 0.5;
         const MAX_ACCURACY_M = 80;   // skip pings with accuracy worse than 80 m
-        const SIGNAL_GAP_SEC = 300;  // 5-minute gap = signal drop, skip
+        const SIGNAL_GAP_SEC  = 600;  // 10 min — satellite real-loss threshold
+        const CELLULAR_GAP_SEC = 600; // 10 min — cellular pings every 2–7 min naturally
         let d = 0, last = 0;
         for (let k = 1; k < pts.length; k++) {
           // Skip poor-accuracy GPS readings — they contribute most to distance inflation
@@ -1265,9 +1266,9 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
           const spd = pts[k].speed != null ? Number(pts[k].speed) : null;
           const hasSpeed = spd != null && spd > MIN_SPEED_MS;
+          if (dtSec > (hasSpeed ? SIGNAL_GAP_SEC : CELLULAR_GAP_SEC)) { last = k; continue; }
           if (hasSpeed) {
             if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) continue;
             // Use Doppler speed × time (trapezoidal) — eliminates GPS coordinate noise.
@@ -2950,11 +2951,12 @@ export async function registerRoutes(
       //     counting legitimate driving (80–110 km/h highway, or a long ping gap
       //     of 57 min covering 103 km at ~108 km/h — all below 120 km/h).
       // Signal-drop guard:
-      //   • Any hop where consecutive pings are > 5 min apart is a GPS tracking gap
-      //     (background kill, network loss, tunnel).  The straight-line distance across
-      //     the gap must NOT be counted as travel — it inflates the total by kilometres.
-      //     We advance `last` to the post-gap point so subsequent hops measure correctly.
-      const SIGNAL_GAP_SEC  = 300;  // 5 minutes
+      //   • Satellite GPS (Doppler speed available) locks every 5–30 s → 10 min gap = real signal loss.
+      //   • Cellular / WiFi GPS naturally pings every 2–7 min → old 5 min threshold was wrongly
+      //     treating normal silence as signal loss and skipping the destination ping entirely.
+      //     Using 10 min for both keeps consistency while fixing the cellular under-count.
+      const SIGNAL_GAP_SEC  = 600;  // 10 minutes — satellite GPS real loss threshold
+      const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
       const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
@@ -2974,9 +2976,10 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
-          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
+          // Determine GPS type first so we can apply the right gap threshold
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
+          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
+          if (dtSec > (hasSpeed ? SIGNAL_GAP_SEC : CELLULAR_GAP_SEC)) { last = k; continue; }
           if (hasSpeed) {
             // Satellite GPS (Doppler speed available): use speed × time instead of
             // noisy coordinate distance — eliminates GPS jitter over-counting.
@@ -4355,8 +4358,10 @@ export async function registerRoutes(
 
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
-      // Signal-drop guard: skip any hop > 5 min (GPS tracking gap) — don't count as travel.
-      const SIGNAL_GAP_SEC  = 300;  // 5 minutes
+      // Signal-drop guard: cellular GPS pings every 2–7 min naturally; 5 min was too short.
+      // Using 10 min for both satellite and cellular keeps the same real-loss detection.
+      const SIGNAL_GAP_SEC  = 600;  // 10 minutes — satellite GPS real loss threshold
+      const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
       const MIN_DIST_M     = 50;   // 50m min — filters cellular/WiFi GPS jitter (±20–80 m accuracy)
@@ -4376,9 +4381,10 @@ export async function registerRoutes(
             Number(pts[k].latitude),    Number(pts[k].longitude)
           );
           const dtSec = (new Date(pts[k].recordedAt).getTime() - new Date(pts[last].recordedAt).getTime()) / 1000;
-          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
-          if (dtSec > SIGNAL_GAP_SEC) { last = k; continue; }
+          // Determine GPS type first so we can apply the right gap threshold
           const hasSpeed = pts[k].speed != null && Number(pts[k].speed) > MIN_SPEED_MS;
+          // Signal-drop: skip the straight-line gap, but advance last so next hop is correct
+          if (dtSec > (hasSpeed ? SIGNAL_GAP_SEC : CELLULAR_GAP_SEC)) { last = k; continue; }
           if (hasSpeed) {
             // Satellite GPS (Doppler speed available): use speed × time instead of
             // noisy coordinate distance — eliminates GPS jitter over-counting.

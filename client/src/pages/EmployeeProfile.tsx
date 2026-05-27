@@ -284,7 +284,9 @@ function LiveMapInner({
   // close points) from drawing noisy red squiggles around stoppage locations.
   // Segment-coverage check: skip gaps whose [t1,t2] window falls entirely within a
   // known segment — those are just sparse pings during normal travel, not signal loss.
-  const SIGNAL_GAP_MS = 5 * 60 * 1000;
+  // 10 min threshold: cellular GPS pings every 2–7 min naturally; 5 min was showing false
+  // "signal lost" gaps during normal cellular travel, matching server SIGNAL_GAP_SEC = 600 s.
+  const SIGNAL_GAP_MS = 10 * 60 * 1000;
   const SIGNAL_GAP_MIN_DIST_M = 200;
   const signalGapLines = useMemo(() => {
     const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
@@ -607,18 +609,23 @@ function LiveMap({
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
         if (t < segStart || t > segEndExtended) return false;
-        // Skip poor-accuracy pings — same 80 m threshold as server — reduces map noise
+        // 200 m threshold for OSRM: OSRM map-match snaps noisy pings to the road anyway,
+        // and cellular GPS in motion often reads 100–300 m accuracy. Filtering at 80 m
+        // was dropping most cellular travel pings, leaving OSRM with only start/end points.
         const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
-        if (acc !== null && acc > 80) return false;
+        if (acc !== null && acc > 200) return false;
         return true;
       });
 
-      // Split segPings at signal gaps (>5 min) BEFORE sending to OSRM.
+      // Split segPings at signal gaps (>10 min) BEFORE sending to OSRM.
       // Without this, OSRM routes a continuous blue road line through the gap,
       // producing both blue and red lines on the same section — confusing.
       // Each sub-group gets its own OSRM call → separate blue lines.
       // Red lines (rendered in LiveMapInner) cover the gaps between sub-groups.
-      const LIVE_SPLIT_MS = 5 * 60 * 1000;
+      // 10 min threshold matches server SIGNAL_GAP_SEC — cellular GPS pings every 2–7 min
+      // naturally, so the old 5 min was splitting valid travel into orphan single-ping groups
+      // that got discarded (OSRM needs ≥ 2 points), hiding the route on the map.
+      const LIVE_SPLIT_MS = 10 * 60 * 1000;
       const sorted = [...segPings].sort(
         (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
       );
@@ -727,7 +734,7 @@ function LiveMap({
   // Snap signal-gap endpoints to roads using route/v1 simplified (clean 2-point route).
   // Using osrmSnapGap (not osrmSnap) avoids the map-match winding-path noise problem.
   const signalGapPairsForSnap = useMemo(() => {
-    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MS = 10 * 60 * 1000; // matches LIVE_SPLIT_MS — prevents blue+red overlap
     const SIGNAL_GAP_MIN_DIST_M = 200;
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const segs = segments ?? [];
@@ -1492,11 +1499,10 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
       });
   }, [locationData]);
 
-  // Signal-drop gaps for playback view (same 5-min threshold as Live map)
-  // Segment-coverage check: skip gaps whose time window falls inside a known segment
-  // (those are just sparse pings during travel, not a real signal loss).
+  // Signal-drop gaps for playback view — 10 min threshold matches Live map + server SIGNAL_GAP_SEC.
+  // Cellular GPS pings every 2–7 min naturally; old 5 min was showing false signal-loss gaps.
   const pbSignalGapLines = useMemo(() => {
-    const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const SIGNAL_GAP_MS = 10 * 60 * 1000;
     const SIGNAL_GAP_MIN_DIST_M = 200;
     const segs = locationData?.segments ?? [];
     // Only suppress gaps inside STOPPAGE segments — travel-segment gaps are real signal drops.
