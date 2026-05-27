@@ -1283,7 +1283,7 @@ export async function registerRoutes(
             if (distM >= MIN_DIST_M && impliedMs >= MIN_MOVE_MS) {
               // Bounce detection: if the next valid ping returns close to `last`, this is a
               // GPS outlier (tower switch / multipath) — skip without advancing last
-              if (distM >= 150) {
+              if (distM >= 80) {
                 let nk = k + 1;
                 while (nk < pts.length) {
                   const nacc = pts[nk].accuracy != null ? Number(pts[nk].accuracy) : null;
@@ -2959,11 +2959,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 50;   // 50m min — rural winding roads have short segments; don't miss them
+      const MIN_DIST_M     = 75;   // 75m min — filters 50m GPS drift while counting real road movement
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 80;   // rural cellular GPS typical 60–120 m; accept up to 80 m accuracy
+      const MAX_ACCURACY_M = 75;   // rural cellular GPS: accept up to 75 m accuracy (rejects noisiest pings)
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
@@ -4364,11 +4364,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 50;   // 50m min — rural winding roads have short segments; don't miss them
+      const MIN_DIST_M     = 75;   // 75m min — filters 50m GPS drift while counting real road movement
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
       const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 80;   // rural cellular GPS typical 60–120 m; accept up to 80 m accuracy
+      const MAX_ACCURACY_M = 75;   // rural cellular GPS: accept up to 75 m accuracy (rejects noisiest pings)
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
