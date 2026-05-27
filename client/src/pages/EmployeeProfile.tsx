@@ -389,15 +389,19 @@ function LiveMapInner({
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
       {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
-      {/* While OSRM snap is pending: show travel GPS lines per segment */}
-      {snappedSegments.every(s => s.length <= 1) && travelSegmentsPoints.map((seg, i) =>
-        seg.length > 1 ? (
+      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap.
+          The all-or-nothing every() check hid routes on small/unmapped roads where
+          OSRM fails for just that one segment while others snap fine. */}
+      {travelSegmentsPoints.map((seg, i) => {
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
+        return (
           <Fragment key={`raw-seg-${i}`}>
             <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
             <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
-        ) : null
-      )}
+        );
+      })}
       {/* Once OSRM returns: one snapped polyline per segment */}
       {snappedSegments.map((seg, i) =>
         seg.length > 1 ? (
@@ -1188,15 +1192,17 @@ function PlaybackMapInner({
       <PbBoundsFitter points={allRoutePts} />
 
       {/* ── Route lines — one per sub-segment (split at signal gaps) ── */}
-      {/* While OSRM snap is pending: show raw GPS per segment */}
-      {snappedSegments.every(s => s.length <= 1) && rawSegments.map((seg, i) =>
-        seg.length > 1 ? (
+      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap. */}
+      {rawSegments.map((seg, i) => {
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
+        return (
           <Fragment key={`pb-raw-${i}`}>
             <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
             <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
-        ) : null
-      )}
+        );
+      })}
       {/* Once OSRM returns: snapped road lines per segment */}
       {snappedSegments.map((seg, i) =>
         seg.length > 1 ? (
