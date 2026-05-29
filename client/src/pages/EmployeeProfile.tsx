@@ -248,6 +248,14 @@ if (typeof document !== "undefined" && !document.getElementById("rishi-gps-pulse
 }
 
 // ── LiveMapInner — inside MapContainer so Leaflet hooks work ──
+type HighlightSegment = {
+  startTime: string;
+  endTime: string;
+  type: string;
+  lat?: number | null;
+  lng?: number | null;
+};
+
 function LiveMapInner({
   locationPoints,
   segments,
@@ -260,8 +268,10 @@ function LiveMapInner({
   autoFollow,
   snappedSegments,
   travelSegmentsPoints,
+  travelSegmentWindows,
   snappedGapSegments,
   rawLatestPoint,
+  highlightedSegment,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -274,8 +284,10 @@ function LiveMapInner({
   autoFollow: boolean;
   snappedSegments: [number, number][][];
   travelSegmentsPoints: [number, number][][];
+  travelSegmentWindows: { startTime: string; endTime: string }[];
   rawLatestPoint?: [number, number] | null;
   snappedGapSegments: { path: [number, number][]; gapMins: number }[];
+  highlightedSegment?: HighlightSegment | null;
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -351,6 +363,36 @@ function LiveMapInner({
     }
   }, [gpsPoints, visitStops, punchInLat, punchInLng, punchOutLat, punchOutLng, autoFollow]);
 
+  // Fly to highlighted segment when user clicks a timeline entry
+  useEffect(() => {
+    if (!highlightedSegment) return;
+    const { type, lat, lng, startTime, endTime } = highlightedSegment;
+    // Point-based segments: fly directly to the coordinate
+    if ((type === "stoppage" || type === "visit" || type === "punch_in" || type === "punch_out") && lat && lng) {
+      map.flyTo([lat, lng], 16, { animate: true, duration: 0.7 });
+      return;
+    }
+    // Travel / gap: collect GPS pings inside the time window and fit their bounds
+    const startMs = new Date(startTime).getTime();
+    const endMs   = new Date(endTime).getTime();
+    const pts: [number, number][] = locationPoints
+      .filter(p => p.latitude && p.longitude && p.recordedAt)
+      .filter(p => { const t = new Date(p.recordedAt).getTime(); return t >= startMs && t <= endMs; })
+      .map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+    if (pts.length >= 2) {
+      map.flyToBounds(L.latLngBounds(pts.map(c => L.latLng(c[0], c[1]))), { padding: [60, 60], animate: true, duration: 0.7 });
+    } else if (pts.length === 1) {
+      map.flyTo(pts[0], 15, { animate: true, duration: 0.7 });
+    }
+  }, [highlightedSegment]);
+
+  // Returns true if travel sub-group i should be highlighted
+  const isSegHighlighted = (i: number) => {
+    if (!highlightedSegment || highlightedSegment.type !== "travelled") return false;
+    const win = travelSegmentWindows?.[i];
+    return !!win && win.startTime === highlightedSegment.startTime;
+  };
+
   // Numbered stoppage icon factory
   const makeStoppageIcon = (_num: number, dur = "") => L.divIcon({
     html: `<div style="width:52px;height:52px;border-radius:50%;background:#f97316;border:3px solid #ffffff;box-shadow:0 0 0 2px #f97316,0 3px 8px rgba(0,0,0,0.35);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
@@ -412,21 +454,27 @@ function LiveMapInner({
         const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
         if (hasSnapped || seg.length <= 1) return null;
         const smoothed = smoothPolyline(seg);
+        const hi = isSegHighlighted(i);
         return (
           <Fragment key={`raw-seg-${i}`}>
-            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={smoothed} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+            {hi && <Polyline positions={smoothed} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
+            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
       {/* Once OSRM returns: one snapped polyline per segment */}
       {snappedSegments.map((seg, i) =>
-        seg.length > 1 ? (
-          <Fragment key={`snap-seg-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-          </Fragment>
-        ) : null
+        seg.length > 1 ? (() => {
+          const hi = isSegHighlighted(i);
+          return (
+            <Fragment key={`snap-seg-${i}`}>
+              {hi && <Polyline positions={seg} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
+              <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={seg} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+            </Fragment>
+          );
+        })() : null
       )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
@@ -462,12 +510,13 @@ function LiveMapInner({
         const hrs = Math.floor(totalMins / 60);
         const mins = totalMins % 60;
         const dur = hrs > 0 ? `${hrs}h ${mins}m` : `${totalMins}m`;
+        const hiStop = highlightedSegment?.type === "stoppage" && highlightedSegment.startTime === s.startTime;
         return (
           <CircleMarker
             key={`stop-${i}`}
             center={[s.lat!, s.lng!]}
-            radius={11}
-            pathOptions={{ color: "#ffffff", weight: 4, fillColor: "#f97316", fillOpacity: 1 }}
+            radius={hiStop ? 15 : 11}
+            pathOptions={{ color: hiStop ? "#fbbf24" : "#ffffff", weight: hiStop ? 5 : 4, fillColor: "#f97316", fillOpacity: 1 }}
           >
             <Popup>
               <div style={{ fontSize: 13, minWidth: 130 }}>
@@ -529,6 +578,7 @@ function LiveMap({
   onMapTypeChange,
   onSnappedKm,
   onOsrmSegmentDistances,
+  highlightedSegment,
 }: {
   locationPoints?: any[];
   segments?: LiveMapSegment[];
@@ -541,6 +591,7 @@ function LiveMap({
   onMapTypeChange: (t: string) => void;
   onSnappedKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
+  highlightedSegment?: HighlightSegment | null;
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
@@ -604,6 +655,7 @@ function LiveMap({
 
     const result: [number, number][][] = [];
     const subGroupCounts: number[] = [];
+    const segmentWindows: { startTime: string; endTime: string }[] = [];
 
     for (let i = 0; i < allSegs.length; i++) {
       const seg = allSegs[i];
@@ -719,15 +771,19 @@ function LiveMap({
         const finalPings = repPings.length >= 2
           ? repPings
           : group.map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
-        if (finalPings.length >= 2) { result.push(finalPings); pushedCount++; }
+        if (finalPings.length >= 2) {
+          result.push(finalPings);
+          segmentWindows.push({ startTime: seg.startTime, endTime: (seg as any).endTime ?? seg.startTime });
+          pushedCount++;
+        }
       }
       // Record how many sub-groups were actually pushed for this server segment
       // (used to aggregate OSRM distances back to per-segment totals)
       subGroupCounts.push(pushedCount > 0 ? pushedCount : 0);
     }
 
-    if (result.length > 0) return { points: result, subGroupCounts };
-    return { points: [gpsPoints], subGroupCounts: [1] }; // guard: never return empty
+    if (result.length > 0) return { points: result, subGroupCounts, segmentWindows };
+    return { points: [gpsPoints], subGroupCounts: [1], segmentWindows: [] }; // guard: never return empty
   }, [filteredLocationPoints, segments, gpsPoints]);
 
   const travelSegmentsPoints = travelSegmentsData.points;
@@ -841,8 +897,10 @@ function LiveMap({
           autoFollow={autoFollow}
           snappedSegments={snappedSegments}
           travelSegmentsPoints={travelSegmentsPoints}
+          travelSegmentWindows={travelSegmentsData.segmentWindows}
           rawLatestPoint={rawLatestPoint}
           snappedGapSegments={snappedGapSegments}
+          highlightedSegment={highlightedSegment}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -1880,6 +1938,13 @@ export default function EmployeeProfile() {
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
   const [sharedMapTypeId, setSharedMapTypeId] = useState("openstreetmap");
+  const [highlightedSegment, setHighlightedSegment] = useState<HighlightSegment | null>(null);
+
+  const handleTimelineClick = (seg: HighlightSegment) => {
+    setHighlightedSegment(prev =>
+      prev?.startTime === seg.startTime && prev?.type === seg.type ? null : seg
+    );
+  };
 
   const { data: employee, isLoading: empLoading } = useQuery<Employee>({
     queryKey: ["/api/employees", empId],
@@ -2561,7 +2626,6 @@ export default function EmployeeProfile() {
                       /* ── GAP TRAVEL (synthesised gap between events) ── */
                       if (seg.type === "gap_travel") {
                         const gapEndT = new Date((seg as any).endTime);
-                        // Compute distance from any GPS points that fall inside this gap
                         const gapStart = startT.getTime();
                         const gapEnd   = gapEndT.getTime();
                         const gapPts   = (locationData?.points ?? [])
@@ -2574,8 +2638,13 @@ export default function EmployeeProfile() {
                         for (let gi = 1; gi < gapPts.length; gi++)
                           gapKm += haversineKm(gapPts[gi-1][0], gapPts[gi-1][1], gapPts[gi][0], gapPts[gi][1]);
                         const gapLabel = gapKm >= 1 ? `${gapKm.toFixed(2)} Km` : gapKm > 0 ? `${(gapKm * 1000).toFixed(0)} m` : null;
+                        const hiGap = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "gap_travel";
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
+                          <div
+                            key={idx}
+                            className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiGap ? "bg-orange-50 ring-1 ring-orange-300 ring-inset rounded" : "hover:bg-orange-50/40"}`}
+                            onClick={() => handleTimelineClick({ type: "gap_travel", startTime: seg.startTime, endTime: (seg as any).endTime })}
+                          >
                             {dot("bg-orange-400", <Navigation className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
@@ -2592,8 +2661,13 @@ export default function EmployeeProfile() {
 
                       /* ── PUNCH IN ── */
                       if (seg.type === "punch_in") {
+                        const hiPI = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "punch_in";
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-green-50/50 transition-colors">
+                          <div
+                            key={idx}
+                            className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiPI ? "bg-green-50 ring-1 ring-green-300 ring-inset rounded" : "hover:bg-green-50/50"}`}
+                            onClick={() => handleTimelineClick({ type: "punch_in", startTime: seg.startTime, endTime: seg.startTime, lat: seg.lat, lng: seg.lng })}
+                          >
                             {dot("bg-green-600", <span className="text-[7px] font-black text-white leading-none">IN</span>)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
@@ -2611,8 +2685,13 @@ export default function EmployeeProfile() {
 
                       /* ── PUNCH OUT ── */
                       if (seg.type === "punch_out") {
+                        const hiPO = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "punch_out";
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-red-50/50 transition-colors">
+                          <div
+                            key={idx}
+                            className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiPO ? "bg-red-50 ring-1 ring-red-300 ring-inset rounded" : "hover:bg-red-50/50"}`}
+                            onClick={() => handleTimelineClick({ type: "punch_out", startTime: seg.startTime, endTime: seg.startTime, lat: seg.lat, lng: seg.lng })}
+                          >
                             {dot("bg-red-600", <span className="text-[6px] font-black text-white leading-none">OUT</span>)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
@@ -2632,8 +2711,13 @@ export default function EmployeeProfile() {
                       if (seg.type === "stoppage") {
                         const mm = Math.floor(seg.durationSecs / 60);
                         const ss = Math.round(seg.durationSecs % 60);
+                        const hiSt = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "stoppage";
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-gray-50 transition-colors">
+                          <div
+                            key={idx}
+                            className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiSt ? "bg-orange-50 ring-1 ring-orange-300 ring-inset rounded" : "hover:bg-gray-50"}`}
+                            onClick={() => handleTimelineClick({ type: "stoppage", startTime: seg.startTime, endTime: seg.endTime, lat: seg.lat, lng: seg.lng })}
+                          >
                             {dot("bg-gray-400", <Timer className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-bold text-gray-700 leading-tight">
@@ -2653,8 +2737,13 @@ export default function EmployeeProfile() {
                         const durShort = durSecs !== null
                           ? (durSecs < 60 ? `${durSecs} Sec` : `${Math.floor(durSecs / 60)}m ${durSecs % 60}s`)
                           : "ongoing";
+                        const hiVi = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "visit";
                         return (
-                          <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px] hover:bg-blue-50/40 transition-colors">
+                          <div
+                            key={idx}
+                            className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiVi ? "bg-blue-50 ring-1 ring-blue-300 ring-inset rounded" : "hover:bg-blue-50/40"}`}
+                            onClick={() => handleTimelineClick({ type: "visit", startTime: seg.startTime, endTime: seg.endTime ?? seg.startTime, lat: seg.lat, lng: seg.lng })}
+                          >
                             {dot("bg-blue-600", <MapPin className="w-2.5 h-2.5 text-white" />)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline">
@@ -2677,8 +2766,13 @@ export default function EmployeeProfile() {
                       travelIdx++;
                       const distKm: number = (seg as any).distanceKm ?? 0;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
+                      const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
-                        <div key={idx} className="relative flex items-start pl-[40px] pr-3 py-[7px]">
+                        <div
+                          key={idx}
+                          className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiTr ? "bg-blue-50 ring-1 ring-blue-300 ring-inset rounded" : "hover:bg-orange-50/40"}`}
+                          onClick={() => handleTimelineClick({ type: "travelled", startTime: seg.startTime, endTime: (seg as any).endTime })}
+                        >
                           {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline">
@@ -2740,6 +2834,7 @@ export default function EmployeeProfile() {
                     onMapTypeChange={setSharedMapTypeId}
                     onSnappedKm={setLiveSnappedKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
+                    highlightedSegment={highlightedSegment}
                   />
                 )}
               </div>
