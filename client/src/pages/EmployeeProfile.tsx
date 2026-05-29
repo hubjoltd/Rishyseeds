@@ -2271,6 +2271,33 @@ export default function EmployeeProfile() {
     return sum;
   }, 0);
 
+  // Summary bar stats
+  const summaryTravelSecs = enrichedTimelineEvents.reduce((sum, ev) => {
+    if (ev.type === "travelled" || ev.type === "gap_travel") {
+      const s = new Date(ev.startTime).getTime();
+      const e = new Date((ev as any).endTime ?? ev.startTime).getTime();
+      return sum + Math.max(0, (e - s) / 1000);
+    }
+    return sum;
+  }, 0);
+
+  const summaryStopSecs = enrichedTimelineEvents.reduce((sum, ev) => {
+    if (ev.type === "stoppage") {
+      return sum + ((ev as any).durationSecs ?? 0);
+    }
+    return sum;
+  }, 0);
+
+  const summaryVisits = enrichedTimelineEvents.filter(ev => ev.type === "visit").length;
+
+  const fmtSecs = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `<1m`;
+  };
+
   const hasTimeline = allTimelineEvents.length > 0 || !!liveDateAttendance;
 
   const playbackDateTrips = trips.filter(t => t.startTime && format(new Date(t.startTime), "yyyy-MM-dd") === playbackDate);
@@ -2586,6 +2613,36 @@ export default function EmployeeProfile() {
                   );
                 })()}
               </div>
+
+              {/* Day summary bar */}
+              {hasTimeline && (
+                <div className="grid grid-cols-4 border-b divide-x bg-gray-50/60 text-center shrink-0">
+                  <div className="py-2 px-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[11px] font-bold text-gray-800 leading-tight">
+                      {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
+                    </span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
+                  </div>
+                  <div className="py-2 px-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[11px] font-bold text-orange-600 leading-tight">
+                      {summaryTravelSecs > 0 ? fmtSecs(summaryTravelSecs) : "—"}
+                    </span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Travel</span>
+                  </div>
+                  <div className="py-2 px-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[11px] font-bold text-gray-500 leading-tight">
+                      {summaryStopSecs > 0 ? fmtSecs(summaryStopSecs) : "—"}
+                    </span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Stopped</span>
+                  </div>
+                  <div className="py-2 px-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[11px] font-bold text-blue-600 leading-tight">
+                      {summaryVisits > 0 ? summaryVisits : "—"}
+                    </span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Visits</span>
+                  </div>
+                </div>
+              )}
 
               {/* Timeline scroll area */}
               <div className="flex-1 overflow-y-auto">
