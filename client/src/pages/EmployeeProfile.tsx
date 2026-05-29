@@ -640,11 +640,12 @@ function LiveMap({
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
         if (t < segStart || t > segEndExtended) return false;
-        // 200 m threshold for OSRM: OSRM map-match snaps noisy pings to the road anyway,
-        // and cellular GPS in motion often reads 100–300 m accuracy. Filtering at 80 m
-        // was dropping most cellular travel pings, leaving OSRM with only start/end points.
+        // 500 m threshold: cellular GPS in rural Telangana often reports 300-500 m accuracy.
+        // The old 200 m limit was silently dropping all pings for early travel segments,
+        // leaving those legs invisible on the map. OSRM map-match handles noisy GPS well,
+        // so we only reject extreme outliers (towers reporting > 500 m).
         const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
-        if (acc !== null && acc > 200) return false;
+        if (acc !== null && acc > 500) return false;
         return true;
       });
 
@@ -713,7 +714,12 @@ function LiveMap({
             && Math.abs(firstRepPing[1] - stopAnchor[1]) < 0.0002;
           if (!tooClose) repPings.unshift(stopAnchor);
         }
-        if (repPings.length >= 2) { result.push(repPings); pushedCount++; }
+        // Fallback: if centroid binning yields < 2 points (very sparse pings), use the raw
+        // group points directly so the segment is never invisible on the map.
+        const finalPings = repPings.length >= 2
+          ? repPings
+          : group.map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+        if (finalPings.length >= 2) { result.push(finalPings); pushedCount++; }
       }
       // Record how many sub-groups were actually pushed for this server segment
       // (used to aggregate OSRM distances back to per-segment totals)
