@@ -2290,6 +2290,10 @@ export default function EmployeeProfile() {
 
   const summaryVisits = enrichedTimelineEvents.filter(ev => ev.type === "visit").length;
 
+  const summarySpeedViolations = (locationData?.points ?? []).filter(
+    (p: any) => p.speed && Number(p.speed) * 3.6 > speedLimitKm
+  ).length;
+
   const fmtSecs = (secs: number) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -2616,7 +2620,7 @@ export default function EmployeeProfile() {
 
               {/* Day summary bar */}
               {hasTimeline && (
-                <div className="grid grid-cols-4 border-b divide-x bg-gray-50/60 text-center shrink-0">
+                <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
                       {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
@@ -2640,6 +2644,14 @@ export default function EmployeeProfile() {
                       {summaryVisits > 0 ? summaryVisits : "—"}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Visits</span>
+                  </div>
+                  <div className="py-2 px-1 flex flex-col items-center gap-0.5">
+                    <span className={`text-[11px] font-bold leading-tight ${summarySpeedViolations > 0 ? "text-red-600" : "text-gray-400"}`}>
+                      {summarySpeedViolations > 0 ? summarySpeedViolations : "—"}
+                    </span>
+                    <span className={`text-[9px] uppercase tracking-wide leading-none ${summarySpeedViolations > 0 ? "text-red-400" : "text-gray-400"}`}>
+                      Overspeeds
+                    </span>
                   </div>
                 </div>
               )}
