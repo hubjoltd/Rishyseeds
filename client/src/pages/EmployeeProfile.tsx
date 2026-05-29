@@ -272,6 +272,7 @@ function LiveMapInner({
   snappedGapSegments,
   rawLatestPoint,
   highlightedSegment,
+  overspeedPoints,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -288,6 +289,7 @@ function LiveMapInner({
   rawLatestPoint?: [number, number] | null;
   snappedGapSegments: { path: [number, number][]; gapMins: number }[];
   highlightedSegment?: HighlightSegment | null;
+  overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -529,6 +531,23 @@ function LiveMapInner({
         );
       })}
 
+      {/* Overspeed dots — mustard yellow */}
+      {(overspeedPoints ?? []).map((p, i) => (
+        <CircleMarker
+          key={`overspeed-${i}`}
+          center={[p.lat, p.lng]}
+          radius={5}
+          pathOptions={{ color: "#92610a", weight: 1, fillColor: "#d4920a", fillOpacity: 0.92 }}
+        >
+          <Popup>
+            <div style={{ fontSize: 13, minWidth: 110 }}>
+              <b style={{ color: "#92610a" }}>⚡ Overspeed</b><br/>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{p.speedKmh.toFixed(0)} km/h</span>
+            </div>
+          </Popup>
+        </CircleMarker>
+      ))}
+
       {/* CHK visit markers */}
       {visitStops.filter(v => v.lat && v.lng).map((v, i) => (
         <Marker key={`chk-${i}`} position={[v.lat, v.lng]} icon={chkIcon}>
@@ -579,6 +598,7 @@ function LiveMap({
   onSnappedKm,
   onOsrmSegmentDistances,
   highlightedSegment,
+  overspeedPoints,
 }: {
   locationPoints?: any[];
   segments?: LiveMapSegment[];
@@ -592,6 +612,7 @@ function LiveMap({
   onSnappedKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
   highlightedSegment?: HighlightSegment | null;
+  overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
@@ -901,6 +922,7 @@ function LiveMap({
           rawLatestPoint={rawLatestPoint}
           snappedGapSegments={snappedGapSegments}
           highlightedSegment={highlightedSegment}
+          overspeedPoints={overspeedPoints}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -2294,6 +2316,10 @@ export default function EmployeeProfile() {
     (p: any) => p.speed && Number(p.speed) * 3.6 > speedLimitKm
   ).length;
 
+  const overspeedMapPoints = (locationData?.points ?? [])
+    .filter((p: any) => p.speed && Number(p.speed) * 3.6 > speedLimitKm && p.latitude && p.longitude)
+    .map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude), speedKmh: Number(p.speed) * 3.6 }));
+
   const fmtSecs = (secs: number) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -2646,10 +2672,10 @@ export default function EmployeeProfile() {
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Visits</span>
                   </div>
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
-                    <span className={`text-[11px] font-bold leading-tight ${summarySpeedViolations > 0 ? "text-red-600" : "text-gray-400"}`}>
+                    <span className={`text-[11px] font-bold leading-tight ${summarySpeedViolations > 0 ? "text-[#92610a]" : "text-gray-400"}`}>
                       {summarySpeedViolations > 0 ? summarySpeedViolations : "—"}
                     </span>
-                    <span className={`text-[9px] uppercase tracking-wide leading-none ${summarySpeedViolations > 0 ? "text-red-400" : "text-gray-400"}`}>
+                    <span className={`text-[9px] uppercase tracking-wide leading-none ${summarySpeedViolations > 0 ? "text-[#b07d2a]" : "text-gray-400"}`}>
                       Overspeeds
                     </span>
                   </div>
@@ -2904,6 +2930,7 @@ export default function EmployeeProfile() {
                     onSnappedKm={setLiveSnappedKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
                     highlightedSegment={highlightedSegment}
+                    overspeedPoints={overspeedMapPoints}
                   />
                 )}
               </div>
