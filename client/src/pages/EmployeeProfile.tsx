@@ -1164,6 +1164,28 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
     finally { clearTimeout(t); }
   };
 
+  // ── Google Directions API (via server proxy) — priority #1 ──────────────────
+  // Sends up to 25 sampled GPS waypoints. Google routes through every waypoint
+  // in order, giving road-accurate distances matching Google Maps exactly.
+  const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
+    try {
+      // Sample down to max 25 points (Google Directions limit)
+      const step = Math.max(1, Math.ceil(pts.length / 23));
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const waypoints = sample.map(([lat, lng]) => ({ lat, lng }));
+      const res = await fetch("/api/google-directions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waypoints }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.polyline || data.polyline.length < 2) return null;
+      return { coords: data.polyline as [number, number][], distanceM: data.distanceM ?? 0 };
+    } catch { return null; }
+  };
+
   // ── Match/v1: map-match GPS trace to roads, optionally with timestamps ──
   // Timestamps let OSRM know how fast the vehicle was moving between each point,
   // which is the single biggest factor in choosing the correct road when multiple
@@ -1257,25 +1279,29 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 
   const { pts: cleanPoints, ts: cleanTs } = filterOutlierPts(points, timestamps);
 
-  // 1. map-match WITH timestamps, 150 m radius (best quality)
+  // 1. Google Directions API — exact Google Maps accuracy
+  const google = await tryGoogle(cleanPoints);
+  if (google) return google;
+
+  // 2. map-match WITH timestamps, 150 m radius (best OSRM quality)
   const m150 = await tryMatch(cleanPoints, 150, cleanTs);
   if (m150) return m150;
 
-  // 2. map-match WITH timestamps, 250 m radius (rural India roads far from OSM centrelines)
+  // 3. map-match WITH timestamps, 250 m radius (rural India roads far from OSM centrelines)
   const m250 = await tryMatch(cleanPoints, 250, cleanTs);
   if (m250) return m250;
 
-  // 3. map-match WITHOUT timestamps, 250 m radius (safety net if timestamps desync)
+  // 4. map-match WITHOUT timestamps, 250 m radius (safety net if timestamps desync)
   if (cleanTs) {
     const m250noTs = await tryMatch(cleanPoints, 250);
     if (m250noTs) return m250noTs;
   }
 
-  // 4. route/v1 with ALL waypoints — must pass through every GPS point, so no shortcuts
+  // 5. route/v1 with ALL waypoints — must pass through every GPS point, so no shortcuts
   const routed = await tryRouteAllWaypoints(cleanPoints);
   if (routed) return routed;
 
-  // 5. Raw GPS — no phantom roads, shows exactly where the employee actually was
+  // 6. Raw GPS — no phantom roads, shows exactly where the employee actually was
   // Compute haversine distance so the km counter isn't 0 for this segment
   let rawDistM = 0;
   for (let i = 1; i < cleanPoints.length; i++) {
@@ -1288,6 +1314,20 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 // Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
 // it produces noisy winding paths. Route/v1 gives a clean simplified road route.
 async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
+  // Try Google Directions first for signal-gap segments too
+  try {
+    const res = await fetch("/api/google-directions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ waypoints: [{ lat: p1[0], lng: p1[1] }, { lat: p2[0], lng: p2[1] }] }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.polyline && data.polyline.length > 1) return data.polyline as [number, number][];
+    }
+  } catch {}
+  // Fallback: OSRM route/v1
   try {
     const coordStr = `${p1[1]},${p1[0]};${p2[1]},${p2[0]}`;
     const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
@@ -1302,7 +1342,7 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     );
     return coords.length > 1 ? coords : [p1, p2];
   } catch {
-    return [p1, p2]; // straight-line fallback on error
+    return [p1, p2];
   }
 }
 

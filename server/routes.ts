@@ -250,6 +250,67 @@ export async function registerRoutes(
   
   app.use("/uploads", express.static("uploads"));
 
+  // ── Google Directions API proxy ──────────────────────────────────────────────
+  // Keeps the API key server-side; frontend never sees it.
+  // POST body: { waypoints: [{ lat, lng }] }  (max 25 waypoints per Google limit)
+  // Returns:   { polyline: [lat,lng][], distanceM: number }
+  app.post("/api/google-directions", async (req, res) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: "Google Maps API key not configured" });
+    const { waypoints } = req.body as { waypoints: { lat: number; lng: number }[] };
+    if (!Array.isArray(waypoints) || waypoints.length < 2)
+      return res.status(400).json({ error: "Need at least 2 waypoints" });
+
+    // Google Directions supports max 25 waypoints (origin + 23 intermediates + destination)
+    const origin = waypoints[0];
+    const destination = waypoints[waypoints.length - 1];
+    const intermediates = waypoints.slice(1, -1);
+
+    const originStr = `${origin.lat},${origin.lng}`;
+    const destStr = `${destination.lat},${destination.lng}`;
+    const waypointsStr = intermediates.length > 0
+      ? `&waypoints=${intermediates.map(w => `via:${w.lat},${w.lng}`).join("|")}`
+      : "";
+
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originStr}&destination=${destStr}${waypointsStr}&mode=driving&key=${apiKey}`;
+
+    try {
+      const upstream = await fetch(url);
+      if (!upstream.ok) return res.status(upstream.status).json({ error: "Google API error" });
+      const data = await upstream.json() as any;
+      if (data.status !== "OK" || !data.routes?.[0])
+        return res.status(200).json({ error: data.status, polyline: null });
+
+      // Decode the overview_polyline into lat/lng pairs
+      const encoded = data.routes[0].overview_polyline.points;
+      const decoded = decodePolyline(encoded);
+
+      // Sum distance across all legs
+      let distanceM = 0;
+      for (const leg of data.routes[0].legs ?? []) distanceM += leg.distance?.value ?? 0;
+
+      res.json({ polyline: decoded, distanceM });
+    } catch (e: any) {
+      res.status(502).json({ error: e.message });
+    }
+  });
+
+  // Google encoded polyline decoder (Algorithms 5-byte precision)
+  function decodePolyline(encoded: string): [number, number][] {
+    const result: [number, number][] = [];
+    let idx = 0, lat = 0, lng = 0;
+    while (idx < encoded.length) {
+      let b, shift = 0, result2 = 0;
+      do { b = encoded.charCodeAt(idx++) - 63; result2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result2 & 1) ? ~(result2 >> 1) : result2 >> 1;
+      shift = 0; result2 = 0;
+      do { b = encoded.charCodeAt(idx++) - 63; result2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result2 & 1) ? ~(result2 >> 1) : result2 >> 1;
+      result.push([lat / 1e5, lng / 1e5]);
+    }
+    return result;
+  }
+
   app.get("/api/tiles/:type/:z/:x/:y.png", async (req, res) => {
     const { type, z, x, y } = req.params;
     const validTypes = ["m", "s", "y", "p", "h"];
