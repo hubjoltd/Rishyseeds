@@ -672,9 +672,10 @@ function LiveMap({
   const travelSegmentsData = useMemo(() => {
     const allSegs = segments ?? [];
     const hasMeaningfulTravel = allSegs.some(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
-    if (!hasMeaningfulTravel) return { points: [gpsPoints], subGroupCounts: [1] };
+    if (!hasMeaningfulTravel) return { points: [gpsPoints], timestamps: [[]], subGroupCounts: [1] };
 
     const result: [number, number][][] = [];
+    const resultTs: number[][] = [];
     const subGroupCounts: number[] = [];
     const segmentWindows: { startTime: string; endTime: string }[] = [];
 
@@ -762,6 +763,7 @@ function LiveMap({
         // Longer legs: 60-second bins to keep requests lean.
         const BIN_MS = groupDurMs <= 5 * 60_000 ? 30_000 : 60_000;
         const repPings: [number, number][] = [];
+        const repTs: number[] = []; // unix seconds — sent to OSRM timestamps param
         for (let t = gStart; t <= gEnd + BIN_MS; t += BIN_MS) {
           const bin = group.filter(p => {
             const pt = new Date(p.recordedAt).getTime();
@@ -776,6 +778,7 @@ function LiveMap({
             if (d < bestD) { bestD = d; best = p; }
           }
           repPings.push([Number(best.latitude), Number(best.longitude)]);
+          repTs.push(Math.round(new Date(best.recordedAt).getTime() / 1000));
         }
         // Prepend the previous stoppage centroid to the FIRST sub-group of each travel
         // segment. This anchors the route start exactly at where the employee was parked,
@@ -785,15 +788,22 @@ function LiveMap({
           const firstRepPing = repPings[0];
           const tooClose = firstRepPing && Math.abs(firstRepPing[0] - stopAnchor[0]) < 0.0002
             && Math.abs(firstRepPing[1] - stopAnchor[1]) < 0.0002;
-          if (!tooClose) repPings.unshift(stopAnchor);
+          if (!tooClose) {
+            repPings.unshift(stopAnchor);
+            repTs.unshift((repTs[0] ?? Math.round(gStart / 1000)) - 30); // 30 s before first ping
+          }
         }
         // Fallback: if centroid binning yields < 2 points (very sparse pings), use the raw
         // group points directly so the segment is never invisible on the map.
         const finalPings = repPings.length >= 2
           ? repPings
           : group.map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+        const finalTs = repPings.length >= 2
+          ? repTs
+          : group.map(p => Math.round(new Date(p.recordedAt).getTime() / 1000));
         if (finalPings.length >= 2) {
           result.push(finalPings);
+          resultTs.push(finalTs);
           segmentWindows.push({ startTime: seg.startTime, endTime: (seg as any).endTime ?? seg.startTime });
           pushedCount++;
         }
@@ -803,11 +813,12 @@ function LiveMap({
       subGroupCounts.push(pushedCount > 0 ? pushedCount : 0);
     }
 
-    if (result.length > 0) return { points: result, subGroupCounts, segmentWindows };
-    return { points: [gpsPoints], subGroupCounts: [1], segmentWindows: [] }; // guard: never return empty
+    if (result.length > 0) return { points: result, timestamps: resultTs, subGroupCounts, segmentWindows };
+    return { points: [gpsPoints], timestamps: [[]], subGroupCounts: [1], segmentWindows: [] }; // guard: never return empty
   }, [filteredLocationPoints, segments, gpsPoints]);
 
   const travelSegmentsPoints = travelSegmentsData.points;
+  const travelSegmentsTimestamps = travelSegmentsData.timestamps ?? [];
 
   // Total travel point count across all segments — used to detect new data without re-snapping
   const totalTravelCount = useMemo(
@@ -825,7 +836,7 @@ function LiveMap({
     let cancelled = false;
     setSnapping(true);
     // Snap each segment separately so there are no connecting lines between segments
-    Promise.all(travelSegmentsPoints.map(seg => seg.length >= 2 ? osrmSnap(seg) : Promise.resolve({ coords: [] as [number,number][], distanceM: 0 }))).then(results => {
+    Promise.all(travelSegmentsPoints.map((seg, i) => seg.length >= 2 ? osrmSnap(seg, travelSegmentsTimestamps[i]) : Promise.resolve({ coords: [] as [number,number][], distanceM: 0 }))).then(results => {
       if (!cancelled) {
         setSnappedSegments(results.map(r => r.coords));
         const subGroupDistances = results.map(r => r.distanceM / 1000);
@@ -1116,53 +1127,62 @@ function splitTrackAtGaps(
 
 // Snap GPS points to actual roads via OSRM public API (falls back to raw points on error)
 /** Fetch road-snapped route from OSRM.
- *  Strategy:
- *  - Dense GPS (≥ 15 pts): map-match with /match/v1 (respects actual path taken)
- *  - Sparse GPS (< 15 pts): route between waypoints with /route/v1 (gives smooth road-following line)
- *  - If match fails/times out: fall back to /route/v1
- *  - If route also fails: return raw GPS points
+ *  Strategy (in priority order):
+ *  1. match/v1 WITH timestamps at 150 m radius — best quality, follows actual path
+ *  2. match/v1 WITH timestamps at 250 m radius — for roads far from OSM centre-lines
+ *  3. match/v1 WITHOUT timestamps at 250 m radius — fallback if timestamps desync
+ *  4. route/v1 forcing ALL GPS waypoints (no sampling) — route must pass through each
+ *     actual GPS point so it follows the real path, not a phantom shortcut
+ *  5. Raw GPS points — honest last resort, no phantom roads
+ *
+ *  Key quality improvements vs previous version:
+ *  - Timestamps sent to match/v1: OSRM knows vehicle speed between each point, making
+ *    matching dramatically more accurate on Indian roads where multiple parallel roads exist.
+ *  - tidy=true: OSRM removes duplicate / jittery GPS noise server-side.
+ *  - Point cap raised 100→200: captures more turn points within the same time window.
+ *  - route/v1 fallback uses ALL points as forced waypoints (no sampling): OSRM must
+ *    route through each GPS point so it cannot invent shortcuts the employee never took.
  */
-async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number }> {
+async function osrmSnap(points: [number, number][], timestamps?: number[]): Promise<{ coords: [number, number][]; distanceM: number }> {
   if (points.length < 2) return { coords: points, distanceM: 0 };
 
   const geoToLeaflet = (coords: [number, number][]): [number, number][] =>
     coords.map(([lng, lat]) => [lat, lng]);
 
-  const fetchWithTimeout = async (url: string, ms = 10000): Promise<Response> => {
+  const fetchWithTimeout = async (url: string, ms = 12000): Promise<Response> => {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), ms);
     try { return await fetch(url, { signal: ctrl.signal }); }
     finally { clearTimeout(t); }
   };
 
-  // ── Route/v1 helper: asks OSRM for optimal road route between sampled waypoints ──
-  const tryRoute = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
+  // ── Match/v1: map-match GPS trace to roads, optionally with timestamps ──
+  // Timestamps let OSRM know how fast the vehicle was moving between each point,
+  // which is the single biggest factor in choosing the correct road when multiple
+  // parallel roads exist (a very common situation in Indian cities and towns).
+  const tryMatch = async (
+    pts: [number, number][],
+    snapRadius: number,
+    ts?: number[]
+  ): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      const step = Math.max(1, Math.ceil(pts.length / 50));
-      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
-      const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
-      const res = await fetchWithTimeout(url, 10000);
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
-      const coords = geoToLeaflet(data.routes[0].geometry.coordinates);
-      const distanceM: number = data.routes[0].distance ?? 0;
-      return coords.length > 1 ? { coords, distanceM } : null;
-    } catch { return null; }
-  };
+      // Cap at 200 points (up from 100) — captures more turns within the same window.
+      // OSRM public server handles up to ~500 coords before URL limits hit.
+      const step = Math.max(1, Math.ceil(pts.length / 200));
+      const indices = pts.map((_, i) => i).filter(i => i % step === 0 || i === pts.length - 1);
+      const sample = indices.map(i => pts[i]);
+      const sampleTs = ts ? indices.map(i => ts[i]) : null;
 
-  // ── Match/v1 helper: map-matches a dense GPS trace to roads ──
-  // Retried automatically with a larger snap radius when points are far from mapped roads
-  // (common in rural India where OSRM road coverage is sparse).
-  const tryMatch = async (pts: [number, number][], snapRadius = 150): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
-    try {
-      const step = Math.ceil(pts.length / 100);
-      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
       const radiuses = sample.map(() => String(snapRadius)).join(";");
-      const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
-      const res = await fetchWithTimeout(url, 10000);
+      // tidy=true: OSRM removes duplicate/jittery points server-side before matching
+      let url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}&tidy=true`;
+      if (sampleTs && sampleTs.length === sample.length) {
+        // Verify timestamps are strictly increasing before sending (OSRM requirement)
+        const tsOk = sampleTs.every((t, i) => i === 0 || t > sampleTs[i - 1]);
+        if (tsOk) url += `&timestamps=${sampleTs.join(";")}`;
+      }
+      const res = await fetchWithTimeout(url, 12000);
       if (!res.ok) return null;
       const data = await res.json();
       if (data.code !== "Ok" || !Array.isArray(data.matchings) || data.matchings.length === 0) return null;
@@ -1177,50 +1197,77 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     } catch { return null; }
   };
 
-  // ── Outlier filter: remove pings that jump > 3× the median consecutive distance,
-  //    plus bounce detection (jump-and-return pattern = GPS noise on nearby road) ──
-  const filterOutlierPts = (pts: [number, number][]): [number, number][] => {
-    if (pts.length <= 2) return pts;
+  // ── Route/v1 fallback: force OSRM through ALL GPS waypoints (no sampling) ──
+  // Unlike the old sampled route/v1 that invented shortcuts, using every GPS point
+  // as a forced intermediate waypoint means OSRM must route through each actual
+  // location recorded. Works best when GPS pings are ≤ 1 km apart.
+  const tryRouteAllWaypoints = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
+    try {
+      // OSRM URL limit ~8000 chars; each coord ~14 chars → safe up to ~400 points.
+      // For very long traces, sample every 2nd point but never skip more than that.
+      const step = pts.length > 400 ? 2 : 1;
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+      const res = await fetchWithTimeout(url, 12000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return null;
+      const coords = geoToLeaflet(data.routes[0].geometry.coordinates);
+      const distanceM: number = data.routes[0].distance ?? 0;
+      return coords.length > 1 ? { coords, distanceM } : null;
+    } catch { return null; }
+  };
+
+  // ── Outlier filter: remove pings that jump > 3× the median consecutive distance ──
+  const filterOutlierPts = (pts: [number, number][], ts?: number[]): { pts: [number, number][]; ts?: number[] } => {
+    if (pts.length <= 2) return { pts, ts };
     const dists: number[] = [];
     for (let i = 1; i < pts.length; i++) {
       dists.push(haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) * 1000);
     }
     const sorted = [...dists].sort((a, b) => a - b);
     const medianM = sorted[Math.floor(sorted.length / 2)];
-    const maxGapM = Math.max(150, medianM * 3); // reject jumps > 3× median, min 150 m
-    const out: [number, number][] = [pts[0]];
+    const maxGapM = Math.max(150, medianM * 3);
+    const outPts: [number, number][] = [pts[0]];
+    const outTs: number[] = ts ? [ts[0]] : [];
     for (let i = 1; i < pts.length; i++) {
-      const last = out[out.length - 1];
+      const last = outPts[outPts.length - 1];
       const d = haversineKm(last[0], last[1], pts[i][0], pts[i][1]) * 1000;
       if (d <= maxGapM) {
-        // Bounce detection: if next ping returns within 50% of this jump back to `last`,
-        // this ping is a GPS tower-switch noise spike — skip it
         if (d >= 100 && i + 1 < pts.length) {
           const returnD = haversineKm(last[0], last[1], pts[i+1][0], pts[i+1][1]) * 1000;
           if (returnD < d * 0.5) continue;
         }
-        out.push(pts[i]);
+        outPts.push(pts[i]);
+        if (ts) outTs.push(ts[i]);
       }
     }
-    return out.length >= 2 ? out : pts; // fallback to original if too many removed
+    if (outPts.length < 2) return { pts, ts }; // fallback: keep original
+    return { pts: outPts, ts: ts ? outTs : undefined };
   };
-  const cleanPoints = filterOutlierPts(points);
 
-  // Always try map-match first (≥ 2 points).
-  // Map-match forces OSRM to route near each GPS waypoint IN ORDER, so it follows
-  // the actual road taken rather than finding a shorter shortcut between start and end.
-  // route/v1 is intentionally NOT used as fallback: it picks the shortest path between
-  // sampled waypoints which can route through roads the employee never actually traveled,
-  // creating phantom "non-travelled" blue lines with 2+ km of invented route.
-  // When match fails we use raw GPS — honest about the actual path taken.
-  if (cleanPoints.length >= 2) {
-    const matched150 = await tryMatch(cleanPoints, 150);
-    if (matched150) return matched150;
-    const matched250 = await tryMatch(cleanPoints, 250);
-    if (matched250) return matched250;
-    // 250m is the max safe radius — wider snaps to wrong parallel roads
+  const { pts: cleanPoints, ts: cleanTs } = filterOutlierPts(points, timestamps);
+
+  // 1. map-match WITH timestamps, 150 m radius (best quality)
+  const m150 = await tryMatch(cleanPoints, 150, cleanTs);
+  if (m150) return m150;
+
+  // 2. map-match WITH timestamps, 250 m radius (rural India roads far from OSM centrelines)
+  const m250 = await tryMatch(cleanPoints, 250, cleanTs);
+  if (m250) return m250;
+
+  // 3. map-match WITHOUT timestamps, 250 m radius (safety net if timestamps desync)
+  if (cleanTs) {
+    const m250noTs = await tryMatch(cleanPoints, 250);
+    if (m250noTs) return m250noTs;
   }
-  // Fallback: raw GPS points. Not road-snapped but shows the actual path taken.
+
+  // 4. route/v1 with ALL waypoints — must pass through every GPS point, so no shortcuts
+  const routed = await tryRouteAllWaypoints(cleanPoints);
+  if (routed) return routed;
+
+  // 5. Raw GPS — no phantom roads, shows exactly where the employee actually was
   return { coords: cleanPoints, distanceM: 0 };
 }
 
