@@ -282,6 +282,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [detailBusFare, setDetailBusFare] = useState("");
   const [detailTrainAirFare, setDetailTrainAirFare] = useState("");
   const [detailHotelFare, setDetailHotelFare] = useState("");
+  const [detailDaFare, setDetailDaFare] = useState("");
   const [detailConveyanceFare, setDetailConveyanceFare] = useState("");
   const [detailPostageFare, setDetailPostageFare] = useState("");
   const [detailOtherFare, setDetailOtherFare] = useState("");
@@ -334,6 +335,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const [hotelFare, setHotelFare] = useState(_d.hotelFare ?? "");
   const [conveyanceFare, setConveyanceFare] = useState(_d.conveyanceFare ?? "");
   const [postageFare, setPostageFare] = useState(_d.postageFare ?? "");
+  const [daFare, setDaFare] = useState(_d.daFare ?? "");
   const [otherFare, setOtherFare] = useState(_d.otherFare ?? "");
   const [otherRemarks, setOtherRemarks] = useState(_d.otherRemarks ?? "");
 
@@ -361,7 +363,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
         endOdoPreview: endOdoPreview ?? undefined,
         billsPreview: billsPreview ?? undefined,
         busFare, trainAirFare, hotelFare,
-        conveyanceFare, postageFare, otherFare, otherRemarks,
+        daFare, conveyanceFare, postageFare, otherFare, otherRemarks,
       });
     }
   }, [
@@ -370,7 +372,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     startOdo, endOdo, amtPerKm,
     startOdoPreview, endOdoPreview, billsPreview,
     busFare, trainAirFare, hotelFare,
-    conveyanceFare, postageFare, otherFare, otherRemarks,
+    daFare, conveyanceFare, postageFare, otherFare, otherRemarks,
   ]);
 
   const startPhotoReady = !!startOdoFile;
@@ -390,6 +392,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     (Number(busFare) || 0) +
     (Number(trainAirFare) || 0) +
     (Number(hotelFare) || 0) +
+    (Number(daFare) || 0) +
     (Number(conveyanceFare) || 0) +
     (Number(postageFare) || 0) +
     (Number(otherFare) || 0);
@@ -450,6 +453,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       if (busFare) fd.append("busFare", busFare);
       if (trainAirFare) fd.append("trainAirFare", trainAirFare);
       if (hotelFare) fd.append("hotelFare", hotelFare);
+      if (daFare) fd.append("daAmount", daFare);
       if (conveyanceFare) fd.append("conveyanceFare", conveyanceFare);
       if (postageFare) fd.append("postageFare", postageFare);
       if (otherFare) fd.append("otherFare", otherFare);
@@ -517,6 +521,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       if (detailBusFare) fd.append("busFare", detailBusFare);
       if (detailTrainAirFare) fd.append("trainAirFare", detailTrainAirFare);
       if (detailHotelFare) fd.append("hotelFare", detailHotelFare);
+      if (detailDaFare) fd.append("daAmount", detailDaFare);
       if (detailConveyanceFare) fd.append("conveyanceFare", detailConveyanceFare);
       if (detailPostageFare) fd.append("postageFare", detailPostageFare);
       if (detailOtherFare) fd.append("otherFare", detailOtherFare);
@@ -540,7 +545,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       setDetailAmtPerKm("1"); setDetailHeadquarters(""); setDetailDescription("");
       setDetailModeOfTravel(""); setDetailTravellerName(employee.fullName);
       setDetailStartDate(format(new Date(), "yyyy-MM-dd")); setDetailEndDate(format(new Date(), "yyyy-MM-dd"));
-      setDetailBusFare(""); setDetailTrainAirFare(""); setDetailHotelFare("");
+      setDetailBusFare(""); setDetailTrainAirFare(""); setDetailHotelFare(""); setDetailDaFare("");
       setDetailConveyanceFare(""); setDetailPostageFare(""); setDetailOtherFare(""); setDetailOtherRemarks("");
       setDetailBillsFile(null); setDetailBillsPreview(null);
       setActiveTab("pending");
@@ -559,7 +564,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     setStartOdoFile(null); setStartOdoPreview(null);
     setEndOdoFile(null); setEndOdoPreview(null);
     setBillsFile(null); setBillsPreview(null);
-    setBusFare(""); setTrainAirFare(""); setHotelFare("");
+    setBusFare(""); setTrainAirFare(""); setHotelFare(""); setDaFare("");
     setConveyanceFare(""); setPostageFare(""); setOtherFare(""); setOtherRemarks("");
   }
 
@@ -671,6 +676,22 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                       </span>
                     </div>
                   )}
+                </div>
+
+                {/* Other Expenses (optional) */}
+                <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                    <p className="text-xs font-semibold text-gray-600">Other Expenses <span className="font-normal text-gray-400">(optional)</span></p>
+                  </div>
+                  <div className="px-3 py-3 space-y-3">
+                    <FareRow label="Bus" value={detailBusFare} onChange={setDetailBusFare} />
+                    <FareRow label="Train / Air" value={detailTrainAirFare} onChange={setDetailTrainAirFare} />
+                    <FareRow label="Hotel Expenses" value={detailHotelFare} onChange={setDetailHotelFare} />
+                    <FareRow label="D.A." value={detailDaFare} onChange={setDetailDaFare} />
+                    <FareRow label="Conveyance on Tour" value={detailConveyanceFare} onChange={setDetailConveyanceFare} />
+                    <FareRow label="Postage" value={detailPostageFare} onChange={setDetailPostageFare} />
+                    <FareRow label="Other" value={detailOtherFare} onChange={setDetailOtherFare} remarks={detailOtherRemarks} onRemarksChange={setDetailOtherRemarks} />
+                  </div>
                 </div>
 
                 <Button
@@ -1078,6 +1099,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
               <FareRow label="Bus" value={busFare} onChange={setBusFare} />
               <FareRow label="Train / Air" value={trainAirFare} onChange={setTrainAirFare} />
               <FareRow label="Hotel Expenses" value={hotelFare} onChange={setHotelFare} />
+              <FareRow label="D.A." value={daFare} onChange={setDaFare} />
 
               <FareRow label="Conveyance on Tour" value={conveyanceFare} onChange={setConveyanceFare} />
               <FareRow label="Postage" value={postageFare} onChange={setPostageFare} />
