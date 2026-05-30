@@ -278,8 +278,10 @@ export async function registerRoutes(
       const upstream = await fetch(url);
       if (!upstream.ok) return res.status(upstream.status).json({ error: "Google API error" });
       const data = await upstream.json() as any;
-      if (data.status !== "OK" || !data.routes?.[0])
+      if (data.status !== "OK" || !data.routes?.[0]) {
+        console.warn(`[google-directions] status=${data.status} error=${data.error_message ?? ""}`);
         return res.status(200).json({ error: data.status, polyline: null });
+      }
 
       // Decode the overview_polyline into lat/lng pairs
       const encoded = data.routes[0].overview_polyline.points;

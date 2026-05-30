@@ -816,6 +816,33 @@ function LiveMap({
           pushedCount++;
         }
       }
+      // Sparse GPS fallback: when cellular GPS pings are spaced > 10 min apart,
+      // every ping ends up in its own sub-group (1 ping each) which fails the
+      // >= 2 point threshold. The entire travel segment becomes invisible on the map.
+      // Fix: if no sub-group was pushed, concatenate ALL pings from ALL sub-groups
+      // into one continuous path — this always produces a visible route line even
+      // for highway legs where the employee had a GPS ping only every 10-15 min.
+      if (pushedCount === 0 && subGroups.length > 0) {
+        const allPts: [number, number][] = [];
+        const allTs: number[] = [];
+        for (const g of subGroups) {
+          for (const p of g) {
+            allPts.push([Number(p.latitude), Number(p.longitude)]);
+            allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
+          }
+        }
+        // Prepend stoppage anchor so line starts from known parked location
+        if (stopAnchor && allPts.length > 0) {
+          allPts.unshift(stopAnchor);
+          allTs.unshift(allTs[0] - 30);
+        }
+        if (allPts.length >= 2) {
+          result.push(allPts);
+          resultTs.push(allTs);
+          segmentWindows.push({ startTime: seg.startTime, endTime: (seg as any).endTime ?? seg.startTime });
+          pushedCount++;
+        }
+      }
       // Record how many sub-groups were actually pushed for this server segment
       // (used to aggregate OSRM distances back to per-segment totals)
       subGroupCounts.push(pushedCount > 0 ? pushedCount : 0);
