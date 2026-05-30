@@ -731,12 +731,11 @@ function LiveMap({
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
         if (t < segStart || t > segEndExtended) return false;
-        // 500 m threshold: cellular GPS in rural Telangana often reports 300-500 m accuracy.
-        // The old 200 m limit was silently dropping all pings for early travel segments,
-        // leaving those legs invisible on the map. OSRM map-match handles noisy GPS well,
-        // so we only reject extreme outliers (towers reporting > 500 m).
-        const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
-        if (acc !== null && acc > 500) return false;
+        // No accuracy filter here — osrmSnap's filterOutlierPts removes extreme GPS jumps
+        // using a median-distance approach, which is more robust than a fixed threshold.
+        // A hard accuracy cut-off was silently dropping all pings when cellular GPS reported
+        // accuracy > 500 m (common in rural Telangana), leaving entire travel segments
+        // invisible on the map. OSRM map-match handles noisy GPS well on its own.
         return true;
       });
 
