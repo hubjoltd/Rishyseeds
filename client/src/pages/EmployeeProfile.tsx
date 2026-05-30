@@ -832,11 +832,30 @@ function LiveMap({
       // into one continuous path — this always produces a visible route line even
       // for highway legs where the employee had a GPS ping only every 10-15 min.
       if (pushedCount === 0) {
-        // Build a path from whatever GPS pings exist in all sub-groups
+        // Build a path from whatever GPS pings exist in all sub-groups.
+        // If subGroups is empty (all pings had accuracy > 500 m and were filtered out),
+        // fall back to unfiltered pings within this segment's time window as a last resort
+        // so the segment is never completely invisible. OSRM's filterOutlierPts handles
+        // any extreme position jumps in the noisy pings.
         const allPts: [number, number][] = [];
         const allTs: number[] = [];
-        for (const g of subGroups) {
-          for (const p of g) {
+        if (subGroups.length > 0) {
+          for (const g of subGroups) {
+            for (const p of g) {
+              allPts.push([Number(p.latitude), Number(p.longitude)]);
+              allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
+            }
+          }
+        } else {
+          // Last resort: accuracy filter dropped everything — use raw pings in time window
+          const unfilteredPings = filteredLocationPoints
+            .filter(p => {
+              if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+              const t = new Date(p.recordedAt).getTime();
+              return t >= segStart && t <= segEndExtended;
+            })
+            .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+          for (const p of unfilteredPings) {
             allPts.push([Number(p.latitude), Number(p.longitude)]);
             allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
           }
