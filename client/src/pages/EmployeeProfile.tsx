@@ -841,18 +841,25 @@ function LiveMap({
             allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
           }
         }
-        // Prepend start anchor (previous stoppage location)
+        // Prepend start anchor (previous stoppage location).
+        // Use the actual segment start time so the timestamp is realistic even when
+        // there are no GPS pings (avoids OSRM rejecting 1600 km/h implied speeds).
         if (stopAnchor) {
-          const firstTs = allTs[0] ?? Math.round(segStart / 1000);
+          const anchorTs = allTs.length > 0
+            ? Math.min(allTs[0] - 30, Math.round(segStart / 1000))
+            : Math.round(segStart / 1000);
           allPts.unshift(stopAnchor);
-          allTs.unshift(firstTs - 30);
+          allTs.unshift(anchorTs);
         }
         // Append end anchor (next stoppage location) so line reaches the destination
-        // even when GPS was offline the entire leg (phone switched off / no signal)
+        // even when GPS was offline the entire leg (phone switched off / no signal).
+        // Use actual segment end time for a realistic travel speed.
         if (endAnchor) {
-          const lastTs = allTs[allTs.length - 1] ?? Math.round(segEnd / 1000);
+          const anchorTs = allTs.length > 0
+            ? Math.max(allTs[allTs.length - 1] + 30, Math.round(segEnd / 1000))
+            : Math.round(segEnd / 1000);
           allPts.push(endAnchor);
-          allTs.push(lastTs + 30);
+          allTs.push(anchorTs);
         }
         if (allPts.length >= 2) {
           result.push(allPts);
