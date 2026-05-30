@@ -705,6 +705,15 @@ function LiveMap({
           ? [Number(prevStoppage.lat), Number(prevStoppage.lng)]
           : null;
 
+      // Next stoppage after this travel segment — used as endpoint anchor when GPS is
+      // completely absent (phone offline the entire leg). Without this the sparse fallback
+      // has no endpoint and draws nothing, leaving the segment invisible.
+      const nextStoppage = allSegs.slice(i + 1).find(s => s.type === "stoppage") as any;
+      const endAnchor: [number, number] | null =
+        nextStoppage && nextStoppage.lat != null && nextStoppage.lng != null
+          ? [Number(nextStoppage.lat), Number(nextStoppage.lng)]
+          : null;
+
       // Extend the ping window by up to 2 minutes past the server-computed segEnd.
       // GPS pings at the START of the next stoppage cluster (the "approach" phase) still
       // show real movement — the employee hasn't fully stopped yet. Without them OSRM
@@ -822,7 +831,8 @@ function LiveMap({
       // Fix: if no sub-group was pushed, concatenate ALL pings from ALL sub-groups
       // into one continuous path — this always produces a visible route line even
       // for highway legs where the employee had a GPS ping only every 10-15 min.
-      if (pushedCount === 0 && subGroups.length > 0) {
+      if (pushedCount === 0) {
+        // Build a path from whatever GPS pings exist in all sub-groups
         const allPts: [number, number][] = [];
         const allTs: number[] = [];
         for (const g of subGroups) {
@@ -831,10 +841,18 @@ function LiveMap({
             allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
           }
         }
-        // Prepend stoppage anchor so line starts from known parked location
-        if (stopAnchor && allPts.length > 0) {
+        // Prepend start anchor (previous stoppage location)
+        if (stopAnchor) {
+          const firstTs = allTs[0] ?? Math.round(segStart / 1000);
           allPts.unshift(stopAnchor);
-          allTs.unshift(allTs[0] - 30);
+          allTs.unshift(firstTs - 30);
+        }
+        // Append end anchor (next stoppage location) so line reaches the destination
+        // even when GPS was offline the entire leg (phone switched off / no signal)
+        if (endAnchor) {
+          const lastTs = allTs[allTs.length - 1] ?? Math.round(segEnd / 1000);
+          allPts.push(endAnchor);
+          allTs.push(lastTs + 30);
         }
         if (allPts.length >= 2) {
           result.push(allPts);
@@ -1232,8 +1250,7 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 
       const coordStr = sample.map(([lat, lng]) => `${lng},${lat}`).join(";");
       const radiuses = sample.map(() => String(snapRadius)).join(";");
-      // tidy=true: OSRM removes duplicate/jittery points server-side before matching
-      let url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}&tidy=true`;
+      let url = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&radiuses=${radiuses}`;
       if (sampleTs && sampleTs.length === sample.length) {
         // Verify timestamps are strictly increasing before sending (OSRM requirement)
         const tsOk = sampleTs.every((t, i) => i === 0 || t > sampleTs[i - 1]);
