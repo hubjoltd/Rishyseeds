@@ -1209,12 +1209,10 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
   // Always try map-match first (≥ 2 points).
   // Map-match forces OSRM to route near each GPS waypoint IN ORDER, so it follows
   // the actual road taken rather than finding a shorter shortcut between start and end.
-  // This is the key difference vs route/v1 which picks the optimal (shortest) path and
-  // can under-count a winding 2.0 km route as 1.72 km if a straighter road exists.
-  // Retry with progressively wider snap radii before falling back to route/v1.
-  // Rural India roads are sometimes >150 m from OSRM's mapped road centre-lines,
-  // causing the 100 m radius to fail. 250 m catches most cases while avoiding
-  // snapping to a completely wrong parallel road.
+  // route/v1 is intentionally NOT used as fallback: it picks the shortest path between
+  // sampled waypoints which can route through roads the employee never actually traveled,
+  // creating phantom "non-travelled" blue lines with 2+ km of invented route.
+  // When match fails we use raw GPS — honest about the actual path taken.
   if (cleanPoints.length >= 2) {
     const matched150 = await tryMatch(cleanPoints, 150);
     if (matched150) return matched150;
@@ -1222,8 +1220,8 @@ async function osrmSnap(points: [number, number][]): Promise<{ coords: [number, 
     if (matched250) return matched250;
     // 250m is the max safe radius — wider snaps to wrong parallel roads
   }
-  const routed = await tryRoute(cleanPoints);
-  return routed ?? { coords: cleanPoints, distanceM: 0 };
+  // Fallback: raw GPS points. Not road-snapped but shows the actual path taken.
+  return { coords: cleanPoints, distanceM: 0 };
 }
 
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.

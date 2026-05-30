@@ -390,7 +390,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
     (Number(busFare) || 0) +
     (Number(trainAirFare) || 0) +
     (Number(hotelFare) || 0) +
-    daAmount +
     (Number(conveyanceFare) || 0) +
     (Number(postageFare) || 0) +
     (Number(otherFare) || 0);
@@ -451,7 +450,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       if (busFare) fd.append("busFare", busFare);
       if (trainAirFare) fd.append("trainAirFare", trainAirFare);
       if (hotelFare) fd.append("hotelFare", hotelFare);
-      if (daAmount > 0) fd.append("daAmount", String(daAmount));
       if (conveyanceFare) fd.append("conveyanceFare", conveyanceFare);
       if (postageFare) fd.append("postageFare", postageFare);
       if (otherFare) fd.append("otherFare", otherFare);
@@ -519,7 +517,6 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
       if (detailBusFare) fd.append("busFare", detailBusFare);
       if (detailTrainAirFare) fd.append("trainAirFare", detailTrainAirFare);
       if (detailHotelFare) fd.append("hotelFare", detailHotelFare);
-      if (daAmount > 0) fd.append("daAmount", String(daAmount));
       if (detailConveyanceFare) fd.append("conveyanceFare", detailConveyanceFare);
       if (detailPostageFare) fd.append("postageFare", detailPostageFare);
       if (detailOtherFare) fd.append("otherFare", detailOtherFare);
@@ -1075,26 +1072,12 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           <div className="border border-gray-200 rounded-md bg-white overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
               <p className="text-xs font-semibold text-gray-600">Other Expenses Breakdown</p>
-              {daAmount > 0 && (
-                <p className="text-[10px] text-gray-400 mt-0.5">D.A.: ₹{daAmount} fixed daily wages</p>
-              )}
             </div>
 
             <div className="px-3 py-3 space-y-3">
               <FareRow label="Bus" value={busFare} onChange={setBusFare} />
               <FareRow label="Train / Air" value={trainAirFare} onChange={setTrainAirFare} />
               <FareRow label="Hotel Expenses" value={hotelFare} onChange={setHotelFare} />
-
-              {/* D.A. — fixed rate from admin settings */}
-              <div className="flex items-center gap-2 border-t border-gray-100 pt-3">
-                <span className="text-xs text-gray-600 w-36 shrink-0 font-medium">D.A.</span>
-                <span className={`text-xs font-bold ${daAmount > 0 ? "text-green-700" : "text-gray-400"}`}>
-                  {daAmount > 0 ? `₹${daAmount}` : "Not configured"}
-                </span>
-                {daAmount > 0 && (
-                  <span className="text-[10px] text-gray-400">(fixed daily wages)</span>
-                )}
-              </div>
 
               <FareRow label="Conveyance on Tour" value={conveyanceFare} onChange={setConveyanceFare} />
               <FareRow label="Postage" value={postageFare} onChange={setPostageFare} />
