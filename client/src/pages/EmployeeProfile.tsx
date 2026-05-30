@@ -307,36 +307,44 @@ function LiveMapInner({
     [locationPoints]
   );
 
-  // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart
-  // indicate background tracking lost signal (tunnel, building, network outage).
-  // Minimum distance of 500m prevents stoppage-filter artifacts (where we keep only
-  // the first ping of a stoppage, creating a large time gap between two geographically
-  // close points) from drawing noisy red squiggles around stoppage locations.
-  // Segment-coverage check: skip gaps whose [t1,t2] window falls entirely within a
-  // known segment — those are just sparse pings during normal travel, not signal loss.
-  // 10 min threshold: cellular GPS pings every 2–7 min naturally; 5 min was showing false
-  // "signal lost" gaps during normal cellular travel, matching server SIGNAL_GAP_SEC = 600 s.
-  const SIGNAL_GAP_MS = 10 * 60 * 1000;
-  const SIGNAL_GAP_MIN_DIST_M = 200;
+  // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart that are
+  // geographically more than 100 m apart indicate genuine GPS signal loss during travel.
+  // IMPORTANT: Uses the same stoppage-filtered point list as the parent's signalGapPairsForSnap
+  // so that snappedGapSegments[i] always corresponds exactly to signalGapLines[i].
+  // Raw locationPoints has drift pings inside stoppages; filtering to keep only the first
+  // ping per stoppage window prevents index misalignment between the two arrays.
+  const SIGNAL_GAP_MS = 5 * 60 * 1000;  // 5 min — catches most real signal losses
+  const SIGNAL_GAP_MIN_DIST_M = 100;    // 100 m — show even short-distance gaps
   const signalGapLines = useMemo(() => {
-    const valid = locationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
-    // Only suppress gaps that fall inside a STOPPAGE segment (employee is parked —
-    // the time gap is just the stoppage duration, not signal loss).
-    // Travel-segment gaps are genuine signal drops and must show the red line.
-    const stoppageRanges = segments.filter(s => s.type === "stoppage").map(s => ({
+    // Apply the same stoppage-drift filtering as filteredLocationPoints so the
+    // consecutive pairs we examine match those in the parent's signalGapPairsForSnap.
+    const stoppageRanges = (segments ?? []).filter(s => s.type === "stoppage").map(s => ({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
+    const seenWin = new Set<number>();
+    const filtered = locationPoints.filter(p => {
+      if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+      const t = new Date(p.recordedAt).getTime();
+      for (let wi = 0; wi < stoppageRanges.length; wi++) {
+        if (t >= stoppageRanges[wi].start && t <= stoppageRanges[wi].end) {
+          if (seenWin.has(wi)) return false;
+          seenWin.add(wi);
+          return true;
+        }
+      }
+      return true;
+    });
     const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
-    for (let i = 1; i < valid.length; i++) {
-      const t1 = new Date(valid[i - 1].recordedAt).getTime();
-      const t2 = new Date(valid[i].recordedAt).getTime();
+    for (let i = 1; i < filtered.length; i++) {
+      const t1 = new Date(filtered[i - 1].recordedAt).getTime();
+      const t2 = new Date(filtered[i].recordedAt).getTime();
       const gap = t2 - t1;
       if (gap > SIGNAL_GAP_MS) {
-        const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
-        const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
+        const p1: [number, number] = [Number(filtered[i - 1].latitude), Number(filtered[i - 1].longitude)];
+        const p2: [number, number] = [Number(filtered[i].latitude), Number(filtered[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip only if t1 falls inside a stoppage (not a travel segment).
+        // Skip gaps that fall inside a stoppage (not signal loss, just parked time)
         if (stoppageRanges.some(s => s.start <= t1 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
@@ -870,8 +878,8 @@ function LiveMap({
   // Snap signal-gap endpoints to roads using route/v1 simplified (clean 2-point route).
   // Using osrmSnapGap (not osrmSnap) avoids the map-match winding-path noise problem.
   const signalGapPairsForSnap = useMemo(() => {
-    const SIGNAL_GAP_MS = 10 * 60 * 1000; // matches LIVE_SPLIT_MS — prevents blue+red overlap
-    const SIGNAL_GAP_MIN_DIST_M = 200;
+    const SIGNAL_GAP_MS = 5 * 60 * 1000; // 5 min — matches child signalGapLines threshold
+    const SIGNAL_GAP_MIN_DIST_M = 100;   // 100 m — match child threshold
     const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const segs = segments ?? [];
     // Only suppress gaps inside STOPPAGE segments — gaps inside travel segments are
@@ -1268,7 +1276,12 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
   if (routed) return routed;
 
   // 5. Raw GPS — no phantom roads, shows exactly where the employee actually was
-  return { coords: cleanPoints, distanceM: 0 };
+  // Compute haversine distance so the km counter isn't 0 for this segment
+  let rawDistM = 0;
+  for (let i = 1; i < cleanPoints.length; i++) {
+    rawDistM += haversineKm(cleanPoints[i-1][0], cleanPoints[i-1][1], cleanPoints[i][0], cleanPoints[i][1]) * 1000;
+  }
+  return { coords: cleanPoints, distanceM: rawDistM };
 }
 
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
@@ -1679,8 +1692,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   // Signal-drop gaps for playback view — 10 min threshold matches Live map + server SIGNAL_GAP_SEC.
   // Cellular GPS pings every 2–7 min naturally; old 5 min was showing false signal-loss gaps.
   const pbSignalGapLines = useMemo(() => {
-    const SIGNAL_GAP_MS = 10 * 60 * 1000;
-    const SIGNAL_GAP_MIN_DIST_M = 200;
+    const SIGNAL_GAP_MS = 5 * 60 * 1000;  // 5 min — catches real signal losses
+    const SIGNAL_GAP_MIN_DIST_M = 100;    // 100 m — show even short gaps
     const segs = locationData?.segments ?? [];
     // Only suppress gaps inside STOPPAGE segments — travel-segment gaps are real signal drops.
     const stoppageRanges = segs.filter((s: any) => s.type === "stoppage").map((s: any) => ({
