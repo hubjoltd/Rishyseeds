@@ -493,7 +493,7 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — road-snapped blue line (same style as travel segments) */}
+      {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
       {signalGapLines.map((gap, i) => {
         const snapped = snappedGapSegments[i];
         const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
@@ -501,10 +501,10 @@ function LiveMapInner({
         return (
           <Fragment key={`gap-${i}`}>
             <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#1565C0", weight: 7, opacity: 0.7, lineCap: "round", lineJoin: "round" }}>
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
-                  <b style={{ color: "#1565C0" }}>📵 Signal Lost</b><br />
+                  <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
                   <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
                   <span style={{ fontSize: 11, color: "#888" }}>Route estimated from last known point</span>
                 </div>
@@ -1397,7 +1397,7 @@ function PlaybackMapInner({
         ) : null
       )}
 
-      {/* Signal-drop gaps — road-snapped blue line (same style as travel segments) */}
+      {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
       {signalGapLines.map((gap, i) => {
         const snapped = snappedGapLines[i];
         const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
@@ -1405,10 +1405,10 @@ function PlaybackMapInner({
         return (
           <Fragment key={`pb-gap-${i}`}>
             <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#1565C0", weight: 7, opacity: 0.7, lineCap: "round", lineJoin: "round" }}>
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
-                  <b style={{ color: "#1565C0" }}>📵 Signal Lost</b><br />
+                  <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
                   <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
                   <span style={{ fontSize: 11, color: "#888" }}>Route estimated from last known point</span>
                 </div>
