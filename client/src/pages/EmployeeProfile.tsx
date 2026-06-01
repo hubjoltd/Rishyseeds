@@ -772,6 +772,21 @@ function LiveMap({
         const finalTs = repPings.length >= 2
           ? repTs
           : group.map(p => Math.round(new Date(p.recordedAt).getTime() / 1000));
+        // Append end-anchor to the LAST sub-group ONLY when the very next server segment is a
+        // stoppage. This closes the visual gap between the last GPS ping and the stoppage circle.
+        // We skip it when the next segment is another travel leg — routing to a distant future
+        // stoppage would draw an incorrectly long line through unrelated roads.
+        const nextServerSeg = allSegs[i + 1];
+        if (gi === subGroups.length - 1 && endAnchor && nextServerSeg?.type === "stoppage" && finalPings.length > 0) {
+          const lastPt = finalPings[finalPings.length - 1];
+          const tooClose = Math.abs(lastPt[0] - endAnchor[0]) < 0.0002
+            && Math.abs(lastPt[1] - endAnchor[1]) < 0.0002;
+          if (!tooClose) {
+            finalPings.push(endAnchor);
+            const lastTs = finalTs[finalTs.length - 1];
+            finalTs.push(Math.max(lastTs != null ? lastTs + 30 : Math.round(segEnd / 1000), Math.round(segEnd / 1000)));
+          }
+        }
         if (finalPings.length >= 2) {
           result.push(finalPings);
           resultTs.push(finalTs);
@@ -826,8 +841,9 @@ function LiveMap({
         }
         // Append end anchor (next stoppage location) so line reaches the destination
         // even when GPS was offline the entire leg (phone switched off / no signal).
-        // Use actual segment end time for a realistic travel speed.
-        if (endAnchor) {
+        // Only when the immediately next server segment is a stoppage — otherwise endAnchor
+        // points to a distant future stop and OSRM would draw an incorrectly long path.
+        if (endAnchor && allSegs[i + 1]?.type === "stoppage") {
           const anchorTs = allTs.length > 0
             ? Math.max(allTs[allTs.length - 1] + 30, Math.round(segEnd / 1000))
             : Math.round(segEnd / 1000);
@@ -2683,7 +2699,9 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
+                    {liveSnappedKm !== null
+                      ? `${(liveSnappedKm + liveSnappedGapKm).toFixed(2)} Km`
+                      : `${(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km`}
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
