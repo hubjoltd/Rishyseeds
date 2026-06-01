@@ -307,50 +307,13 @@ function LiveMapInner({
     [locationPoints]
   );
 
-  // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart that are
-  // geographically more than 100 m apart indicate genuine GPS signal loss during travel.
-  // IMPORTANT: Uses the same stoppage-filtered point list as the parent's signalGapPairsForSnap
-  // so that snappedGapSegments[i] always corresponds exactly to signalGapLines[i].
-  // Raw locationPoints has drift pings inside stoppages; filtering to keep only the first
-  // ping per stoppage window prevents index misalignment between the two arrays.
-  const SIGNAL_GAP_MS = 5 * 60 * 1000;  // 5 min — catches most real signal losses
-  const SIGNAL_GAP_MIN_DIST_M = 100;    // 100 m — show even short-distance gaps
-  const signalGapLines = useMemo(() => {
-    // Apply the same stoppage-drift filtering as filteredLocationPoints so the
-    // consecutive pairs we examine match those in the parent's signalGapPairsForSnap.
-    const stoppageRanges = (segments ?? []).filter(s => s.type === "stoppage").map(s => ({
-      start: new Date(s.startTime).getTime(),
-      end:   new Date(s.endTime).getTime(),
-    }));
-    const seenWin = new Set<number>();
-    const filtered = locationPoints.filter(p => {
-      if (!p.latitude || !p.longitude || !p.recordedAt) return false;
-      const t = new Date(p.recordedAt).getTime();
-      for (let wi = 0; wi < stoppageRanges.length; wi++) {
-        if (t >= stoppageRanges[wi].start && t <= stoppageRanges[wi].end) {
-          if (seenWin.has(wi)) return false;
-          seenWin.add(wi);
-          return true;
-        }
-      }
-      return true;
-    });
-    const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
-    for (let i = 1; i < filtered.length; i++) {
-      const t1 = new Date(filtered[i - 1].recordedAt).getTime();
-      const t2 = new Date(filtered[i].recordedAt).getTime();
-      const gap = t2 - t1;
-      if (gap > SIGNAL_GAP_MS) {
-        const p1: [number, number] = [Number(filtered[i - 1].latitude), Number(filtered[i - 1].longitude)];
-        const p2: [number, number] = [Number(filtered[i].latitude), Number(filtered[i].longitude)];
-        if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip gaps that fall inside a stoppage (not signal loss, just parked time)
-        if (stoppageRanges.some(s => s.start <= t1 && s.end > t1)) continue;
-        gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
-      }
-    }
-    return gaps;
-  }, [locationPoints, segments]);
+  // Signal-gap lines are rendered directly from snappedGapSegments passed by the parent.
+  // Previously this component re-computed gap pairs from locationPoints, then matched them
+  // against snappedGapSegments by index. That dual-computation caused index misalignment
+  // whenever a live auto-refresh added or reordered gaps, producing a "ghost" line drawn
+  // at the wrong position. Using the parent's already-snapped array as the single source
+  // of truth eliminates the misalignment entirely and also removes the jarring straight-line
+  // fallback that was visible while OSRM gap snapping was in-flight.
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
@@ -483,19 +446,18 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
-      {signalGapLines.map((gap, i) => {
-        const snapped = snappedGapSegments[i];
-        const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
-        const gapMins = snapped ? snapped.gapMins : gap.gapMins;
+      {/* Signal-drop gaps — rendered only after road-snapping (no straight-line fallback).
+          Keyed by start-position so indices never misalign when auto-refresh changes gap count. */}
+      {snappedGapSegments.filter(g => g.path.length > 1).map((g) => {
+        const key = `gap-${g.path[0][0].toFixed(5)}-${g.path[0][1].toFixed(5)}`;
         return (
-          <Fragment key={`gap-${i}`}>
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+          <Fragment key={key}>
+            <Polyline positions={g.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={g.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
                   <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
-                  <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
+                  <span style={{ fontSize: 12 }}>No GPS for <b>{g.gapMins} min{g.gapMins !== 1 ? "s" : ""}</b></span><br />
                   <span style={{ fontSize: 11, color: "#888" }}>Route estimated from last known point</span>
                 </div>
               </Popup>
