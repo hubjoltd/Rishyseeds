@@ -3019,7 +3019,12 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      const distKm: number = (seg as any).distanceKm ?? 0;
+                      // Use OSRM road-snapped distance (matches Google Maps) when available.
+                      // Falls back to server haversine only before snapping completes.
+                      const osrmKm = osrmSegmentDistances.length > 0
+                        ? (osrmSegmentDistances[travelIdx - 1] ?? 0)
+                        : 0;
+                      const distKm: number = osrmKm > 0 ? osrmKm : ((seg as any).distanceKm ?? 0);
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
