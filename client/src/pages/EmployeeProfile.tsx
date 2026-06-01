@@ -273,6 +273,7 @@ function LiveMapInner({
   rawLatestPoint,
   highlightedSegment,
   overspeedPoints,
+  isSnapping,
 }: {
   locationPoints: any[];
   segments: LiveMapSegment[];
@@ -290,6 +291,7 @@ function LiveMapInner({
   snappedGapSegments: { path: [number, number][]; gapMins: number }[];
   highlightedSegment?: HighlightSegment | null;
   overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
+  isSnapping?: boolean;
 }) {
   const map = useMap();
   const tile = LEAFLET_TILES[mapTypeId] ?? LEAFLET_TILES.roadmap;
@@ -458,11 +460,12 @@ function LiveMapInner({
 
       {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
       {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap.
-          The all-or-nothing every() check hid routes on small/unmapped roads where
-          OSRM fails for just that one segment while others snap fine. */}
+          When isSnapping is true and old snapped data exists, suppress raw GPS
+          fallback entirely to prevent the brief raw→snapped flicker during re-snap. */}
       {travelSegmentsPoints.map((seg, i) => {
         const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
-        if (hasSnapped || seg.length <= 1) return null;
+        const suppressForFlicker = isSnapping && snappedSegments.length > 0;
+        if (hasSnapped || seg.length <= 1 || suppressForFlicker) return null;
         const smoothed = smoothPolyline(seg);
         const hi = isSegHighlighted(i);
         return (
@@ -799,27 +802,41 @@ function LiveMap({
           repPings.push([Number(best.latitude), Number(best.longitude)]);
           repTs.push(Math.round(new Date(best.recordedAt).getTime() / 1000));
         }
-        // Prepend the previous stoppage centroid to the FIRST sub-group of each travel
-        // segment. This anchors the route start exactly at where the employee was parked,
-        // preventing the blue line from vanishing when the first GPS ping after a stoppage
-        // is late (cellular wake-up lag) and repPings would otherwise have < 2 points.
-        if (gi === 0 && stopAnchor) {
-          const firstRepPing = repPings[0];
-          const tooClose = firstRepPing && Math.abs(firstRepPing[0] - stopAnchor[0]) < 0.0002
-            && Math.abs(firstRepPing[1] - stopAnchor[1]) < 0.0002;
-          if (!tooClose) {
-            repPings.unshift(stopAnchor);
-            repTs.unshift((repTs[0] ?? Math.round(gStart / 1000)) - 30); // 30 s before first ping
-          }
-        }
         // Fallback: if centroid binning yields < 2 points (very sparse pings), use the raw
         // group points directly so the segment is never invisible on the map.
-        const finalPings = repPings.length >= 2
+        let finalPings: [number, number][] = repPings.length >= 2
           ? repPings
           : group.map(p => [Number(p.latitude), Number(p.longitude)] as [number, number]);
-        const finalTs = repPings.length >= 2
+        let finalTs: number[] = repPings.length >= 2
           ? repTs
           : group.map(p => Math.round(new Date(p.recordedAt).getTime() / 1000));
+
+        // Anchor the FIRST sub-group's start to the previous stoppage location so
+        // the blue line always begins exactly from the IDLE marker even when the
+        // first GPS ping after cellular wake-up is late. Applied after finalPings
+        // so it works for both the repPings path and the raw fallback path.
+        if (gi === 0 && stopAnchor) {
+          const first = finalPings[0];
+          const tooClose = first && Math.abs(first[0] - stopAnchor[0]) < 0.0002
+            && Math.abs(first[1] - stopAnchor[1]) < 0.0002;
+          if (!tooClose) {
+            finalPings = [stopAnchor, ...finalPings];
+            finalTs = [(finalTs[0] ?? Math.round(gStart / 1000)) - 30, ...finalTs];
+          }
+        }
+        // Anchor the LAST sub-group's end to the next stoppage location so the
+        // blue line always reaches the IDLE marker, not just the last GPS ping
+        // before parking (which can be 100-500 m short of the actual stop point).
+        if (gi === subGroups.length - 1 && endAnchor) {
+          const last = finalPings[finalPings.length - 1];
+          const tooClose = last && Math.abs(last[0] - endAnchor[0]) < 0.0002
+            && Math.abs(last[1] - endAnchor[1]) < 0.0002;
+          if (!tooClose) {
+            const lastTs = finalTs[finalTs.length - 1] ?? Math.round(segEnd / 1000);
+            finalPings = [...finalPings, endAnchor];
+            finalTs = [...finalTs, Math.max(lastTs + 30, Math.round(segEnd / 1000))];
+          }
+        }
         if (finalPings.length >= 2) {
           result.push(finalPings);
           resultTs.push(finalTs);
@@ -998,6 +1015,7 @@ function LiveMap({
           snappedGapSegments={snappedGapSegments}
           highlightedSegment={highlightedSegment}
           overspeedPoints={overspeedPoints}
+          isSnapping={snapping}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
@@ -1740,20 +1758,46 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
 
   // Split routeWithTime into sub-segments at signal gaps (>5 min) before OSRM,
   // so the blue snapped line never bridges a gap — red lines cover the gaps.
+  // At each gap boundary, if a stoppage falls in the gap, append/prepend its
+  // lat/lng so the blue line connects cleanly to the IDLE marker on both sides.
   const rawSegments = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000;
+    const stoppageAnchors = (locationData?.segments ?? [])
+      .filter((s: any) => s.type === "stoppage" && s.lat != null && s.lng != null);
     const segs: [number, number][][] = [];
     let cur: [number, number][] = [];
     for (let i = 0; i < routeWithTime.length; i++) {
       if (cur.length > 0) {
-        const gap = new Date(routeWithTime[i].ts).getTime() - new Date(routeWithTime[i - 1].ts).getTime();
-        if (gap > SIGNAL_GAP_MS) { segs.push(cur); cur = []; }
+        const gapMs = new Date(routeWithTime[i].ts).getTime() - new Date(routeWithTime[i - 1].ts).getTime();
+        if (gapMs > SIGNAL_GAP_MS) {
+          // Find a stoppage that falls entirely within this time gap
+          const gapStartMs = new Date(routeWithTime[i - 1].ts).getTime();
+          const gapEndMs   = new Date(routeWithTime[i].ts).getTime();
+          const bridgeStop = stoppageAnchors.find((s: any) => {
+            const sStart = new Date(s.startTime).getTime();
+            const sEnd   = new Date(s.endTime).getTime();
+            return sStart >= gapStartMs && sEnd <= gapEndMs;
+          });
+          if (bridgeStop) {
+            const anchor: [number, number] = [Number((bridgeStop as any).lat), Number((bridgeStop as any).lng)];
+            // Append stoppage location to end of the closing segment
+            const lastPt = cur[cur.length - 1];
+            if (haversineM(lastPt[0], lastPt[1], anchor[0], anchor[1]) > 22) cur.push(anchor);
+            segs.push(cur);
+            // Open next segment from the stoppage location
+            const nextPt = routeWithTime[i].pos;
+            cur = haversineM(anchor[0], anchor[1], nextPt[0], nextPt[1]) > 22 ? [anchor] : [];
+          } else {
+            segs.push(cur);
+            cur = [];
+          }
+        }
       }
       cur.push(routeWithTime[i].pos);
     }
     if (cur.length > 0) segs.push(cur);
     return segs.filter(s => s.length > 0);
-  }, [routeWithTime]);
+  }, [routeWithTime, locationData?.segments]);
 
   // Snap each sub-segment independently so blue road lines stop at gap boundaries
   useEffect(() => {
@@ -1775,7 +1819,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
       }
     });
     return () => { cancelled = true; };
-  }, [JSON.stringify(rawSegments)]);
+  }, [rawSegments.map(s => s.length).join(",")]);
 
   // Build numbered stoppages from segments
   const stoppages = useMemo(() => {
