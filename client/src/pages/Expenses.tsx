@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Search, CheckCircle, XCircle, History, MessageSquare,
   FileText, Send, Loader2, BanknoteIcon, Gauge, Camera, Upload,
-  Plus, Pencil, Save, X, Settings, Eye, ExternalLink,
+  Plus, Pencil, Save, X, Settings,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -101,7 +101,6 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
   const startPhotoRef = useRef<HTMLInputElement>(null);
   const endPhotoRef = useRef<HTMLInputElement>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState<"start" | "end" | null>(null);
-  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   // Edit mode state
   const [editMode, setEditMode] = useState(false);
@@ -272,44 +271,6 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
 
   return (
     <div className="animate-in fade-in">
-      {/* Photo lightbox overlay */}
-      {previewPhoto && (
-        <div
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
-          onClick={() => setPreviewPhoto(null)}
-          data-testid="overlay-photo-preview"
-        >
-          <div className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between w-full mb-2 px-1">
-              <span className="text-white text-sm font-medium opacity-70">Photo Preview</span>
-              <div className="flex items-center gap-2">
-                <a
-                  href={previewPhoto}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
-                  data-testid="link-open-full-photo"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Open full
-                </a>
-                <button
-                  onClick={() => setPreviewPhoto(null)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
-                  data-testid="button-close-photo-preview"
-                >
-                  <X className="h-3.5 w-3.5" /> Close
-                </button>
-              </div>
-            </div>
-            <img
-              src={previewPhoto}
-              alt="Preview"
-              className="max-h-[80vh] max-w-full rounded-lg shadow-2xl object-contain"
-              data-testid="img-preview-full"
-            />
-          </div>
-        </div>
-      )}
       {/* Header */}
       <div className="border-b bg-card px-6 py-3 flex items-center gap-4 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack} data-testid="button-back-expense">
@@ -463,14 +424,10 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                       {expense.startingOdometerPhoto ? (
                         <div className="relative group w-24 h-20">
                           <img src={expense.startingOdometerPhoto} alt="Start odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80"
-                            onClick={() => setPreviewPhoto(expense.startingOdometerPhoto!)} data-testid="img-start-odometer" />
-                          <div className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs pointer-events-none">
-                            <Eye className="h-4 w-4" /> Preview
-                          </div>
+                            onClick={() => window.open(expense.startingOdometerPhoto!, "_blank")} data-testid="img-start-odometer" />
                           <button onClick={() => startPhotoRef.current?.click()}
-                            className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Replace photo">
-                            <Upload className="h-3 w-3" />
+                            className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
+                            <Upload className="h-4 w-4" /> Replace
                           </button>
                         </div>
                       ) : (
@@ -495,14 +452,10 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                       {expense.endOdometerPhoto ? (
                         <div className="relative group w-24 h-20">
                           <img src={expense.endOdometerPhoto} alt="End odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80"
-                            onClick={() => setPreviewPhoto(expense.endOdometerPhoto!)} data-testid="img-end-odometer" />
-                          <div className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs pointer-events-none">
-                            <Eye className="h-4 w-4" /> Preview
-                          </div>
+                            onClick={() => window.open(expense.endOdometerPhoto!, "_blank")} data-testid="img-end-odometer" />
                           <button onClick={() => endPhotoRef.current?.click()}
-                            className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Replace photo">
-                            <Upload className="h-3 w-3" />
+                            className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
+                            <Upload className="h-4 w-4" /> Replace
                           </button>
                         </div>
                       ) : (
@@ -639,17 +592,15 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                         <Label className="text-xs text-muted-foreground font-medium">Bills / Tickets Photo</Label>
                         <div
                           className="relative group w-40 h-32 cursor-pointer"
-                          onClick={() => setPreviewPhoto(exp.billsTicketPhoto)}
-                          data-testid="img-bills-ticket"
+                          onClick={() => window.open(exp.billsTicketPhoto, "_blank")}
                         >
                           <img
                             src={exp.billsTicketPhoto}
                             alt="Bills / Tickets"
                             className="w-40 h-32 object-cover rounded-lg border shadow-sm hover:opacity-90 transition-opacity"
                           />
-                          <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                            <Eye className="h-4 w-4 text-white" />
-                            <span className="text-white text-xs font-medium">Preview</span>
+                          <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="text-white text-xs font-medium">Click to open</span>
                           </div>
                         </div>
                       </div>

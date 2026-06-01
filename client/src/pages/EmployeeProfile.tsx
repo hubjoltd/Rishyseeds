@@ -307,13 +307,50 @@ function LiveMapInner({
     [locationPoints]
   );
 
-  // Signal-gap lines are rendered directly from snappedGapSegments passed by the parent.
-  // Previously this component re-computed gap pairs from locationPoints, then matched them
-  // against snappedGapSegments by index. That dual-computation caused index misalignment
-  // whenever a live auto-refresh added or reordered gaps, producing a "ghost" line drawn
-  // at the wrong position. Using the parent's already-snapped array as the single source
-  // of truth eliminates the misalignment entirely and also removes the jarring straight-line
-  // fallback that was visible while OSRM gap snapping was in-flight.
+  // Detect signal-drop gaps: consecutive GPS pings more than 5 minutes apart that are
+  // geographically more than 100 m apart indicate genuine GPS signal loss during travel.
+  // IMPORTANT: Uses the same stoppage-filtered point list as the parent's signalGapPairsForSnap
+  // so that snappedGapSegments[i] always corresponds exactly to signalGapLines[i].
+  // Raw locationPoints has drift pings inside stoppages; filtering to keep only the first
+  // ping per stoppage window prevents index misalignment between the two arrays.
+  const SIGNAL_GAP_MS = 5 * 60 * 1000;  // 5 min — catches most real signal losses
+  const SIGNAL_GAP_MIN_DIST_M = 100;    // 100 m — show even short-distance gaps
+  const signalGapLines = useMemo(() => {
+    // Apply the same stoppage-drift filtering as filteredLocationPoints so the
+    // consecutive pairs we examine match those in the parent's signalGapPairsForSnap.
+    const stoppageRanges = (segments ?? []).filter(s => s.type === "stoppage").map(s => ({
+      start: new Date(s.startTime).getTime(),
+      end:   new Date(s.endTime).getTime(),
+    }));
+    const seenWin = new Set<number>();
+    const filtered = locationPoints.filter(p => {
+      if (!p.latitude || !p.longitude || !p.recordedAt) return false;
+      const t = new Date(p.recordedAt).getTime();
+      for (let wi = 0; wi < stoppageRanges.length; wi++) {
+        if (t >= stoppageRanges[wi].start && t <= stoppageRanges[wi].end) {
+          if (seenWin.has(wi)) return false;
+          seenWin.add(wi);
+          return true;
+        }
+      }
+      return true;
+    });
+    const gaps: { path: [[number, number], [number, number]]; gapMins: number }[] = [];
+    for (let i = 1; i < filtered.length; i++) {
+      const t1 = new Date(filtered[i - 1].recordedAt).getTime();
+      const t2 = new Date(filtered[i].recordedAt).getTime();
+      const gap = t2 - t1;
+      if (gap > SIGNAL_GAP_MS) {
+        const p1: [number, number] = [Number(filtered[i - 1].latitude), Number(filtered[i - 1].longitude)];
+        const p2: [number, number] = [Number(filtered[i].latitude), Number(filtered[i].longitude)];
+        if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
+        // Skip gaps that fall inside a stoppage (not signal loss, just parked time)
+        if (stoppageRanges.some(s => s.start <= t1 && s.end > t1)) continue;
+        gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
+      }
+    }
+    return gaps;
+  }, [locationPoints, segments]);
 
   // First load: fit all points. Subsequent updates: auto-follow latest point if enabled.
   useEffect(() => {
@@ -419,26 +456,36 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* ── Route line — one polyline per travel segment, no connecting lines between segments ──
-          Uses a single stable key per segment so React-Leaflet calls setLatLngs() when
-          snapped coords arrive instead of unmounting/remounting the SVG path.
-          Unmount→remount was the cause of the "invisible line" flicker during OSRM snapping. */}
+      {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
+      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap.
+          The all-or-nothing every() check hid routes on small/unmapped roads where
+          OSRM fails for just that one segment while others snap fine. */}
       {travelSegmentsPoints.map((seg, i) => {
-        const snapped = snappedSegments[i];
-        const hasSnapped = snapped && snapped.length > 1;
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
         const smoothed = smoothPolyline(seg);
-        // Always prefer snapped (road-accurate). Fall back to raw GPS while OSRM is in-flight.
-        const positions = hasSnapped ? snapped : (seg.length > 1 ? smoothed : null);
-        if (!positions) return null;
         const hi = isSegHighlighted(i);
         return (
-          <Fragment key={`seg-${i}`}>
-            {hi && <Polyline positions={positions} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          <Fragment key={`raw-seg-${i}`}>
+            {hi && <Polyline positions={smoothed} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
+            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
+      {/* Once OSRM returns: one snapped polyline per segment */}
+      {snappedSegments.map((seg, i) =>
+        seg.length > 1 ? (() => {
+          const hi = isSegHighlighted(i);
+          return (
+            <Fragment key={`snap-seg-${i}`}>
+              {hi && <Polyline positions={seg} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
+              <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={seg} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+            </Fragment>
+          );
+        })() : null
+      )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
       {travelSegmentsPoints.every(s => s.length <= 1) && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
@@ -446,18 +493,19 @@ function LiveMapInner({
         <Polyline positions={waypointLine} pathOptions={{ color: "#1565C0", weight: 5, opacity: 0.9, dashArray: "12 8", lineCap: "round", lineJoin: "round" }} />
       </>}
 
-      {/* Signal-drop gaps — rendered only after road-snapping (no straight-line fallback).
-          Keyed by start-position so indices never misalign when auto-refresh changes gap count. */}
-      {snappedGapSegments.filter(g => g.path.length > 1).map((g) => {
-        const key = `gap-${g.path[0][0].toFixed(5)}-${g.path[0][1].toFixed(5)}`;
+      {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
+      {signalGapLines.map((gap, i) => {
+        const snapped = snappedGapSegments[i];
+        const positions: [number, number][] = snapped && snapped.path.length > 1 ? snapped.path : gap.path;
+        const gapMins = snapped ? snapped.gapMins : gap.gapMins;
         return (
-          <Fragment key={key}>
-            <Polyline positions={g.path} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={g.path} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
+          <Fragment key={`gap-${i}`}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#ef4444", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }}>
               <Popup>
                 <div style={{ fontSize: 13, minWidth: 150 }}>
                   <b style={{ color: "#dc2626" }}>📵 Signal Lost</b><br />
-                  <span style={{ fontSize: 12 }}>No GPS for <b>{g.gapMins} min{g.gapMins !== 1 ? "s" : ""}</b></span><br />
+                  <span style={{ fontSize: 12 }}>No GPS for <b>{gapMins} min{gapMins !== 1 ? "s" : ""}</b></span><br />
                   <span style={{ fontSize: 11, color: "#888" }}>Route estimated from last known point</span>
                 </div>
               </Popup>
@@ -556,9 +604,7 @@ function LiveMap({
   mapTypeId,
   onMapTypeChange,
   onSnappedKm,
-  onSnappedGapKm,
   onOsrmSegmentDistances,
-  onGapKmPerSegment,
   highlightedSegment,
   overspeedPoints,
 }: {
@@ -572,15 +618,13 @@ function LiveMap({
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
   onSnappedKm?: (km: number) => void;
-  onSnappedGapKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
-  onGapKmPerSegment?: (kmBySegIdx: { [segIdx: number]: number }) => void;
   highlightedSegment?: HighlightSegment | null;
   overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
-  const [snappedGapSegments, setSnappedGapSegments] = useState<{ path: [number, number][]; gapMins: number; distanceM: number }[]>([]);
+  const [snappedGapSegments, setSnappedGapSegments] = useState<{ path: [number, number][]; gapMins: number }[]>([]);
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
@@ -774,21 +818,6 @@ function LiveMap({
         const finalTs = repPings.length >= 2
           ? repTs
           : group.map(p => Math.round(new Date(p.recordedAt).getTime() / 1000));
-        // Append end-anchor to the LAST sub-group ONLY when the very next server segment is a
-        // stoppage. This closes the visual gap between the last GPS ping and the stoppage circle.
-        // We skip it when the next segment is another travel leg — routing to a distant future
-        // stoppage would draw an incorrectly long line through unrelated roads.
-        const nextServerSeg = allSegs[i + 1];
-        if (gi === subGroups.length - 1 && endAnchor && nextServerSeg?.type === "stoppage" && finalPings.length > 0) {
-          const lastPt = finalPings[finalPings.length - 1];
-          const tooClose = Math.abs(lastPt[0] - endAnchor[0]) < 0.0002
-            && Math.abs(lastPt[1] - endAnchor[1]) < 0.0002;
-          if (!tooClose) {
-            finalPings.push(endAnchor);
-            const lastTs = finalTs[finalTs.length - 1];
-            finalTs.push(Math.max(lastTs != null ? lastTs + 30 : Math.round(segEnd / 1000), Math.round(segEnd / 1000)));
-          }
-        }
         if (finalPings.length >= 2) {
           result.push(finalPings);
           resultTs.push(finalTs);
@@ -803,30 +832,11 @@ function LiveMap({
       // into one continuous path — this always produces a visible route line even
       // for highway legs where the employee had a GPS ping only every 10-15 min.
       if (pushedCount === 0) {
-        // Build a path from whatever GPS pings exist in all sub-groups.
-        // If subGroups is empty (all pings had accuracy > 500 m and were filtered out),
-        // fall back to unfiltered pings within this segment's time window as a last resort
-        // so the segment is never completely invisible. OSRM's filterOutlierPts handles
-        // any extreme position jumps in the noisy pings.
+        // Build a path from whatever GPS pings exist in all sub-groups
         const allPts: [number, number][] = [];
         const allTs: number[] = [];
-        if (subGroups.length > 0) {
-          for (const g of subGroups) {
-            for (const p of g) {
-              allPts.push([Number(p.latitude), Number(p.longitude)]);
-              allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
-            }
-          }
-        } else {
-          // Last resort: accuracy filter dropped everything — use raw pings in time window
-          const unfilteredPings = filteredLocationPoints
-            .filter(p => {
-              if (!p.latitude || !p.longitude || !p.recordedAt) return false;
-              const t = new Date(p.recordedAt).getTime();
-              return t >= segStart && t <= segEndExtended;
-            })
-            .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
-          for (const p of unfilteredPings) {
+        for (const g of subGroups) {
+          for (const p of g) {
             allPts.push([Number(p.latitude), Number(p.longitude)]);
             allTs.push(Math.round(new Date(p.recordedAt).getTime() / 1000));
           }
@@ -843,9 +853,8 @@ function LiveMap({
         }
         // Append end anchor (next stoppage location) so line reaches the destination
         // even when GPS was offline the entire leg (phone switched off / no signal).
-        // Only when the immediately next server segment is a stoppage — otherwise endAnchor
-        // points to a distant future stop and OSRM would draw an incorrectly long path.
-        if (endAnchor && allSegs[i + 1]?.type === "stoppage") {
+        // Use actual segment end time for a realistic travel speed.
+        if (endAnchor) {
           const anchorTs = allTs.length > 0
             ? Math.max(allTs[allTs.length - 1] + 30, Math.round(segEnd / 1000))
             : Math.round(segEnd / 1000);
@@ -923,14 +932,7 @@ function LiveMap({
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000; // 5 min — matches child signalGapLines threshold
     const SIGNAL_GAP_MIN_DIST_M = 100;   // 100 m — match child threshold
-    // Only use GPS pings with accuracy ≤ 150 m as gap endpoints. A poor-accuracy ping
-    // placed 300 m off the road causes the routing engine to route to a distant overpass
-    // or lane, creating a ghost V-shape that adds hundreds of extra km to the total.
-    const MAX_ACCURACY_M = 150;
-    const valid = filteredLocationPoints.filter(p =>
-      p.latitude && p.longitude && p.recordedAt &&
-      (p.accuracy == null || Number(p.accuracy) <= MAX_ACCURACY_M)
-    );
+    const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
     const segs = segments ?? [];
     // Only suppress gaps inside STOPPAGE segments — gaps inside travel segments are
     // genuine signal drops that need the red line shown on the map.
@@ -938,9 +940,7 @@ function LiveMap({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
-    // Build travel-only index so we can tag each gap with its parent segment
-    const travelSegs = segs.filter((s: any) => s.type === "travelled");
-    const gaps: { pair: [[number, number], [number, number]]; gapMins: number; segmentIdx: number }[] = [];
+    const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const t1 = new Date(valid[i - 1].recordedAt).getTime();
       const t2 = new Date(valid[i].recordedAt).getTime();
@@ -950,45 +950,21 @@ function LiveMap({
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
         if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
-        // Tag this gap with the travel segment it falls inside (0-based travel-only index)
-        const segIdx = travelSegs.findIndex((s: any) => {
-          const sStart = new Date(s.startTime).getTime();
-          const sEnd   = new Date(s.endTime).getTime();
-          return t1 >= sStart && t1 <= sEnd + 2 * 60 * 1000;
-        });
-        gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000), segmentIdx: segIdx });
+        gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
     return gaps;
   }, [filteredLocationPoints, segments]);
 
   useEffect(() => {
-    if (signalGapPairsForSnap.length === 0) {
-      setSnappedGapSegments([]);
-      if (onSnappedGapKm) onSnappedGapKm(0);
-      if (onGapKmPerSegment) onGapKmPerSegment({});
-      return;
-    }
+    if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
     let cancelled = false;
     Promise.all(signalGapPairsForSnap.map(g => osrmSnapGap(g.pair[0], g.pair[1]))).then(results => {
       if (!cancelled) {
-        setSnappedGapSegments(results.map((r, i) => ({
-          path: r.path,
+        setSnappedGapSegments(results.map((path, i) => ({
+          path,
           gapMins: signalGapPairsForSnap[i].gapMins,
-          distanceM: r.distanceM,
         })));
-        const totalGapKm = results.reduce((s, r) => s + r.distanceM, 0) / 1000;
-        if (onSnappedGapKm) onSnappedGapKm(totalGapKm);
-        // Build per-segment gap km map so parent can include gap distance in each
-        // segment's displayed label (total = sum of timeline labels)
-        if (onGapKmPerSegment) {
-          const bySegIdx: { [segIdx: number]: number } = {};
-          results.forEach((r, i) => {
-            const si = signalGapPairsForSnap[i].segmentIdx;
-            if (si >= 0) bySegIdx[si] = (bySegIdx[si] ?? 0) + r.distanceM / 1000;
-          });
-          onGapKmPerSegment(bySegIdx);
-        }
       }
     });
     return () => { cancelled = true; };
@@ -1241,23 +1217,14 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
   };
 
   // ── Google Directions API (via server proxy) — priority #1 ──────────────────
-  // Uses start + geographic midpoint + end (3 waypoints).
-  // Cellular GPS pings carry ±50–300 m accuracy noise — passing all of them as
-  // "via:" waypoints forces Google to detour through side streets at each noisy ping,
-  // inflating the total distance significantly. 3 clean anchor points gives the same
-  // km figure as typing the journey into Google Maps yourself — accurate, no noise.
+  // Sends up to 25 sampled GPS waypoints. Google routes through every waypoint
+  // in order, giving road-accurate distances matching Google Maps exactly.
   const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      const waypoints: { lat: number; lng: number }[] = [
-        { lat: pts[0][0], lng: pts[0][1] },
-      ];
-      // Add geographic midpoint so Google picks the correct road when two parallel
-      // roads exist (e.g. highway vs service road, NH vs SH).
-      if (pts.length >= 5) {
-        const mid = pts[Math.floor(pts.length / 2)];
-        waypoints.push({ lat: mid[0], lng: mid[1] });
-      }
-      waypoints.push({ lat: pts[pts.length - 1][0], lng: pts[pts.length - 1][1] });
+      // Sample down to max 25 points (Google Directions limit)
+      const step = Math.max(1, Math.ceil(pts.length / 23));
+      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+      const waypoints = sample.map(([lat, lng]) => ({ lat, lng }));
       const res = await fetch("/api/google-directions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1397,17 +1364,7 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
 // Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
 // it produces noisy winding paths. Route/v1 gives a clean simplified road route.
-async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<{ path: [number, number][]; distanceM: number }> {
-  // If the two endpoints are more than 80 km apart (haversine), the GPS readings are
-  // almost certainly inaccurate (phone woke up at wrong location, satellite drift, etc.).
-  // Routing between them via road network would create a 200+ km ghost detour.
-  // Fall back to straight-line haversine so the distance stays honest.
-  const MAX_GAP_ROUTE_KM = 80;
-  const haversineDist = haversineKm(p1[0], p1[1], p2[0], p2[1]);
-  if (haversineDist > MAX_GAP_ROUTE_KM) {
-    return { path: [p1, p2], distanceM: haversineDist * 1000 };
-  }
-
+async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
   // Try Google Directions first for signal-gap segments too
   try {
     const res = await fetch("/api/google-directions", {
@@ -1418,9 +1375,7 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.polyline && data.polyline.length > 1) {
-        return { path: data.polyline as [number, number][], distanceM: data.distanceM ?? 0 };
-      }
+      if (data.polyline && data.polyline.length > 1) return data.polyline as [number, number][];
     }
   } catch {}
   // Fallback: OSRM route/v1
@@ -1430,23 +1385,15 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    if (!res.ok) {
-      const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
-      return { path: [p1, p2], distanceM: fallbackDist };
-    }
+    if (!res.ok) return [p1, p2];
     const data = await res.json();
-    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) {
-      const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
-      return { path: [p1, p2], distanceM: fallbackDist };
-    }
+    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return [p1, p2];
     const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
       ([lng, lat]: [number, number]) => [lat, lng]
     );
-    const distanceM: number = data.routes[0].distance ?? 0;
-    return coords.length > 1 ? { path: coords, distanceM } : { path: [p1, p2], distanceM };
+    return coords.length > 1 ? coords : [p1, p2];
   } catch {
-    const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
-    return { path: [p1, p2], distanceM: fallbackDist };
+    return [p1, p2];
   }
 }
 
@@ -1518,22 +1465,28 @@ function PlaybackMapInner({
       <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={allRoutePts} />
 
-      {/* ── Route lines — one per sub-segment (split at signal gaps) ──
-          Single stable key per segment so React-Leaflet calls setLatLngs() on position
-          change instead of unmounting/remounting the SVG path — prevents flicker. */}
+      {/* ── Route lines — one per sub-segment (split at signal gaps) ── */}
+      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap. */}
       {rawSegments.map((seg, i) => {
-        const snapped = snappedSegments[i];
-        const hasSnapped = snapped && snapped.length > 1;
+        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
+        if (hasSnapped || seg.length <= 1) return null;
         const smoothed = smoothPolyline(seg);
-        const positions = hasSnapped ? snapped : (seg.length > 1 ? smoothed : null);
-        if (!positions) return null;
         return (
-          <Fragment key={`pb-seg-${i}`}>
-            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={positions} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          <Fragment key={`pb-raw-${i}`}>
+            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={smoothed} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
+      {/* Once OSRM returns: snapped road lines per segment */}
+      {snappedSegments.map((seg, i) =>
+        seg.length > 1 ? (
+          <Fragment key={`pb-snap-${i}`}>
+            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          </Fragment>
+        ) : null
+      )}
 
       {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
       {signalGapLines.map((gap, i) => {
@@ -2185,18 +2138,10 @@ export default function EmployeeProfile() {
   });
 
   const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
-  const [liveSnappedGapKm, setLiveSnappedGapKm] = useState<number>(0);
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
-  const [gapKmPerSegment, setGapKmPerSegment] = useState<{ [segIdx: number]: number }>({});
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setLiveSnappedGapKm(0); setOsrmSegmentDistances([]); setGapKmPerSegment({}); }, [liveDate]);
-
-  // Merge road km + gap km per segment → consistent total = sum of timeline labels
-  const enrichedSegmentDistances = osrmSegmentDistances.map(
-    (km, i) => km + (gapKmPerSegment[i] ?? 0)
-  );
-  const enrichedTotalOsrmKm = enrichedSegmentDistances.reduce((s, d) => s + d, 0);
+  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); }, [liveDate]);
   useEffect(() => { setPlaybackOsrmKm(null); }, [playbackDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
@@ -2757,9 +2702,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {enrichedTotalOsrmKm > 0
-                      ? `${enrichedTotalOsrmKm.toFixed(2)} Km`
-                      : `${(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km`}
+                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
@@ -2855,10 +2798,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
-                      {(() => {
-                        const km = enrichedTotalOsrmKm > 0 ? enrichedTotalOsrmKm : enrichedTotalKm;
-                        return km >= 1 ? `${km.toFixed(1)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
-                      })()}
+                      {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
                   </div>
@@ -3068,12 +3008,7 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      // Use OSRM road km + gap km for this segment (matches Google Maps).
-                      // Falls back to server haversine only before snapping completes.
-                      const osrmKm = enrichedSegmentDistances.length > 0
-                        ? (enrichedSegmentDistances[travelIdx - 1] ?? 0)
-                        : 0;
-                      const distKm: number = osrmKm > 0 ? osrmKm : ((seg as any).distanceKm ?? 0);
+                      const distKm: number = (seg as any).distanceKm ?? 0;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
@@ -3142,9 +3077,7 @@ export default function EmployeeProfile() {
                     mapTypeId={sharedMapTypeId}
                     onMapTypeChange={setSharedMapTypeId}
                     onSnappedKm={setLiveSnappedKm}
-                    onSnappedGapKm={setLiveSnappedGapKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
-                    onGapKmPerSegment={setGapKmPerSegment}
                     highlightedSegment={highlightedSegment}
                     overspeedPoints={overspeedMapPoints}
                   />
