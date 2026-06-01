@@ -923,7 +923,14 @@ function LiveMap({
   const signalGapPairsForSnap = useMemo(() => {
     const SIGNAL_GAP_MS = 5 * 60 * 1000; // 5 min — matches child signalGapLines threshold
     const SIGNAL_GAP_MIN_DIST_M = 100;   // 100 m — match child threshold
-    const valid = filteredLocationPoints.filter(p => p.latitude && p.longitude && p.recordedAt);
+    // Only use GPS pings with accuracy ≤ 150 m as gap endpoints. A poor-accuracy ping
+    // placed 300 m off the road causes the routing engine to route to a distant overpass
+    // or lane, creating a ghost V-shape that adds hundreds of extra km to the total.
+    const MAX_ACCURACY_M = 150;
+    const valid = filteredLocationPoints.filter(p =>
+      p.latitude && p.longitude && p.recordedAt &&
+      (p.accuracy == null || Number(p.accuracy) <= MAX_ACCURACY_M)
+    );
     const segs = segments ?? [];
     // Only suppress gaps inside STOPPAGE segments — gaps inside travel segments are
     // genuine signal drops that need the red line shown on the map.
@@ -1234,30 +1241,23 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
   };
 
   // ── Google Directions API (via server proxy) — priority #1 ──────────────────
-  // Uses up to 25 waypoints (Google's max) sampled evenly from the GPS trace so Google
-  // follows the actual road driven. More waypoints = correct road selection on routes
-  // with parallel highways, bypasses, or multi-turn city segments.
+  // Uses start + geographic midpoint + end (3 waypoints).
+  // Cellular GPS pings carry ±50–300 m accuracy noise — passing all of them as
+  // "via:" waypoints forces Google to detour through side streets at each noisy ping,
+  // inflating the total distance significantly. 3 clean anchor points gives the same
+  // km figure as typing the journey into Google Maps yourself — accurate, no noise.
   const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      // Google Directions supports max 25 waypoints (origin + 23 vias + destination).
-      // Sample GPS pings evenly so Google follows the actual road driven rather than
-      // computing the fastest route between just start and end.
-      const MAX_WP = 25;
-      let sampled: [number, number][];
-      if (pts.length <= MAX_WP) {
-        sampled = pts;
-      } else {
-        // Always include first and last; sample intermediates evenly
-        const step = (pts.length - 1) / (MAX_WP - 1);
-        sampled = Array.from({ length: MAX_WP }, (_, i) => {
-          const idx = Math.min(Math.round(i * step), pts.length - 1);
-          return pts[idx];
-        });
-        // Deduplicate consecutive identical points
-        sampled = sampled.filter((p, i) => i === 0 || p[0] !== sampled[i - 1][0] || p[1] !== sampled[i - 1][1]);
+      const waypoints: { lat: number; lng: number }[] = [
+        { lat: pts[0][0], lng: pts[0][1] },
+      ];
+      // Add geographic midpoint so Google picks the correct road when two parallel
+      // roads exist (e.g. highway vs service road, NH vs SH).
+      if (pts.length >= 5) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        waypoints.push({ lat: mid[0], lng: mid[1] });
       }
-      if (sampled.length < 2) return null;
-      const waypoints = sampled.map(([lat, lng]) => ({ lat, lng }));
+      waypoints.push({ lat: pts[pts.length - 1][0], lng: pts[pts.length - 1][1] });
       const res = await fetch("/api/google-directions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1398,6 +1398,16 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 // Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
 // it produces noisy winding paths. Route/v1 gives a clean simplified road route.
 async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<{ path: [number, number][]; distanceM: number }> {
+  // If the two endpoints are more than 80 km apart (haversine), the GPS readings are
+  // almost certainly inaccurate (phone woke up at wrong location, satellite drift, etc.).
+  // Routing between them via road network would create a 200+ km ghost detour.
+  // Fall back to straight-line haversine so the distance stays honest.
+  const MAX_GAP_ROUTE_KM = 80;
+  const haversineDist = haversineKm(p1[0], p1[1], p2[0], p2[1]);
+  if (haversineDist > MAX_GAP_ROUTE_KM) {
+    return { path: [p1, p2], distanceM: haversineDist * 1000 };
+  }
+
   // Try Google Directions first for signal-gap segments too
   try {
     const res = await fetch("/api/google-directions", {
