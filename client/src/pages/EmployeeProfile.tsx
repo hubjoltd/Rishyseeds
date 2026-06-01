@@ -1209,23 +1209,30 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
   };
 
   // ── Google Directions API (via server proxy) — priority #1 ──────────────────
-  // Uses start + geographic midpoint + end (max 3 waypoints).
-  // Rationale: cellular GPS pings carry ±50–300 m accuracy noise; passing 25 noisy
-  // "via:" waypoints forces Google to detour through side streets at each noisy ping,
-  // inflating the total distance significantly. Using 3 clean anchor points gives the
-  // same km figure as typing the journey into Google Maps yourself — accurate, no noise.
+  // Uses up to 25 waypoints (Google's max) sampled evenly from the GPS trace so Google
+  // follows the actual road driven. More waypoints = correct road selection on routes
+  // with parallel highways, bypasses, or multi-turn city segments.
   const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      const waypoints: { lat: number; lng: number }[] = [
-        { lat: pts[0][0], lng: pts[0][1] },
-      ];
-      // Add geographic midpoint for segments with enough pings so Google picks the
-      // correct road when two parallel roads exist (e.g. highway vs service road).
-      if (pts.length >= 5) {
-        const mid = pts[Math.floor(pts.length / 2)];
-        waypoints.push({ lat: mid[0], lng: mid[1] });
+      // Google Directions supports max 25 waypoints (origin + 23 vias + destination).
+      // Sample GPS pings evenly so Google follows the actual road driven rather than
+      // computing the fastest route between just start and end.
+      const MAX_WP = 25;
+      let sampled: [number, number][];
+      if (pts.length <= MAX_WP) {
+        sampled = pts;
+      } else {
+        // Always include first and last; sample intermediates evenly
+        const step = (pts.length - 1) / (MAX_WP - 1);
+        sampled = Array.from({ length: MAX_WP }, (_, i) => {
+          const idx = Math.min(Math.round(i * step), pts.length - 1);
+          return pts[idx];
+        });
+        // Deduplicate consecutive identical points
+        sampled = sampled.filter((p, i) => i === 0 || p[0] !== sampled[i - 1][0] || p[1] !== sampled[i - 1][1]);
       }
-      waypoints.push({ lat: pts[pts.length - 1][0], lng: pts[pts.length - 1][1] });
+      if (sampled.length < 2) return null;
+      const waypoints = sampled.map(([lat, lng]) => ({ lat, lng }));
       const res = await fetch("/api/google-directions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
