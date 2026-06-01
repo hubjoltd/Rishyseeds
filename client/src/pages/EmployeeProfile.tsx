@@ -1209,14 +1209,23 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
   };
 
   // ── Google Directions API (via server proxy) — priority #1 ──────────────────
-  // Sends up to 25 sampled GPS waypoints. Google routes through every waypoint
-  // in order, giving road-accurate distances matching Google Maps exactly.
+  // Uses start + geographic midpoint + end (max 3 waypoints).
+  // Rationale: cellular GPS pings carry ±50–300 m accuracy noise; passing 25 noisy
+  // "via:" waypoints forces Google to detour through side streets at each noisy ping,
+  // inflating the total distance significantly. Using 3 clean anchor points gives the
+  // same km figure as typing the journey into Google Maps yourself — accurate, no noise.
   const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      // Sample down to max 25 points (Google Directions limit)
-      const step = Math.max(1, Math.ceil(pts.length / 23));
-      const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
-      const waypoints = sample.map(([lat, lng]) => ({ lat, lng }));
+      const waypoints: { lat: number; lng: number }[] = [
+        { lat: pts[0][0], lng: pts[0][1] },
+      ];
+      // Add geographic midpoint for segments with enough pings so Google picks the
+      // correct road when two parallel roads exist (e.g. highway vs service road).
+      if (pts.length >= 5) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        waypoints.push({ lat: mid[0], lng: mid[1] });
+      }
+      waypoints.push({ lat: pts[pts.length - 1][0], lng: pts[pts.length - 1][1] });
       const res = await fetch("/api/google-directions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
