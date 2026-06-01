@@ -346,8 +346,9 @@ function LiveMapInner({
         const p1: [number, number] = [Number(filtered[i - 1].latitude), Number(filtered[i - 1].longitude)];
         const p2: [number, number] = [Number(filtered[i].latitude), Number(filtered[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        // Skip gaps that fall inside a stoppage (not signal loss, just parked time)
-        if (stoppageRanges.some(s => s.start <= t1 && s.end > t1)) continue;
+        // Skip gaps that overlap ANY stoppage window: blue lines already anchor to the
+        // stoppage marker on both sides, so no red line is needed to bridge this gap.
+        if (stoppageRanges.some(s => s.start < t2 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -968,7 +969,8 @@ function LiveMap({
         const p1: [number, number] = [Number(valid[i - 1].latitude), Number(valid[i - 1].longitude)];
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
+        // Skip gaps that overlap ANY stoppage: blue lines already anchor to it from both sides.
+        if (stoppageRanges.some((s: any) => s.start < t2 && s.end > t1)) continue;
         gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
@@ -1859,7 +1861,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
         const p1 = routeWithTime[i - 1].pos;
         const p2 = routeWithTime[i].pos;
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
-        if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
+        // Skip gaps that overlap ANY stoppage: blue lines already anchor to it from both sides.
+        if (stoppageRanges.some((s: any) => s.start < t2 && s.end > t1)) continue;
         gaps.push({ path: [p1, p2], gapMins: Math.round(gap / 60000) });
       }
     }
