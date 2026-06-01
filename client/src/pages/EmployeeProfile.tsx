@@ -456,36 +456,26 @@ function LiveMapInner({
     <>
       <TileLayer key={mapTypeId} url={tile.url} {...(tile.subdomains !== undefined ? { subdomains: tile.subdomains } : {})} attribution={tile.attr} maxZoom={20} />
 
-      {/* ── Route line — one polyline per travel segment, no connecting lines between segments ── */}
-      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap.
-          The all-or-nothing every() check hid routes on small/unmapped roads where
-          OSRM fails for just that one segment while others snap fine. */}
+      {/* ── Route line — one polyline per travel segment, no connecting lines between segments ──
+          Uses a single stable key per segment so React-Leaflet calls setLatLngs() when
+          snapped coords arrive instead of unmounting/remounting the SVG path.
+          Unmount→remount was the cause of the "invisible line" flicker during OSRM snapping. */}
       {travelSegmentsPoints.map((seg, i) => {
-        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
-        if (hasSnapped || seg.length <= 1) return null;
+        const snapped = snappedSegments[i];
+        const hasSnapped = snapped && snapped.length > 1;
         const smoothed = smoothPolyline(seg);
+        // Always prefer snapped (road-accurate). Fall back to raw GPS while OSRM is in-flight.
+        const positions = hasSnapped ? snapped : (seg.length > 1 ? smoothed : null);
+        if (!positions) return null;
         const hi = isSegHighlighted(i);
         return (
-          <Fragment key={`raw-seg-${i}`}>
-            {hi && <Polyline positions={smoothed} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
-            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={smoothed} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          <Fragment key={`seg-${i}`}>
+            {hi && <Polyline positions={positions} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
-      {/* Once OSRM returns: one snapped polyline per segment */}
-      {snappedSegments.map((seg, i) =>
-        seg.length > 1 ? (() => {
-          const hi = isSegHighlighted(i);
-          return (
-            <Fragment key={`snap-seg-${i}`}>
-              {hi && <Polyline positions={seg} pathOptions={{ color: "#fbbf24", weight: 18, opacity: 0.65, lineCap: "round", lineJoin: "round" }} />}
-              <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: hi ? 14 : 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-              <Polyline positions={seg} pathOptions={{ color: hi ? "#0ea5e9" : "#1565C0", weight: hi ? 9 : 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-            </Fragment>
-          );
-        })() : null
-      )}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
       {travelSegmentsPoints.every(s => s.length <= 1) && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
@@ -1484,28 +1474,22 @@ function PlaybackMapInner({
       <MapRefCapture onReady={onMapReady} />
       <PbBoundsFitter points={allRoutePts} />
 
-      {/* ── Route lines — one per sub-segment (split at signal gaps) ── */}
-      {/* Per-segment fallback: show raw GPS for any segment OSRM couldn't snap. */}
+      {/* ── Route lines — one per sub-segment (split at signal gaps) ──
+          Single stable key per segment so React-Leaflet calls setLatLngs() on position
+          change instead of unmounting/remounting the SVG path — prevents flicker. */}
       {rawSegments.map((seg, i) => {
-        const hasSnapped = snappedSegments[i] && snappedSegments[i].length > 1;
-        if (hasSnapped || seg.length <= 1) return null;
+        const snapped = snappedSegments[i];
+        const hasSnapped = snapped && snapped.length > 1;
         const smoothed = smoothPolyline(seg);
+        const positions = hasSnapped ? snapped : (seg.length > 1 ? smoothed : null);
+        if (!positions) return null;
         return (
-          <Fragment key={`pb-raw-${i}`}>
-            <Polyline positions={smoothed} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={smoothed} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+          <Fragment key={`pb-seg-${i}`}>
+            <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+            <Polyline positions={positions} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
           </Fragment>
         );
       })}
-      {/* Once OSRM returns: snapped road lines per segment */}
-      {snappedSegments.map((seg, i) =>
-        seg.length > 1 ? (
-          <Fragment key={`pb-snap-${i}`}>
-            <Polyline positions={seg} pathOptions={{ color: "#ffffff", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-            <Polyline positions={seg} pathOptions={{ color: "#1565C0", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }} />
-          </Fragment>
-        ) : null
-      )}
 
       {/* Signal-drop gaps — road-snapped red line indicating signal loss */}
       {signalGapLines.map((gap, i) => {
@@ -2817,7 +2801,10 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
-                      {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
+                      {(() => {
+                        const km = liveSnappedKm !== null ? liveSnappedKm : enrichedTotalKm;
+                        return km >= 1 ? `${km.toFixed(1)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
+                      })()}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
                   </div>
