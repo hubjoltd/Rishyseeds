@@ -594,6 +594,7 @@ function LiveMap({
   mapTypeId,
   onMapTypeChange,
   onSnappedKm,
+  onSnappedGapKm,
   onOsrmSegmentDistances,
   highlightedSegment,
   overspeedPoints,
@@ -608,13 +609,14 @@ function LiveMap({
   mapTypeId: string;
   onMapTypeChange: (t: string) => void;
   onSnappedKm?: (km: number) => void;
+  onSnappedGapKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
   highlightedSegment?: HighlightSegment | null;
   overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [snappedSegments, setSnappedSegments] = useState<[number, number][][]>([]);
-  const [snappedGapSegments, setSnappedGapSegments] = useState<{ path: [number, number][]; gapMins: number }[]>([]);
+  const [snappedGapSegments, setSnappedGapSegments] = useState<{ path: [number, number][]; gapMins: number; distanceM: number }[]>([]);
   const [snapping, setSnapping] = useState(false);
   const lastSnapCount = useRef(0);
 
@@ -966,14 +968,17 @@ function LiveMap({
   }, [filteredLocationPoints, segments]);
 
   useEffect(() => {
-    if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); return; }
+    if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); if (onSnappedGapKm) onSnappedGapKm(0); return; }
     let cancelled = false;
     Promise.all(signalGapPairsForSnap.map(g => osrmSnapGap(g.pair[0], g.pair[1]))).then(results => {
       if (!cancelled) {
-        setSnappedGapSegments(results.map((path, i) => ({
-          path,
+        setSnappedGapSegments(results.map((r, i) => ({
+          path: r.path,
           gapMins: signalGapPairsForSnap[i].gapMins,
+          distanceM: r.distanceM,
         })));
+        const totalGapKm = results.reduce((s, r) => s + r.distanceM, 0) / 1000;
+        if (onSnappedGapKm) onSnappedGapKm(totalGapKm);
       }
     });
     return () => { cancelled = true; };
@@ -1373,7 +1378,7 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
 // Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
 // it produces noisy winding paths. Route/v1 gives a clean simplified road route.
-async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
+async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<{ path: [number, number][]; distanceM: number }> {
   // Try Google Directions first for signal-gap segments too
   try {
     const res = await fetch("/api/google-directions", {
@@ -1384,7 +1389,9 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.polyline && data.polyline.length > 1) return data.polyline as [number, number][];
+      if (data.polyline && data.polyline.length > 1) {
+        return { path: data.polyline as [number, number][], distanceM: data.distanceM ?? 0 };
+      }
     }
   } catch {}
   // Fallback: OSRM route/v1
@@ -1394,15 +1401,23 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    if (!res.ok) return [p1, p2];
+    if (!res.ok) {
+      const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+      return { path: [p1, p2], distanceM: fallbackDist };
+    }
     const data = await res.json();
-    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return [p1, p2];
+    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) {
+      const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+      return { path: [p1, p2], distanceM: fallbackDist };
+    }
     const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
       ([lng, lat]: [number, number]) => [lat, lng]
     );
-    return coords.length > 1 ? coords : [p1, p2];
+    const distanceM: number = data.routes[0].distance ?? 0;
+    return coords.length > 1 ? { path: coords, distanceM } : { path: [p1, p2], distanceM };
   } catch {
-    return [p1, p2];
+    const fallbackDist = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+    return { path: [p1, p2], distanceM: fallbackDist };
   }
 }
 
@@ -2141,10 +2156,11 @@ export default function EmployeeProfile() {
   });
 
   const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
+  const [liveSnappedGapKm, setLiveSnappedGapKm] = useState<number>(0);
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); }, [liveDate]);
+  useEffect(() => { setLiveSnappedKm(null); setLiveSnappedGapKm(0); setOsrmSegmentDistances([]); }, [liveDate]);
   useEffect(() => { setPlaybackOsrmKm(null); }, [playbackDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
@@ -2802,7 +2818,7 @@ export default function EmployeeProfile() {
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
                       {(() => {
-                        const km = liveSnappedKm !== null ? liveSnappedKm : enrichedTotalKm;
+                        const km = liveSnappedKm !== null ? liveSnappedKm + liveSnappedGapKm : enrichedTotalKm;
                         return km >= 1 ? `${km.toFixed(1)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
                       })()}
                     </span>
@@ -3083,6 +3099,7 @@ export default function EmployeeProfile() {
                     mapTypeId={sharedMapTypeId}
                     onMapTypeChange={setSharedMapTypeId}
                     onSnappedKm={setLiveSnappedKm}
+                    onSnappedGapKm={setLiveSnappedGapKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
                     highlightedSegment={highlightedSegment}
                     overspeedPoints={overspeedMapPoints}
