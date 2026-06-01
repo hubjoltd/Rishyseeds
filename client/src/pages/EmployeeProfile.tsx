@@ -605,6 +605,7 @@ function LiveMap({
   onMapTypeChange,
   onSnappedKm,
   onOsrmSegmentDistances,
+  onGapKm,
   highlightedSegment,
   overspeedPoints,
 }: {
@@ -619,6 +620,7 @@ function LiveMap({
   onMapTypeChange: (t: string) => void;
   onSnappedKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
+  onGapKm?: (km: number) => void;
   highlightedSegment?: HighlightSegment | null;
   overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
@@ -961,10 +963,12 @@ function LiveMap({
     let cancelled = false;
     Promise.all(signalGapPairsForSnap.map(g => osrmSnapGap(g.pair[0], g.pair[1]))).then(results => {
       if (!cancelled) {
-        setSnappedGapSegments(results.map((path, i) => ({
-          path,
+        setSnappedGapSegments(results.map((r, i) => ({
+          path: r.coords,
           gapMins: signalGapPairsForSnap[i].gapMins,
         })));
+        const totalGapKm = results.reduce((s, r) => s + r.distanceM / 1000, 0);
+        if (totalGapKm > 0) onGapKm?.(totalGapKm);
       }
     });
     return () => { cancelled = true; };
@@ -1364,7 +1368,8 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
 // Snaps a 2-point signal-gap pair to the road network using route/v1 only.
 // Map-match (tryMatch) is designed for dense GPS traces; with just 2 endpoints
 // it produces noisy winding paths. Route/v1 gives a clean simplified road route.
-async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<[number, number][]> {
+// Returns coords AND the road distance so gap km is included in the trip total.
+async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<{ coords: [number, number][]; distanceM: number }> {
   // Try Google Directions first for signal-gap segments too
   try {
     const res = await fetch("/api/google-directions", {
@@ -1375,7 +1380,8 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.polyline && data.polyline.length > 1) return data.polyline as [number, number][];
+      if (data.polyline && data.polyline.length > 1 && data.distanceM > 0)
+        return { coords: data.polyline as [number, number][], distanceM: data.distanceM };
     }
   } catch {}
   // Fallback: OSRM route/v1
@@ -1385,15 +1391,23 @@ async function osrmSnapGap(p1: [number, number], p2: [number, number]): Promise<
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    if (!res.ok) return [p1, p2];
+    if (!res.ok) {
+      const fallbackM = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+      return { coords: [p1, p2], distanceM: fallbackM };
+    }
     const data = await res.json();
-    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) return [p1, p2];
+    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates) {
+      const fallbackM = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+      return { coords: [p1, p2], distanceM: fallbackM };
+    }
     const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
       ([lng, lat]: [number, number]) => [lat, lng]
     );
-    return coords.length > 1 ? coords : [p1, p2];
+    const distanceM: number = data.routes[0].distance ?? haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+    return coords.length > 1 ? { coords, distanceM } : { coords: [p1, p2], distanceM };
   } catch {
-    return [p1, p2];
+    const fallbackM = haversineKm(p1[0], p1[1], p2[0], p2[1]) * 1000;
+    return { coords: [p1, p2], distanceM: fallbackM };
   }
 }
 
@@ -1593,7 +1607,7 @@ function PlaybackMapInner({
 
 const PB_SPEEDS = [1, 2, 5, 10, 20];
 
-function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, attendanceRecords, onOsrmDistance }: {
+function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, attendanceRecords, onOsrmDistance, onGapKm }: {
   trips: TripWithVisits[];
   date: string;
   employeeId: number;
@@ -1601,6 +1615,7 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   onMapTypeChange: (t: string) => void;
   attendanceRecords: any[];
   onOsrmDistance?: (km: number) => void;
+  onGapKm?: (km: number) => void;
 }) {
   const [layerOpen, setLayerOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -1813,10 +1828,12 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
     let cancelled = false;
     Promise.all(pbSignalGapLines.map(g => osrmSnapGap(g.path[0], g.path[1]))).then(results => {
       if (!cancelled) {
-        setSnappedPbGapSegments(results.map((path, i) => ({
-          path,
+        setSnappedPbGapSegments(results.map((r, i) => ({
+          path: r.coords,
           gapMins: pbSignalGapLines[i].gapMins,
         })));
+        const totalGapKm = results.reduce((s, r) => s + r.distanceM / 1000, 0);
+        if (totalGapKm > 0) onGapKm?.(totalGapKm);
       }
     });
     return () => { cancelled = true; };
@@ -2138,11 +2155,13 @@ export default function EmployeeProfile() {
   });
 
   const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
+  const [liveGapKm, setLiveGapKm] = useState<number>(0);
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
+  const [playbackGapKm, setPlaybackGapKm] = useState<number>(0);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); }, [liveDate]);
-  useEffect(() => { setPlaybackOsrmKm(null); }, [playbackDate]);
+  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); }, [liveDate]);
+  useEffect(() => { setPlaybackOsrmKm(null); setPlaybackGapKm(0); }, [playbackDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
     points: any[];
@@ -2702,7 +2721,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km
+                    {((locationData?.totalKm ?? enrichedTotalKm) + liveGapKm).toFixed(2)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
@@ -3078,6 +3097,7 @@ export default function EmployeeProfile() {
                     onMapTypeChange={setSharedMapTypeId}
                     onSnappedKm={setLiveSnappedKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
+                    onGapKm={setLiveGapKm}
                     highlightedSegment={highlightedSegment}
                     overspeedPoints={overspeedMapPoints}
                   />
@@ -3114,7 +3134,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-2 gap-1 text-[11px]">
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Distance</span>
-                    <span className="font-bold text-foreground">{playbackKm.toFixed(2)} km</span>
+                    <span className="font-bold text-foreground">{(playbackKm + playbackGapKm).toFixed(2)} km</span>
                   </div>
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Stoppages</span>
@@ -3237,6 +3257,7 @@ export default function EmployeeProfile() {
                   onMapTypeChange={setSharedMapTypeId}
                   attendanceRecords={attendanceRecords}
                   onOsrmDistance={setPlaybackOsrmKm}
+                  onGapKm={setPlaybackGapKm}
                 />
               )}
             </div>
