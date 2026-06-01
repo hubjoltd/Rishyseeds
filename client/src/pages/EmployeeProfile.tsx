@@ -558,6 +558,7 @@ function LiveMap({
   onSnappedKm,
   onSnappedGapKm,
   onOsrmSegmentDistances,
+  onGapKmPerSegment,
   highlightedSegment,
   overspeedPoints,
 }: {
@@ -573,6 +574,7 @@ function LiveMap({
   onSnappedKm?: (km: number) => void;
   onSnappedGapKm?: (km: number) => void;
   onOsrmSegmentDistances?: (kmPerSegment: number[]) => void;
+  onGapKmPerSegment?: (kmBySegIdx: { [segIdx: number]: number }) => void;
   highlightedSegment?: HighlightSegment | null;
   overspeedPoints?: { lat: number; lng: number; speedKmh: number }[];
 }) {
@@ -929,7 +931,9 @@ function LiveMap({
       start: new Date(s.startTime).getTime(),
       end:   new Date(s.endTime).getTime(),
     }));
-    const gaps: { pair: [[number, number], [number, number]]; gapMins: number }[] = [];
+    // Build travel-only index so we can tag each gap with its parent segment
+    const travelSegs = segs.filter((s: any) => s.type === "travelled");
+    const gaps: { pair: [[number, number], [number, number]]; gapMins: number; segmentIdx: number }[] = [];
     for (let i = 1; i < valid.length; i++) {
       const t1 = new Date(valid[i - 1].recordedAt).getTime();
       const t2 = new Date(valid[i].recordedAt).getTime();
@@ -939,14 +943,25 @@ function LiveMap({
         const p2: [number, number] = [Number(valid[i].latitude), Number(valid[i].longitude)];
         if (haversineM(p1[0], p1[1], p2[0], p2[1]) < SIGNAL_GAP_MIN_DIST_M) continue;
         if (stoppageRanges.some((s: any) => s.start <= t1 && s.end > t1)) continue;
-        gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000) });
+        // Tag this gap with the travel segment it falls inside (0-based travel-only index)
+        const segIdx = travelSegs.findIndex((s: any) => {
+          const sStart = new Date(s.startTime).getTime();
+          const sEnd   = new Date(s.endTime).getTime();
+          return t1 >= sStart && t1 <= sEnd + 2 * 60 * 1000;
+        });
+        gaps.push({ pair: [p1, p2], gapMins: Math.round(gap / 60000), segmentIdx: segIdx });
       }
     }
     return gaps;
   }, [filteredLocationPoints, segments]);
 
   useEffect(() => {
-    if (signalGapPairsForSnap.length === 0) { setSnappedGapSegments([]); if (onSnappedGapKm) onSnappedGapKm(0); return; }
+    if (signalGapPairsForSnap.length === 0) {
+      setSnappedGapSegments([]);
+      if (onSnappedGapKm) onSnappedGapKm(0);
+      if (onGapKmPerSegment) onGapKmPerSegment({});
+      return;
+    }
     let cancelled = false;
     Promise.all(signalGapPairsForSnap.map(g => osrmSnapGap(g.pair[0], g.pair[1]))).then(results => {
       if (!cancelled) {
@@ -957,6 +972,16 @@ function LiveMap({
         })));
         const totalGapKm = results.reduce((s, r) => s + r.distanceM, 0) / 1000;
         if (onSnappedGapKm) onSnappedGapKm(totalGapKm);
+        // Build per-segment gap km map so parent can include gap distance in each
+        // segment's displayed label (total = sum of timeline labels)
+        if (onGapKmPerSegment) {
+          const bySegIdx: { [segIdx: number]: number } = {};
+          results.forEach((r, i) => {
+            const si = signalGapPairsForSnap[i].segmentIdx;
+            if (si >= 0) bySegIdx[si] = (bySegIdx[si] ?? 0) + r.distanceM / 1000;
+          });
+          onGapKmPerSegment(bySegIdx);
+        }
       }
     });
     return () => { cancelled = true; };
@@ -2152,9 +2177,16 @@ export default function EmployeeProfile() {
   const [liveSnappedKm, setLiveSnappedKm] = useState<number | null>(null);
   const [liveSnappedGapKm, setLiveSnappedGapKm] = useState<number>(0);
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
+  const [gapKmPerSegment, setGapKmPerSegment] = useState<{ [segIdx: number]: number }>({});
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setLiveSnappedGapKm(0); setOsrmSegmentDistances([]); }, [liveDate]);
+  useEffect(() => { setLiveSnappedKm(null); setLiveSnappedGapKm(0); setOsrmSegmentDistances([]); setGapKmPerSegment({}); }, [liveDate]);
+
+  // Merge road km + gap km per segment → consistent total = sum of timeline labels
+  const enrichedSegmentDistances = osrmSegmentDistances.map(
+    (km, i) => km + (gapKmPerSegment[i] ?? 0)
+  );
+  const enrichedTotalOsrmKm = enrichedSegmentDistances.reduce((s, d) => s + d, 0);
   useEffect(() => { setPlaybackOsrmKm(null); }, [playbackDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
@@ -2715,8 +2747,8 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {liveSnappedKm !== null
-                      ? `${(liveSnappedKm + liveSnappedGapKm).toFixed(2)} Km`
+                    {enrichedTotalOsrmKm > 0
+                      ? `${enrichedTotalOsrmKm.toFixed(2)} Km`
                       : `${(locationData?.totalKm ?? enrichedTotalKm).toFixed(2)} Km`}
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
@@ -2814,7 +2846,7 @@ export default function EmployeeProfile() {
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
                       {(() => {
-                        const km = liveSnappedKm !== null ? liveSnappedKm + liveSnappedGapKm : enrichedTotalKm;
+                        const km = enrichedTotalOsrmKm > 0 ? enrichedTotalOsrmKm : enrichedTotalKm;
                         return km >= 1 ? `${km.toFixed(1)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
                       })()}
                     </span>
@@ -3026,10 +3058,10 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      // Use OSRM road-snapped distance (matches Google Maps) when available.
+                      // Use OSRM road km + gap km for this segment (matches Google Maps).
                       // Falls back to server haversine only before snapping completes.
-                      const osrmKm = osrmSegmentDistances.length > 0
-                        ? (osrmSegmentDistances[travelIdx - 1] ?? 0)
+                      const osrmKm = enrichedSegmentDistances.length > 0
+                        ? (enrichedSegmentDistances[travelIdx - 1] ?? 0)
                         : 0;
                       const distKm: number = osrmKm > 0 ? osrmKm : ((seg as any).distanceKm ?? 0);
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
@@ -3102,6 +3134,7 @@ export default function EmployeeProfile() {
                     onSnappedKm={setLiveSnappedKm}
                     onSnappedGapKm={setLiveSnappedGapKm}
                     onOsrmSegmentDistances={setOsrmSegmentDistances}
+                    onGapKmPerSegment={setGapKmPerSegment}
                     highlightedSegment={highlightedSegment}
                     overspeedPoints={overspeedMapPoints}
                   />
