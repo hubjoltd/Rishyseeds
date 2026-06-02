@@ -737,12 +737,11 @@ function LiveMap({
         if (!p.latitude || !p.longitude || !p.recordedAt) return false;
         const t = new Date(p.recordedAt).getTime();
         if (t < segStart || t > segEndExtended) return false;
-        // 500 m threshold: cellular GPS in rural Telangana often reports 300-500 m accuracy.
-        // The old 200 m limit was silently dropping all pings for early travel segments,
-        // leaving those legs invisible on the map. OSRM map-match handles noisy GPS well,
-        // so we only reject extreme outliers (towers reporting > 500 m).
+        // 250 m threshold: rejects the worst cell-tower / WiFi pings that cause
+        // rectangular box artifacts on the map while still keeping rural pings.
+        // Pings worse than 250 m accuracy are too noisy for OSRM to snap correctly.
         const acc = p.accuracy != null && p.accuracy !== "" ? Number(p.accuracy) : null;
-        if (acc !== null && acc > 500) return false;
+        if (acc !== null && acc > 250) return false;
         return true;
       });
 
@@ -1324,32 +1323,60 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
     } catch { return null; }
   };
 
-  // ── Outlier filter: remove pings that jump > 3× the median consecutive distance ──
+  // ── Outlier filter: remove GPS spikes that create rectangular box artifacts ──
+  // Two-pass approach:
+  //   Pass 1 — Detour check: if routing through point[i] adds > 150 m extra distance
+  //     compared to going directly from last→next, the point is a perpendicular spike
+  //     (typical cell-tower / WiFi GPS jump). Real turns have small detour values.
+  //   Pass 2 — Large gap check: drop any point still > 4× median spacing from its
+  //     predecessor (genuine teleport / multi-km GPS error).
   const filterOutlierPts = (pts: [number, number][], ts?: number[]): { pts: [number, number][]; ts?: number[] } => {
     if (pts.length <= 2) return { pts, ts };
+
+    // Pass 1: detour-distance spike removal
+    const pass1Pts: [number, number][] = [pts[0]];
+    const pass1Ts: number[] = ts ? [ts[0]] : [];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const prev = pass1Pts[pass1Pts.length - 1];
+      const cur  = pts[i];
+      const next = pts[i + 1];
+      const dPrevCur  = haversineKm(prev[0], prev[1], cur[0],  cur[1])  * 1000;
+      const dCurNext  = haversineKm(cur[0],  cur[1],  next[0], next[1]) * 1000;
+      const dPrevNext = haversineKm(prev[0], prev[1], next[0], next[1]) * 1000;
+      // Extra metres travelled by going prev→cur→next vs prev→next directly
+      const detourM = (dPrevCur + dCurNext) - dPrevNext;
+      // Skip if detour is large AND it represents a significant fraction of the
+      // direct distance (ratio guard prevents filtering real tight turns).
+      if (detourM > 150 && dPrevNext > 0 && detourM > dPrevNext * 0.5) continue;
+      pass1Pts.push(cur);
+      if (ts) pass1Ts.push(ts[i]);
+    }
+    pass1Pts.push(pts[pts.length - 1]);
+    if (ts) pass1Ts.push(ts[ts.length - 1]);
+
+    const p1 = pass1Pts.length >= 2 ? pass1Pts : pts;
+    const t1 = pass1Pts.length >= 2 ? (ts ? pass1Ts : undefined) : ts;
+
+    // Pass 2: large-gap removal on the spike-cleaned result
     const dists: number[] = [];
-    for (let i = 1; i < pts.length; i++) {
-      dists.push(haversineKm(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) * 1000);
+    for (let i = 1; i < p1.length; i++) {
+      dists.push(haversineKm(p1[i-1][0], p1[i-1][1], p1[i][0], p1[i][1]) * 1000);
     }
     const sorted = [...dists].sort((a, b) => a - b);
     const medianM = sorted[Math.floor(sorted.length / 2)];
-    const maxGapM = Math.max(150, medianM * 3);
-    const outPts: [number, number][] = [pts[0]];
-    const outTs: number[] = ts ? [ts[0]] : [];
-    for (let i = 1; i < pts.length; i++) {
+    const maxGapM = Math.max(200, medianM * 4);
+    const outPts: [number, number][] = [p1[0]];
+    const outTs: number[] = t1 ? [t1[0]] : [];
+    for (let i = 1; i < p1.length; i++) {
       const last = outPts[outPts.length - 1];
-      const d = haversineKm(last[0], last[1], pts[i][0], pts[i][1]) * 1000;
+      const d = haversineKm(last[0], last[1], p1[i][0], p1[i][1]) * 1000;
       if (d <= maxGapM) {
-        if (d >= 100 && i + 1 < pts.length) {
-          const returnD = haversineKm(last[0], last[1], pts[i+1][0], pts[i+1][1]) * 1000;
-          if (returnD < d * 0.5) continue;
-        }
-        outPts.push(pts[i]);
-        if (ts) outTs.push(ts[i]);
+        outPts.push(p1[i]);
+        if (t1) outTs.push(t1[i]);
       }
     }
-    if (outPts.length < 2) return { pts, ts }; // fallback: keep original
-    return { pts: outPts, ts: ts ? outTs : undefined };
+    if (outPts.length < 2) return { pts, ts };
+    return { pts: outPts, ts: t1 ? outTs : undefined };
   };
 
   const { pts: cleanPoints, ts: cleanTs } = filterOutlierPts(points, timestamps);
