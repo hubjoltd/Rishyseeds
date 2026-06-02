@@ -4457,6 +4457,35 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
 
+      // Road-snapped distance via Google Maps Roads API.
+      // Sends GPS points to the snapToRoads endpoint which snaps them to the nearest
+      // road, then sums Haversine between consecutive snapped points.
+      // Falls back to null on any error (caller falls back to totalDistKm with 1.03 factor).
+      async function snapToRoadsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
+        if (pts.length < 2) return null;
+        try {
+          // Roads API limit: 100 points per request — downsample evenly if needed
+          let sample = pts;
+          if (pts.length > 100) {
+            const step = (pts.length - 1) / 99;
+            sample = Array.from({ length: 100 }, (_, i) => pts[Math.min(Math.round(i * step), pts.length - 1)]);
+          }
+          const path = sample.map(p => `${p.lat},${p.lng}`).join("|");
+          const url = `https://roads.googleapis.com/v1/snapToRoads?path=${encodeURIComponent(path)}&interpolate=true&key=${apiKey}`;
+          const resp = await fetch(url);
+          if (!resp.ok) { console.warn(`[snapToRoads] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { snappedPoints?: { location: { latitude: number; longitude: number } }[] };
+          const snapped = data.snappedPoints;
+          if (!snapped?.length || snapped.length < 2) return null;
+          let d = 0;
+          for (let i = 1; i < snapped.length; i++) {
+            d += haversineM(snapped[i - 1].location.latitude, snapped[i - 1].location.longitude,
+              snapped[i].location.latitude, snapped[i].location.longitude);
+          }
+          return d / 1000;
+        } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
+      }
+
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       // Signal-drop guard: cellular GPS pings every 2–7 min naturally; 5 min was too short.
@@ -4632,7 +4661,12 @@ export async function registerRoutes(
               distanceKm += haversineM(prevCluster.lat, prevCluster.lng,
                 Number(extendedTravelPts[0].latitude), Number(extendedTravelPts[0].longitude)) / 1000;
             }
-            distanceKm += totalDistKm(extendedTravelPts);
+            // Use Google Roads API road-snapping for completed segments (followed by a stoppage).
+            // Falls back to haversine * 1.03 if the API key is missing or the call fails.
+            const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+            const snapPts = extendedTravelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+            const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
+            distanceKm += roadKm ?? totalDistKm(extendedTravelPts);
             // Leg 3: only fall back to straight-line centroid bridge when no approach
             // pings were found (i.e. the cluster started stationary immediately)
             const lastExtTp = extendedTravelPts[extendedTravelPts.length - 1];
