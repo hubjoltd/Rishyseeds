@@ -2783,11 +2783,14 @@ export default function EmployeeProfile() {
                     {(() => {
                       const peakKey = `peak_km_${empId}_${liveDate}`;
                       const stored = parseFloat(localStorage.getItem(peakKey) ?? "0") || 0;
-                      const raw = Math.max(locationData?.totalKm ?? 0, enrichedTotalKm) + liveGapKm;
+                      // Use only server totalKm and enriched travelled segments — do NOT add liveGapKm
+                      // because gap km (OSRM estimate for signal-loss periods) can include stoppage
+                      // windows and would inflate the distance counter above the actual travelled km.
+                      const raw = Math.max(locationData?.totalKm ?? 0, enrichedTotalKm);
                       const peak = Math.max(stored, peakDistanceKm.current, raw);
                       peakDistanceKm.current = peak;
                       if (peak > stored) localStorage.setItem(peakKey, String(peak));
-                      return Math.round(peak);
+                      return peak.toFixed(2);
                     })()} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
@@ -3201,7 +3204,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-2 gap-1 text-[11px]">
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Distance</span>
-                    <span className="font-bold text-foreground">{(playbackKm + playbackGapKm).toFixed(2)} km</span>
+                    <span className="font-bold text-foreground">{playbackKm.toFixed(2)} km</span>
                   </div>
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Stoppages</span>
