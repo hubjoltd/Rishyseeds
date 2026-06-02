@@ -1,4 +1,26 @@
 
+// ── Segment distance cache ──────────────────────────────────────────────────
+// Locks each GPS travel segment's distance so it can only ever go UP.
+// Key: `${empId}:${date}:${segStartTimeISO}`  Value: max km seen so far.
+// Cleared for old dates automatically to prevent unbounded growth.
+const _segKmCache = new Map<string, number>();
+let _segKmCacheDate = ""; // last date we pruned for
+function segKmLock(empId: number, date: string, startTime: string, computedKm: number): number {
+  // Prune entries from previous dates whenever the date rolls over
+  if (date !== _segKmCacheDate) {
+    for (const key of _segKmCache.keys()) {
+      if (!key.startsWith(`${empId}:${date}:`)) _segKmCache.delete(key);
+    }
+    _segKmCacheDate = date;
+  }
+  const key = `${empId}:${date}:${startTime}`;
+  const prev = _segKmCache.get(key) ?? 0;
+  const locked = Math.max(prev, computedKm);
+  _segKmCache.set(key, locked);
+  return locked;
+}
+// ───────────────────────────────────────────────────────────────────────────
+
 import type { Express } from "express";
 import type { Server } from "http";
 import { createServer } from "http";
@@ -4626,11 +4648,12 @@ export async function registerRoutes(
               distanceKm += haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude),
                 cluster.lat, cluster.lng) / 1000;
             }
+            const segStart = new Date(extendedTravelPts[0].recordedAt).toISOString();
             segments.push({
               type: "travelled",
-              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+              startTime: segStart,
               endTime: new Date(lastExtTp.recordedAt).toISOString(),
-              distanceKm,
+              distanceKm: segKmLock(empId, date, segStart, distanceKm),
             });
           }
         }
@@ -4658,11 +4681,12 @@ export async function registerRoutes(
           if (actualTailPts.length >= 2) {
             tailDistKm += totalDistKm(actualTailPts);
           }
+          const tailStart = new Date(actualTailPts[0].recordedAt).toISOString();
           segments.push({
             type: "travelled",
-            startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
+            startTime: tailStart,
             endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: tailDistKm,
+            distanceKm: segKmLock(empId, date, tailStart, tailDistKm),
           });
         }
       }
