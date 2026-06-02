@@ -1,22 +1,14 @@
 
-// ── Segment distance cache ──────────────────────────────────────────────────
-// Locks each GPS travel segment's distance so it can only ever go UP.
-// Key: `${empId}:${date}:${segStartTimeISO}`  Value: max km seen so far.
-// Cleared for old dates automatically to prevent unbounded growth.
-const _segKmCache = new Map<string, number>();
-let _segKmCacheDate = ""; // last date we pruned for
-function segKmLock(empId: number, date: string, startTime: string, computedKm: number): number {
-  // Prune entries from previous dates whenever the date rolls over
-  if (date !== _segKmCacheDate) {
-    for (const key of _segKmCache.keys()) {
-      if (!key.startsWith(`${empId}:${date}:`)) _segKmCache.delete(key);
-    }
-    _segKmCacheDate = date;
-  }
-  const key = `${empId}:${date}:${startTime}`;
-  const prev = _segKmCache.get(key) ?? 0;
+// ── Segment distance lock (DB-backed) ───────────────────────────────────────
+// Persists the maximum km ever seen for each GPS travel segment so that
+// server restarts or a new stoppage detection run can never reduce a distance
+// that was already committed. Falls back to the computed value on first call.
+async function segKmLock(empId: number, date: string, startTime: string, computedKm: number): Promise<number> {
+  const prev = await storage.getSegmentKmLock(empId, date, startTime);
   const locked = Math.max(prev, computedKm);
-  _segKmCache.set(key, locked);
+  if (locked > prev) {
+    await storage.setSegmentKmLock(empId, date, startTime, locked);
+  }
   return locked;
 }
 // ───────────────────────────────────────────────────────────────────────────
@@ -4653,7 +4645,7 @@ export async function registerRoutes(
               type: "travelled",
               startTime: segStart,
               endTime: new Date(lastExtTp.recordedAt).toISOString(),
-              distanceKm: segKmLock(empId, date, segStart, distanceKm),
+              distanceKm: await segKmLock(empId, date, segStart, distanceKm),
             });
           }
         }
@@ -4686,7 +4678,7 @@ export async function registerRoutes(
             type: "travelled",
             startTime: tailStart,
             endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: segKmLock(empId, date, tailStart, tailDistKm),
+            distanceKm: await segKmLock(empId, date, tailStart, tailDistKm),
           });
         }
       }

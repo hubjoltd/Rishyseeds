@@ -9,7 +9,7 @@ import {
   tasks, taskComments,
   expenses, expenseComments, expenseAuditHistory,
   employeeLocations,
-  leaves, leaveBalances, holidays, chatMessages, employeeConfigs, pushSubscriptions, companySettings,
+  leaves, leaveBalances, holidays, chatMessages, employeeConfigs, pushSubscriptions, companySettings, gpsSegmentLocks,
   type User, type InsertUser,
   type Batch, type InsertBatch,
   type Location, type InsertLocation,
@@ -271,6 +271,9 @@ export interface IStorage {
   getCompanySetting(key: string): Promise<string | null>;
   setCompanySetting(key: string, value: string): Promise<void>;
   getAllCompanySettings(): Promise<Record<string, string>>;
+  // GPS Segment KM Locks
+  getSegmentKmLock(employeeId: number, date: string, segStart: string): Promise<number>;
+  setSegmentKmLock(employeeId: number, date: string, segStart: string, maxKm: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1388,6 +1391,36 @@ export class DatabaseStorage implements IStorage {
     const result: Record<string, string> = {};
     for (const row of rows) result[row.key] = row.value;
     return result;
+  }
+
+  async getSegmentKmLock(employeeId: number, date: string, segStart: string): Promise<number> {
+    const [row] = await db.select()
+      .from(gpsSegmentLocks)
+      .where(and(
+        eq(gpsSegmentLocks.employeeId, employeeId),
+        eq(gpsSegmentLocks.date, date),
+        eq(gpsSegmentLocks.segStart, segStart),
+      ));
+    return row ? parseFloat(row.maxKm) : 0;
+  }
+
+  async setSegmentKmLock(employeeId: number, date: string, segStart: string, maxKm: number): Promise<void> {
+    const existing = await this.getSegmentKmLock(employeeId, date, segStart);
+    if (maxKm <= existing) return;
+    const [row] = await db.select({ id: gpsSegmentLocks.id })
+      .from(gpsSegmentLocks)
+      .where(and(
+        eq(gpsSegmentLocks.employeeId, employeeId),
+        eq(gpsSegmentLocks.date, date),
+        eq(gpsSegmentLocks.segStart, segStart),
+      ));
+    if (row) {
+      await db.update(gpsSegmentLocks)
+        .set({ maxKm: String(maxKm), updatedAt: new Date() })
+        .where(eq(gpsSegmentLocks.id, row.id));
+    } else {
+      await db.insert(gpsSegmentLocks).values({ employeeId, date, segStart, maxKm: String(maxKm) });
+    }
   }
 }
 

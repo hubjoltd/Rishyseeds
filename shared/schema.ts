@@ -773,6 +773,17 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 });
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 
+// GPS Segment KM Locks — persists the max km seen for each travel segment so
+// server restarts or new stoppage detection never reduces a committed distance.
+export const gpsSegmentLocks = pgTable("gps_segment_locks", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  date: text("date").notNull(),
+  segStart: text("seg_start").notNull(),
+  maxKm: decimal("max_km", { precision: 10, scale: 4 }).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Analytics Response Types
 export interface DashboardStats {
   totalStock: number;
