@@ -2795,7 +2795,7 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {((locationData?.totalKm ?? enrichedTotalKm) + liveGapKm).toFixed(2)} Km
+                    {Math.round((locationData?.totalKm ?? enrichedTotalKm) + liveGapKm)} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
