@@ -101,6 +101,7 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
   const startPhotoRef = useRef<HTMLInputElement>(null);
   const endPhotoRef = useRef<HTMLInputElement>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState<"start" | "end" | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Edit mode state
   const [editMode, setEditMode] = useState(false);
@@ -424,7 +425,7 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                       {expense.startingOdometerPhoto ? (
                         <div className="relative group w-24 h-20">
                           <img src={expense.startingOdometerPhoto} alt="Start odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80"
-                            onClick={() => window.open(expense.startingOdometerPhoto!, "_blank")} data-testid="img-start-odometer" />
+                            onClick={() => setPreviewImage(expense.startingOdometerPhoto!)} data-testid="img-start-odometer" />
                           <button onClick={() => startPhotoRef.current?.click()}
                             className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
                             <Upload className="h-4 w-4" /> Replace
@@ -452,7 +453,7 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                       {expense.endOdometerPhoto ? (
                         <div className="relative group w-24 h-20">
                           <img src={expense.endOdometerPhoto} alt="End odometer" className="w-24 h-20 object-cover rounded border cursor-pointer hover:opacity-80"
-                            onClick={() => window.open(expense.endOdometerPhoto!, "_blank")} data-testid="img-end-odometer" />
+                            onClick={() => setPreviewImage(expense.endOdometerPhoto!)} data-testid="img-end-odometer" />
                           <button onClick={() => endPhotoRef.current?.click()}
                             className="absolute inset-0 bg-black/50 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-xs">
                             <Upload className="h-4 w-4" /> Replace
@@ -592,7 +593,7 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
                         <Label className="text-xs text-muted-foreground font-medium">Bills / Tickets Photo</Label>
                         <div
                           className="relative group w-40 h-32 cursor-pointer"
-                          onClick={() => window.open(exp.billsTicketPhoto, "_blank")}
+                          onClick={() => setPreviewImage(exp.billsTicketPhoto)}
                         >
                           <img
                             src={exp.billsTicketPhoto}
@@ -686,6 +687,27 @@ function ExpenseDetailPage({ expenseId, onBack }: { expenseId: number; onBack: (
           )}
         </div>
       </div>
+
+      {/* Image lightbox overlay */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 bg-black/50 text-white rounded-full p-2 hover:bg-black/70 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={previewImage}
+            alt="Preview"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

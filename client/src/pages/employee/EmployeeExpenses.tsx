@@ -268,6 +268,9 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
   const detailEndOdoPhotoRef = useRef<HTMLInputElement>(null);
   const detailBillsPhotoRef = useRef<HTMLInputElement>(null);
 
+  // Image lightbox preview
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
   // State for completing an "open" expense from the detail view
   const [detailEndOdo, setDetailEndOdo] = useState("");
   const [detailEndOdoFile, setDetailEndOdoFile] = useState<File | null>(null);
@@ -622,7 +625,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 <div>
                   <p className="text-[10px] text-gray-400 mb-1">Photo</p>
                   {exp.startingOdometerPhoto
-                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-24 h-16 object-cover rounded border border-gray-200" />
+                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-24 h-16 object-cover rounded border border-gray-200 cursor-pointer active:opacity-75" onClick={() => setPreviewImage(exp.startingOdometerPhoto)} />
                     : <div className="w-24 h-16 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
                 </div>
               </div>
@@ -750,13 +753,13 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
                 <div>
                   <p className="text-xs text-gray-400 mb-1">Starting Odometer picture</p>
                   {exp.startingOdometerPhoto
-                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                    ? <img src={exp.startingOdometerPhoto} alt="Start odo" className="w-28 h-20 object-cover rounded border border-gray-200 cursor-pointer active:opacity-75" onClick={() => setPreviewImage(exp.startingOdometerPhoto)} />
                     : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 mb-1">End Odometer picture</p>
                   {exp.endOdometerPhoto
-                    ? <img src={exp.endOdometerPhoto} alt="End odo" className="w-28 h-20 object-cover rounded border border-gray-200" />
+                    ? <img src={exp.endOdometerPhoto} alt="End odo" className="w-28 h-20 object-cover rounded border border-gray-200 cursor-pointer active:opacity-75" onClick={() => setPreviewImage(exp.endOdometerPhoto)} />
                     : <div className="w-28 h-20 border border-gray-200 rounded flex items-center justify-center text-[10px] text-gray-300">No photo</div>}
                 </div>
               </div>
@@ -824,7 +827,7 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
           {exp.billsTicketPhoto && (
             <div className="border border-gray-100 rounded-md bg-white px-3 py-3">
               <p className="text-xs text-gray-400 mb-2 font-medium">Bills / Tickets</p>
-              <img src={exp.billsTicketPhoto} alt="Bills" className="w-full h-40 object-cover rounded" />
+              <img src={exp.billsTicketPhoto} alt="Bills" className="w-full h-40 object-cover rounded cursor-pointer active:opacity-75" onClick={() => setPreviewImage(exp.billsTicketPhoto)} />
             </div>
           )}
 
@@ -857,6 +860,27 @@ export default function EmployeeExpenses({ employee }: EmployeeExpensesProps) {
             <ExpenseCommentSection expenseId={exp.id} employeeName={employee.fullName} />
           )}
         </div>
+
+        {/* Image lightbox overlay */}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setPreviewImage(null)}
+          >
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-4 right-4 bg-black/50 text-white rounded-full p-2"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="max-w-full max-h-full object-contain rounded-lg"
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+        )}
       </div>
     );
   }
