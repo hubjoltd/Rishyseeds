@@ -2771,9 +2771,13 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(() => {
+                      const peakKey = `peak_km_${empId}_${liveDate}`;
+                      const stored = parseFloat(localStorage.getItem(peakKey) ?? "0") || 0;
                       const raw = (locationData?.totalKm ?? enrichedTotalKm) + liveGapKm;
-                      if (raw > peakDistanceKm.current) peakDistanceKm.current = raw;
-                      return Math.round(peakDistanceKm.current);
+                      const peak = Math.max(stored, peakDistanceKm.current, raw);
+                      peakDistanceKm.current = peak;
+                      if (peak > stored) localStorage.setItem(peakKey, String(peak));
+                      return Math.round(peak);
                     })()} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
