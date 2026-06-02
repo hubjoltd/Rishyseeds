@@ -2790,7 +2790,7 @@ export default function EmployeeProfile() {
                       const peak = Math.max(stored, peakDistanceKm.current, raw);
                       peakDistanceKm.current = peak;
                       if (peak > stored) localStorage.setItem(peakKey, String(peak));
-                      return peak.toFixed(2);
+                      return Math.round(peak);
                     })()} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
@@ -2887,7 +2887,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
-                      {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
+                      {enrichedTotalKm >= 1 ? `${Math.round(enrichedTotalKm)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
                   </div>
@@ -3204,7 +3204,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-2 gap-1 text-[11px]">
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Distance</span>
-                    <span className="font-bold text-foreground">{playbackKm.toFixed(2)} km</span>
+                    <span className="font-bold text-foreground">{Math.round(playbackKm)} km</span>
                   </div>
                   <div className="flex flex-col items-center bg-white rounded border py-1">
                     <span className="text-muted-foreground text-[9px]">Stoppages</span>
@@ -3278,7 +3278,7 @@ export default function EmployeeProfile() {
                             </div>
                             <div className="flex-1 min-w-0 pt-0.5">
                               <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-semibold text-orange-700">Travelled ({(seg.distanceKm ?? 0).toFixed(2)} km)</p>
+                                <p className="text-[11px] font-semibold text-orange-700">Travelled ({Math.round(seg.distanceKm ?? 0)} km)</p>
                               </div>
                               <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
                             </div>
