@@ -1379,7 +1379,7 @@ export async function registerRoutes(
             }
           }
         }
-        return d;
+        return d * 1.03;
       }
 
       const [records, locPoints] = await Promise.all([
@@ -3119,7 +3119,7 @@ export async function registerRoutes(
             }
           }
         }
-        return d;
+        return d * 1.03;
       }
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
@@ -4523,7 +4523,7 @@ export async function registerRoutes(
             }
           }
         }
-        return d;
+        return d * 1.03;
       }
 
       type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
