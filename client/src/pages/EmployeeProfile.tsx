@@ -2163,6 +2163,16 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
   );
 }
 
+// Monotonic segment distance lock: once a km value is seen for a segment it can only go up.
+// Persisted in localStorage so it survives page refreshes within the same day.
+function lockedSegKm(empId: number, date: string, startTime: string, rawKm: number): number {
+  const key = `seg_km_${empId}_${date}_${startTime}`;
+  const stored = parseFloat(localStorage.getItem(key) ?? "0") || 0;
+  const locked = Math.max(stored, rawKm);
+  if (locked > stored) localStorage.setItem(key, String(locked));
+  return locked;
+}
+
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -2502,10 +2512,10 @@ export default function EmployeeProfile() {
 
   const enrichedTimelineEvents = allTimelineEvents;
 
-  // Sum only "travelled" segments using server-provided distances
+  // Sum only "travelled" segments using server-provided distances (locked — never decrease)
   const enrichedTotalKm = enrichedTimelineEvents.reduce((sum, ev) => {
     if (ev.type === "travelled") {
-      return sum + ((ev as any).distanceKm ?? 0);
+      return sum + lockedSegKm(empId, liveDate, ev.startTime, (ev as any).distanceKm ?? 0);
     }
     return sum;
   }, 0);
@@ -2773,7 +2783,7 @@ export default function EmployeeProfile() {
                     {(() => {
                       const peakKey = `peak_km_${empId}_${liveDate}`;
                       const stored = parseFloat(localStorage.getItem(peakKey) ?? "0") || 0;
-                      const raw = (locationData?.totalKm ?? enrichedTotalKm) + liveGapKm;
+                      const raw = Math.max(locationData?.totalKm ?? 0, enrichedTotalKm) + liveGapKm;
                       const peak = Math.max(stored, peakDistanceKm.current, raw);
                       peakDistanceKm.current = peak;
                       if (peak > stored) localStorage.setItem(peakKey, String(peak));
@@ -3084,7 +3094,7 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      const distKm: number = (seg as any).distanceKm ?? 0;
+                      const distKm: number = lockedSegKm(empId, liveDate, seg.startTime, (seg as any).distanceKm ?? 0);
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
