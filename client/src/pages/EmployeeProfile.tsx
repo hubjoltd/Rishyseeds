@@ -2206,8 +2206,10 @@ export default function EmployeeProfile() {
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
   const [playbackGapKm, setPlaybackGapKm] = useState<number>(0);
+  // Monotonic peak: distance header never goes down mid-day (segment re-detection can lower the raw value)
+  const peakDistanceKm = useRef<number>(0);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); }, [liveDate]);
+  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); peakDistanceKm.current = 0; }, [liveDate]);
   useEffect(() => { setPlaybackOsrmKm(null); setPlaybackGapKm(0); }, [playbackDate]);
 
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
@@ -2768,7 +2770,11 @@ export default function EmployeeProfile() {
                   <span className="text-gray-300 mx-1">|</span>
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
-                    {Math.round((locationData?.totalKm ?? enrichedTotalKm) + liveGapKm)} Km
+                    {(() => {
+                      const raw = (locationData?.totalKm ?? enrichedTotalKm) + liveGapKm;
+                      if (raw > peakDistanceKm.current) peakDistanceKm.current = raw;
+                      return Math.round(peakDistanceKm.current);
+                    })()} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
                 </div>
