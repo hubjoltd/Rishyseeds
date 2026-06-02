@@ -3131,15 +3131,24 @@ export async function registerRoutes(
       const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
       let ci = 0;
       while (ci < points.length) {
-        let sumLat = Number(points[ci].latitude);
-        let sumLng = Number(points[ci].longitude);
+        const anchorLat = Number(points[ci].latitude);
+        const anchorLng = Number(points[ci].longitude);
+        let sumLat = anchorLat;
+        let sumLng = anchorLng;
         let cnt = 1;
         let cj = ci + 1;
         while (cj < points.length) {
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
-          if (haversineM(centLat, centLng, Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) {
-            sumLat += Number(points[cj].latitude); sumLng += Number(points[cj].longitude); cnt++;
+          const pLat = Number(points[cj].latitude);
+          const pLng = Number(points[cj].longitude);
+          // Ping must be within radius of BOTH the rolling centroid AND the anchor
+          // (first ping of the cluster). Without the anchor check, a slow walk in one
+          // direction causes the centroid to drift 2+ km while every ping stays within
+          // 250 m of the ever-moving average — classifying real movement as a stoppage.
+          if (haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
+              haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M) {
+            sumLat += pLat; sumLng += pLng; cnt++;
             cj++;
           } else { break; }
         }
@@ -4564,15 +4573,24 @@ export async function registerRoutes(
       const clusters: StoppageCluster[] = [];
       let i = 0;
       while (i < points.length) {
-        let sumLat = Number(points[i].latitude);
-        let sumLng = Number(points[i].longitude);
+        const anchorLat = Number(points[i].latitude);
+        const anchorLng = Number(points[i].longitude);
+        let sumLat = anchorLat;
+        let sumLng = anchorLng;
         let cnt = 1;
         let j = i + 1;
         while (j < points.length) {
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
-          if (haversineM(centLat, centLng, Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
-            sumLat += Number(points[j].latitude); sumLng += Number(points[j].longitude); cnt++;
+          const pLat = Number(points[j].latitude);
+          const pLng = Number(points[j].longitude);
+          // Ping must be within radius of BOTH the rolling centroid AND the anchor
+          // (first ping of the cluster). Without the anchor check, a slow walk in one
+          // direction causes the centroid to drift 2+ km while every ping stays within
+          // 250 m of the ever-moving average — classifying real movement as a stoppage.
+          if (haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
+              haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M) {
+            sumLat += pLat; sumLng += pLng; cnt++;
             j++;
           } else { break; }
         }
