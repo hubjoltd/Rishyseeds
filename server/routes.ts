@@ -4391,6 +4391,115 @@ export async function registerRoutes(
     }
   });
 
+  // Daily summary for live map grid cards — fast, no Google API, speed×time distance
+  app.get("/api/employees/live-summary", checkPermission('employees', 'view'), async (req, res) => {
+    try {
+      const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const today  = nowIST.toISOString().slice(0, 10);
+      const allLocs = await storage.getEmployeeLocationsForDateRange(today, today);
+      const employees = await storage.getEmployees();
+      const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+
+      // Group by employee
+      const grouped: Record<number, typeof allLocs> = {};
+      for (const loc of allLocs) {
+        if (!grouped[loc.employeeId]) grouped[loc.employeeId] = [];
+        grouped[loc.employeeId].push(loc);
+      }
+
+      const MOVING_SPEED_MS = 1.39; // 5 km/h
+      const STOP_MIN_SECS   = 120;  // 2 min
+      const SIGNAL_GAP_SEC  = 600;
+
+      function haversineSummaryM(lat1: number, lon1: number, lat2: number, lon2: number) {
+        const R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      }
+
+      const summaries = Object.entries(grouped).map(([empIdStr, locs]) => {
+        const empId = Number(empIdStr);
+        const emp   = empMap[empId];
+
+        // Tag each ping as moving/stationary
+        const movingTag: boolean[] = locs.map((p, i) => {
+          const spd = p.speed != null ? Number(p.speed) : null;
+          if (spd !== null) return spd >= MOVING_SPEED_MS;
+          if (i > 0) {
+            const prev = locs[i - 1];
+            const distM = haversineSummaryM(Number(prev.latitude), Number(prev.longitude),
+                                            Number(p.latitude), Number(p.longitude));
+            const dtSec = (new Date(p.recordedAt).getTime() - new Date(prev.recordedAt).getTime()) / 1000;
+            if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) return distM / dtSec >= MOVING_SPEED_MS;
+          }
+          return false;
+        });
+
+        // Run-length encode
+        const runs: { moving: boolean; start: number; end: number }[] = [];
+        for (let k = 0; k < locs.length; k++) {
+          if (runs.length === 0 || runs[runs.length-1].moving !== movingTag[k]) {
+            runs.push({ moving: movingTag[k], start: k, end: k });
+          } else { runs[runs.length-1].end = k; }
+        }
+        // Flip short stationary runs to moving
+        for (const run of runs) {
+          if (!run.moving) {
+            const dur = (new Date(locs[run.end].recordedAt).getTime() - new Date(locs[run.start].recordedAt).getTime()) / 1000;
+            if (dur < STOP_MIN_SECS) run.moving = true;
+          }
+        }
+        // Re-merge
+        const merged: { moving: boolean; start: number; end: number }[] = [];
+        for (const run of runs) {
+          if (merged.length > 0 && merged[merged.length-1].moving === run.moving) {
+            merged[merged.length-1].end = run.end;
+          } else { merged.push({ ...run }); }
+        }
+
+        // Compute km (speed × time trapezoidal) and stoppage count
+        let kmToday = 0;
+        let stoppageCount = 0;
+        for (const run of merged) {
+          const rl = locs.slice(run.start, run.end + 1);
+          if (run.moving) {
+            for (let i = 1; i < rl.length; i++) {
+              const spd  = rl[i].speed     != null ? Number(rl[i].speed)     : 0;
+              const pSpd = rl[i-1].speed   != null ? Number(rl[i-1].speed)   : spd;
+              const dtSec = (new Date(rl[i].recordedAt).getTime() - new Date(rl[i-1].recordedAt).getTime()) / 1000;
+              if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) kmToday += ((spd + pSpd) / 2 * dtSec) / 1000;
+            }
+          } else { stoppageCount++; }
+        }
+
+        const firstPing = locs[0].recordedAt;
+        const lastPing  = locs[locs.length - 1].recordedAt;
+        const last      = locs[locs.length - 1];
+        const timeOnFieldSecs = Math.round((new Date(lastPing).getTime() - new Date(firstPing).getTime()) / 1000);
+
+        return {
+          employeeId:      empId,
+          employeeName:    emp?.fullName      || `Emp #${empId}`,
+          employeeCode:    emp?.employeeCode  || "",
+          kmToday:         Math.round(kmToday * 10) / 10,
+          stoppageCount,
+          timeOnFieldSecs,
+          pingCount:       locs.length,
+          firstPingTime:   new Date(firstPing).toISOString(),
+          lastPingTime:    new Date(lastPing).toISOString(),
+          lastSpeed:       last.speed       != null ? Number(last.speed)       : null,
+          lastBattery:     last.batteryLevel ?? null,
+          lastLatitude:    Number(last.latitude),
+          lastLongitude:   Number(last.longitude),
+        };
+      });
+
+      res.json(summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName)));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to get live summary" });
+    }
+  });
+
   // Admin fetches customer check-ins for an employee on a given date
   app.get("/api/employees/:id/checkins", checkPermission('employees', 'view'), async (req, res) => {
     try {
