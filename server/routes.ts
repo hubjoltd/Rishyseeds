@@ -3131,24 +3131,15 @@ export async function registerRoutes(
       const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
       let ci = 0;
       while (ci < points.length) {
-        const anchorLat = Number(points[ci].latitude);
-        const anchorLng = Number(points[ci].longitude);
-        let sumLat = anchorLat;
-        let sumLng = anchorLng;
+        let sumLat = Number(points[ci].latitude);
+        let sumLng = Number(points[ci].longitude);
         let cnt = 1;
         let cj = ci + 1;
         while (cj < points.length) {
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
-          const pLat = Number(points[cj].latitude);
-          const pLng = Number(points[cj].longitude);
-          // Ping must be within radius of BOTH the rolling centroid AND the anchor
-          // (first ping of the cluster). Without the anchor check, a slow walk in one
-          // direction causes the centroid to drift 2+ km while every ping stays within
-          // 250 m of the ever-moving average — classifying real movement as a stoppage.
-          if (haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
-              haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M) {
-            sumLat += pLat; sumLng += pLng; cnt++;
+          if (haversineM(centLat, centLng, Number(points[cj].latitude), Number(points[cj].longitude)) <= STOPPAGE_RADIUS_M) {
+            sumLat += Number(points[cj].latitude); sumLng += Number(points[cj].longitude); cnt++;
             cj++;
           } else { break; }
         }
@@ -3179,22 +3170,51 @@ export async function registerRoutes(
 
       for (const cluster of clusters) {
         if (cluster.startIdx > prevEnd + 1) {
-          // Travel pings are strictly between the previous stoppage end and this
-          // stoppage start — no approach-ping blending into the stoppage.
-          const travelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
-            const fromLat = prevCentroid ? prevCentroid.lat : Number(travelPts[0].latitude);
-            const fromLng = prevCentroid ? prevCentroid.lng : Number(travelPts[0].longitude);
+          const baseTravelPts = points.slice(prevEnd + 1, cluster.startIdx);
+          if (baseTravelPts.length >= 1) {
+            // Departure anchor: previous stoppage centroid (stable) or first travel ping
+            const fromLat = prevCentroid ? prevCentroid.lat : Number(baseTravelPts[0].latitude);
+            const fromLng = prevCentroid ? prevCentroid.lng : Number(baseTravelPts[0].longitude);
+            // Extend travel to include early cluster pings that still show movement.
+            // These pings fall within the 250 m stoppage radius but the employee was
+            // still driving the approach road.  A straight-line bridge to the centroid
+            // underestimates curved road distance, so we walk the actual GPS trail
+            // instead and stop at the first ping that no longer shows movement.
+            const MAX_APPROACH_PINGS = 10;
+            let approachEndIdx = cluster.startIdx - 1; // default: no approach pings
+            for (let ai = cluster.startIdx; ai <= Math.min(cluster.endIdx, cluster.startIdx + MAX_APPROACH_PINGS - 1); ai++) {
+              const prevPt = ai === cluster.startIdx ? baseTravelPts[baseTravelPts.length - 1] : points[ai - 1];
+              const curPt  = points[ai];
+              const distM  = haversineM(Number(prevPt.latitude), Number(prevPt.longitude), Number(curPt.latitude), Number(curPt.longitude));
+              const dtSec  = (new Date(curPt.recordedAt).getTime() - new Date(prevPt.recordedAt).getTime()) / 1000;
+              if (dtSec > SIGNAL_GAP_SEC) break;
+              const hasSpeed = curPt.speed != null && Number(curPt.speed) > MIN_SPEED_MS;
+              if (hasSpeed) {
+                if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) break;
+                approachEndIdx = ai;
+              } else {
+                if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) break;
+                if (distM >= MIN_DIST_M && (dtSec === 0 || distM / dtSec >= MIN_MOVE_MS)) approachEndIdx = ai;
+                else break;
+              }
+            }
+            // Build extended travel pts: base pings + any moving approach pings
+            const extendedTravelPts = points.slice(prevEnd + 1, approachEndIdx + 1);
             let distanceKm = 0;
-            distanceKm += haversineM(fromLat, fromLng, Number(travelPts[0].latitude), Number(travelPts[0].longitude)) / 1000;
-            distanceKm += totalDistKm(travelPts);
-            // Bridge last travel ping → stoppage centroid (straight line)
-            const lastTp = travelPts[travelPts.length - 1];
-            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude), cluster.lat, cluster.lng) / 1000;
+            // Leg 1: departure centroid → first travel GPS ping
+            distanceKm += haversineM(fromLat, fromLng, Number(extendedTravelPts[0].latitude), Number(extendedTravelPts[0].longitude)) / 1000;
+            // Middle: GPS trail through actual travel + approach pings
+            distanceKm += totalDistKm(extendedTravelPts);
+            // Leg 3: only fall back to straight-line centroid bridge when no approach
+            // pings were found (i.e. the cluster started stationary immediately)
+            const lastExtTp = extendedTravelPts[extendedTravelPts.length - 1];
+            if (approachEndIdx < cluster.startIdx) {
+              distanceKm += haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude), cluster.lat, cluster.lng) / 1000;
+            }
             gpsSegments.push({
               type: "travelled",
-              startTime: new Date(travelPts[0].recordedAt).toISOString(),
-              endTime: new Date(lastTp.recordedAt).toISOString(),
+              startTime: new Date(extendedTravelPts[0].recordedAt).toISOString(),
+              endTime: new Date(lastExtTp.recordedAt).toISOString(),
               distanceKm,
             });
           }
@@ -4544,24 +4564,15 @@ export async function registerRoutes(
       const clusters: StoppageCluster[] = [];
       let i = 0;
       while (i < points.length) {
-        const anchorLat = Number(points[i].latitude);
-        const anchorLng = Number(points[i].longitude);
-        let sumLat = anchorLat;
-        let sumLng = anchorLng;
+        let sumLat = Number(points[i].latitude);
+        let sumLng = Number(points[i].longitude);
         let cnt = 1;
         let j = i + 1;
         while (j < points.length) {
           const centLat = sumLat / cnt;
           const centLng = sumLng / cnt;
-          const pLat = Number(points[j].latitude);
-          const pLng = Number(points[j].longitude);
-          // Ping must be within radius of BOTH the rolling centroid AND the anchor
-          // (first ping of the cluster). Without the anchor check, a slow walk in one
-          // direction causes the centroid to drift 2+ km while every ping stays within
-          // 250 m of the ever-moving average — classifying real movement as a stoppage.
-          if (haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
-              haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M) {
-            sumLat += pLat; sumLng += pLng; cnt++;
+          if (haversineM(centLat, centLng, Number(points[j].latitude), Number(points[j].longitude)) <= STOPPAGE_RADIUS_M) {
+            sumLat += Number(points[j].latitude); sumLng += Number(points[j].longitude); cnt++;
             j++;
           } else { break; }
         }
@@ -4576,9 +4587,37 @@ export async function registerRoutes(
         }
       }
 
-      // Phase 2: build timeline from clusters + travel segments between them.
-      // Travelled and stoppage are kept strictly separate — no merging of nearby
-      // stoppages and no blending of stoppage pings into travel segments.
+      // Phase 1.5: Merge nearby consecutive stoppage clusters.
+      // GPS drift can push a ping outside the 250 m stoppage radius, splitting one
+      // continuous stay into two clusters with a short "travel" gap between them.
+      // Any two consecutive clusters whose centroids are within MERGE_RADIUS_M are
+      // treated as the same physical location — the pings between them are noise.
+      const MERGE_RADIUS_M = 400;
+      const mergedClusters: StoppageCluster[] = [];
+      for (const cluster of clusters) {
+        if (mergedClusters.length === 0) {
+          mergedClusters.push({ ...cluster });
+          continue;
+        }
+        const prev = mergedClusters[mergedClusters.length - 1];
+        const distBetween = haversineM(prev.lat, prev.lng, cluster.lat, cluster.lng);
+        if (distBetween <= MERGE_RADIUS_M) {
+          // Weighted centroid from point counts of both clusters
+          const prevCnt = prev.endIdx - prev.startIdx + 1;
+          const curCnt  = cluster.endIdx - cluster.startIdx + 1;
+          prev.lat = (prev.lat * prevCnt + cluster.lat * curCnt) / (prevCnt + curCnt);
+          prev.lng = (prev.lng * prevCnt + cluster.lng * curCnt) / (prevCnt + curCnt);
+          prev.endIdx = cluster.endIdx;
+          prev.durationSecs = (
+            new Date(points[cluster.endIdx].recordedAt).getTime() -
+            new Date(points[prev.startIdx].recordedAt).getTime()
+          ) / 1000;
+        } else {
+          mergedClusters.push({ ...cluster });
+        }
+      }
+
+      // Phase 2: build timeline from clusters + travel segments between them
       type Segment =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
@@ -4587,30 +4626,59 @@ export async function registerRoutes(
       let prevEndIdx = -1;
       let prevCluster: StoppageCluster | null = null;
 
-      for (const cluster of clusters) {
+      for (const cluster of mergedClusters) {
         if (cluster.startIdx > prevEndIdx + 1) {
-          // Travel pings are strictly between the previous stoppage end and this
-          // stoppage start — no approach-ping blending into the stoppage.
-          const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
+          // Actual travel pings strictly between the two stoppage clusters.
+          const baseTravelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
+          if (baseTravelPts.length >= 1) {
+            // Extend travel to include early cluster pings that still show movement.
+            // These pings fall within the 250 m stoppage radius but the employee was
+            // still driving the approach road.  A straight-line bridge to the centroid
+            // underestimates curved road distance, so we walk the actual GPS trail
+            // instead and stop at the first ping that no longer shows movement.
+            const MAX_APPROACH_PINGS = 10;
+            let approachEndIdx = cluster.startIdx - 1; // default: no approach pings
+            for (let ai = cluster.startIdx; ai <= Math.min(cluster.endIdx, cluster.startIdx + MAX_APPROACH_PINGS - 1); ai++) {
+              const prevPt = ai === cluster.startIdx ? baseTravelPts[baseTravelPts.length - 1] : points[ai - 1];
+              const curPt  = points[ai];
+              const distM  = haversineM(Number(prevPt.latitude), Number(prevPt.longitude), Number(curPt.latitude), Number(curPt.longitude));
+              const dtSec  = (new Date(curPt.recordedAt).getTime() - new Date(prevPt.recordedAt).getTime()) / 1000;
+              if (dtSec > SIGNAL_GAP_SEC) break;
+              const hasSpeed = curPt.speed != null && Number(curPt.speed) > MIN_SPEED_MS;
+              if (hasSpeed) {
+                if (dtSec > 0 && distM / dtSec > MAX_SPEED_MS) break;
+                approachEndIdx = ai;
+              } else {
+                if (dtSec > 0 && distM / dtSec > MAX_NOSPEED_MS) break;
+                if (distM >= MIN_DIST_M && (dtSec === 0 || distM / dtSec >= MIN_MOVE_MS)) approachEndIdx = ai;
+                else break;
+              }
+            }
+            // Build extended travel pts: base pings + any moving approach pings
+            const extendedTravelPts = points.slice(prevEndIdx + 1, approachEndIdx + 1);
             let distanceKm = 0;
             if (prevCluster) {
               distanceKm += haversineM(prevCluster.lat, prevCluster.lng,
-                Number(travelPts[0].latitude), Number(travelPts[0].longitude)) / 1000;
+                Number(extendedTravelPts[0].latitude), Number(extendedTravelPts[0].longitude)) / 1000;
             }
+            // Use Google Roads API road-snapping for completed segments (followed by a stoppage).
+            // Falls back to haversine * 1.03 if the API key is missing or the call fails.
             const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
-            const snapPts = travelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+            const snapPts = extendedTravelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
             const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
-            distanceKm += roadKm ?? totalDistKm(travelPts);
-            // Bridge last travel ping → stoppage centroid (straight line)
-            const lastTp = travelPts[travelPts.length - 1];
-            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude),
-              cluster.lat, cluster.lng) / 1000;
-            const segStart = new Date(travelPts[0].recordedAt).toISOString();
+            distanceKm += roadKm ?? totalDistKm(extendedTravelPts);
+            // Leg 3: only fall back to straight-line centroid bridge when no approach
+            // pings were found (i.e. the cluster started stationary immediately)
+            const lastExtTp = extendedTravelPts[extendedTravelPts.length - 1];
+            if (approachEndIdx < cluster.startIdx) {
+              distanceKm += haversineM(Number(lastExtTp.latitude), Number(lastExtTp.longitude),
+                cluster.lat, cluster.lng) / 1000;
+            }
+            const segStart = new Date(extendedTravelPts[0].recordedAt).toISOString();
             segments.push({
               type: "travelled",
               startTime: segStart,
-              endTime: new Date(lastTp.recordedAt).toISOString(),
+              endTime: new Date(lastExtTp.recordedAt).toISOString(),
               distanceKm: await segKmLock(empId, date, segStart, distanceKm),
             });
           }
