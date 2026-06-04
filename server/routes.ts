@@ -3124,7 +3124,36 @@ export async function registerRoutes(
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
-      // Road-snapped distance via Google Maps Roads API (shared with admin endpoint).
+
+      // ── Trackolap-style: speed-based movement classification ──────────────
+      // Primary signal : GPS Doppler speed >= 5 km/h (1.39 m/s) → moving
+      // Fallback        : implied speed from consecutive ping distance/time
+      // Distance method : Google Directions API (actual road navigation km)
+      //                   → snapToRoads → haversine (each a fallback)
+      const MOVING_SPEED_MS = 1.39;  // 5 km/h
+
+      // Google Directions API — same distance Google Maps navigation shows.
+      async function directionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
+        if (pts.length < 2) return null;
+        try {
+          const origin = `${pts[0].lat},${pts[0].lng}`;
+          const dest   = `${pts[pts.length - 1].lat},${pts[pts.length - 1].lng}`;
+          const middle = pts.slice(1, -1);
+          let waypts = middle;
+          if (middle.length > 23) {
+            const step = (middle.length - 1) / 22;
+            waypts = Array.from({ length: 23 }, (_, i) => middle[Math.min(Math.round(i * step), middle.length - 1)]);
+          }
+          const wpStr = waypts.map(p => `via:${p.lat},${p.lng}`).join("|");
+          const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}${wpStr ? `&waypoints=${encodeURIComponent(wpStr)}` : ""}&mode=driving&key=${apiKey}`;
+          const resp = await fetch(url);
+          if (!resp.ok) { console.warn(`[directions] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { routes?: { legs: { distance: { value: number } }[] }[] };
+          if (!data.routes?.length) { console.warn(`[directions] no routes`); return null; }
+          return data.routes[0].legs.reduce((s: number, leg) => s + leg.distance.value, 0) / 1000;
+        } catch (e: any) { console.warn(`[directions] error: ${e.message}`); return null; }
+      }
+
       async function snapToRoadsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
         if (pts.length < 2) return null;
         try {
@@ -3149,86 +3178,69 @@ export async function registerRoutes(
         } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
       }
 
-      // Dual-anchor stoppage detection:
-      // A ping joins the cluster only when it is within STOPPAGE_RADIUS_M of BOTH
-      // the rolling centroid AND the anchor (first ping of the cluster).
-      // The anchor check prevents slow GPS drift from growing the cluster across
-      // a 1–2 km short trip that should be classified as travel, not stoppage.
-      const clusters: { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number }[] = [];
-      let ci = 0;
-      while (ci < points.length) {
-        const anchorLat = Number(points[ci].latitude);
-        const anchorLng = Number(points[ci].longitude);
-        let sumLat = anchorLat;
-        let sumLng = anchorLng;
-        let cnt = 1;
-        let cj = ci + 1;
-        while (cj < points.length) {
-          const centLat = sumLat / cnt;
-          const centLng = sumLng / cnt;
-          const pLat = Number(points[cj].latitude);
-          const pLng = Number(points[cj].longitude);
-          if (
-            haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
-            haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M
-          ) {
-            sumLat += pLat; sumLng += pLng; cnt++;
-            cj++;
-          } else { break; }
+      // Step 1: sort chronologically and tag each ping moving/stationary
+      const sorted = [...points].sort((a: any, b: any) =>
+        new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+
+      const movingTag: boolean[] = sorted.map((p: any, idx: number) => {
+        const spd = p.speed != null ? Number(p.speed) : null;
+        if (spd !== null) return spd >= MOVING_SPEED_MS;
+        if (idx > 0) {
+          const prev = sorted[idx - 1];
+          const distM = haversineM(Number(prev.latitude), Number(prev.longitude),
+                                   Number(p.latitude),    Number(p.longitude));
+          const dtSec = (new Date(p.recordedAt).getTime() - new Date(prev.recordedAt).getTime()) / 1000;
+          if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) return distM / dtSec >= MOVING_SPEED_MS;
         }
-        const durSecs = cj > ci + 1
-          ? (new Date(points[cj - 1].recordedAt).getTime() - new Date(points[ci].recordedAt).getTime()) / 1000
-          : 0;
-        if (cj > ci + 1 && durSecs >= STOPPAGE_MIN_SECS) {
-          clusters.push({ startIdx: ci, endIdx: cj - 1, lat: sumLat / cnt, lng: sumLng / cnt, durationSecs: durSecs });
-          ci = cj;
-        } else { ci++; }
+        return false;
+      });
+
+      // Step 2: run-length encode into moving/stationary runs
+      const runs: { moving: boolean; start: number; end: number }[] = [];
+      for (let k = 0; k < sorted.length; k++) {
+        if (runs.length === 0 || runs[runs.length - 1].moving !== movingTag[k]) {
+          runs.push({ moving: movingTag[k], start: k, end: k });
+        } else { runs[runs.length - 1].end = k; }
       }
 
+      // Step 3: short stationary runs < STOPPAGE_MIN_SECS → flip to moving
+      //         (traffic lights, roundabouts, slow traffic — not real stoppages)
+      for (const run of runs) {
+        if (!run.moving) {
+          const dur = (new Date(sorted[run.end].recordedAt).getTime() -
+                       new Date(sorted[run.start].recordedAt).getTime()) / 1000;
+          if (dur < STOPPAGE_MIN_SECS) run.moving = true;
+        }
+      }
+
+      // Step 4: re-merge adjacent same-type runs after flipping
+      const mergedRuns: { moving: boolean; start: number; end: number }[] = [];
+      for (const run of runs) {
+        if (mergedRuns.length > 0 && mergedRuns[mergedRuns.length - 1].moving === run.moving) {
+          mergedRuns[mergedRuns.length - 1].end = run.end;
+        } else { mergedRuns.push({ ...run }); }
+      }
+
+      // Step 5: build GPS segments
       const gpsSegments: GpsSeg[] = [];
-      let prevEnd = -1;
-      let prevCentroid: { lat: number; lng: number } | null = null;
       const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-      for (const cluster of clusters) {
-        if (cluster.startIdx > prevEnd + 1) {
-          // Travel pings strictly between previous stoppage end and this stoppage start
-          const travelPts = points.slice(prevEnd + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
-            const snapPts = travelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-            const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
-            const distanceKm = roadKm ?? totalDistKm(travelPts);
-            gpsSegments.push({
-              type: "travelled",
-              startTime: new Date(travelPts[0].recordedAt).toISOString(),
-              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
-              distanceKm,
-            });
-          }
-        }
-        gpsSegments.push({
-          type: "stoppage",
-          startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(),
-          endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(),
-          durationSecs: cluster.durationSecs,
-          lat: cluster.lat,
-          lng: cluster.lng,
-        });
-        prevEnd = cluster.endIdx;
-        prevCentroid = { lat: cluster.lat, lng: cluster.lng };
-      }
-      if (prevEnd < points.length - 1 && points.length > 0) {
-        const tailPts = points.slice(prevEnd + 1);
-        if (tailPts.length >= 1) {
-          const snapPts = tailPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-          const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
-          const tailDistKm = roadKm ?? totalDistKm(tailPts);
-          gpsSegments.push({
-            type: "travelled",
-            startTime: new Date(tailPts[0].recordedAt).toISOString(),
-            endTime: new Date(tailPts[tailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: tailDistKm,
-          });
+      for (const run of mergedRuns) {
+        const runPts  = sorted.slice(run.start, run.end + 1);
+        const startTime = new Date(runPts[0].recordedAt).toISOString();
+        const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
+        if (run.moving) {
+          const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+          const distanceKm =
+            (roadsApiKey ? (await directionsKm(snapPts, roadsApiKey)) : null) ??
+            (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
+            totalDistKm(runPts);
+          gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm });
+        } else {
+          const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;
+          const lng = runPts.reduce((s: number, p: any) => s + Number(p.longitude), 0) / runPts.length;
+          const durationSecs = (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000;
+          gpsSegments.push({ type: "stoppage", startTime, endTime, durationSecs, lat, lng });
         }
       }
 
@@ -4546,103 +4558,109 @@ export async function registerRoutes(
         return d * 1.03;
       }
 
-      type StoppageCluster = { startIdx: number; endIdx: number; lat: number; lng: number; durationSecs: number };
+      // ── Trackolap-style: speed-based movement classification ──────────────
+      // Primary signal : GPS Doppler speed >= 5 km/h (1.39 m/s) → moving
+      // Fallback        : implied speed from consecutive ping distance/time
+      // Distance method : Google Directions API (actual road navigation km)
+      //                   → snapToRoads → haversine (each a fallback)
+      const MOVING_SPEED_MS = 1.39; // 5 km/h
 
-      // Dual-anchor stoppage detection:
-      // A ping joins the cluster only when it is within STOPPAGE_RADIUS_M of BOTH
-      // the rolling centroid AND the anchor (first ping of the cluster).
-      // The anchor check prevents slow GPS drift from growing the cluster across
-      // a 1–2 km short trip that should be classified as travel, not stoppage.
-      // No post-merge step — travelled is travelled, stoppage is stoppage.
-      const clusters: StoppageCluster[] = [];
-      let i = 0;
-      while (i < points.length) {
-        const anchorLat = Number(points[i].latitude);
-        const anchorLng = Number(points[i].longitude);
-        let sumLat = anchorLat;
-        let sumLng = anchorLng;
-        let cnt = 1;
-        let j = i + 1;
-        while (j < points.length) {
-          const centLat = sumLat / cnt;
-          const centLng = sumLng / cnt;
-          const pLat = Number(points[j].latitude);
-          const pLng = Number(points[j].longitude);
-          if (
-            haversineM(centLat, centLng, pLat, pLng) <= STOPPAGE_RADIUS_M &&
-            haversineM(anchorLat, anchorLng, pLat, pLng) <= STOPPAGE_RADIUS_M
-          ) {
-            sumLat += pLat; sumLng += pLng; cnt++;
-            j++;
-          } else { break; }
+      // Google Directions API — same distance Google Maps navigation shows.
+      async function directionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
+        if (pts.length < 2) return null;
+        try {
+          const origin = `${pts[0].lat},${pts[0].lng}`;
+          const dest   = `${pts[pts.length - 1].lat},${pts[pts.length - 1].lng}`;
+          const middle = pts.slice(1, -1);
+          let waypts = middle;
+          if (middle.length > 23) {
+            const step = (middle.length - 1) / 22;
+            waypts = Array.from({ length: 23 }, (_, i) => middle[Math.min(Math.round(i * step), middle.length - 1)]);
+          }
+          const wpStr = waypts.map(p => `via:${p.lat},${p.lng}`).join("|");
+          const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}${wpStr ? `&waypoints=${encodeURIComponent(wpStr)}` : ""}&mode=driving&key=${apiKey}`;
+          const resp = await fetch(url);
+          if (!resp.ok) { console.warn(`[directions] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { routes?: { legs: { distance: { value: number } }[] }[] };
+          if (!data.routes?.length) { console.warn(`[directions] no routes`); return null; }
+          return data.routes[0].legs.reduce((s: number, leg) => s + leg.distance.value, 0) / 1000;
+        } catch (e: any) { console.warn(`[directions] error: ${e.message}`); return null; }
+      }
+
+      // Step 1: tag each ping moving/stationary
+      const movingTag: boolean[] = points.map((p: any, idx: number) => {
+        const spd = p.speed != null ? Number(p.speed) : null;
+        if (spd !== null) return spd >= MOVING_SPEED_MS;
+        if (idx > 0) {
+          const prev = points[idx - 1];
+          const distM = haversineM(Number(prev.latitude), Number(prev.longitude),
+                                   Number(p.latitude),    Number(p.longitude));
+          const dtSec = (new Date(p.recordedAt).getTime() - new Date(prev.recordedAt).getTime()) / 1000;
+          if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) return distM / dtSec >= MOVING_SPEED_MS;
         }
-        const durationSecs = j > i + 1
-          ? (new Date(points[j - 1].recordedAt).getTime() - new Date(points[i].recordedAt).getTime()) / 1000
-          : 0;
-        if (j > i + 1 && durationSecs >= STOPPAGE_MIN_SECS) {
-          clusters.push({ startIdx: i, endIdx: j - 1, lat: sumLat / cnt, lng: sumLng / cnt, durationSecs });
-          i = j;
-        } else {
-          i++;
+        return false;
+      });
+
+      // Step 2: run-length encode into moving/stationary runs
+      const runs: { moving: boolean; start: number; end: number }[] = [];
+      for (let k = 0; k < points.length; k++) {
+        if (runs.length === 0 || runs[runs.length - 1].moving !== movingTag[k]) {
+          runs.push({ moving: movingTag[k], start: k, end: k });
+        } else { runs[runs.length - 1].end = k; }
+      }
+
+      // Step 3: short stationary runs < STOPPAGE_MIN_SECS → flip to moving
+      //         (traffic lights, roundabouts, slow traffic — not real stoppages)
+      for (const run of runs) {
+        if (!run.moving) {
+          const dur = (new Date(points[run.end].recordedAt).getTime() -
+                       new Date(points[run.start].recordedAt).getTime()) / 1000;
+          if (dur < STOPPAGE_MIN_SECS) run.moving = true;
         }
       }
 
-      // Phase 2: build timeline — travel pings strictly between stoppages, no merging
+      // Step 4: re-merge adjacent same-type runs after flipping
+      const mergedRuns: { moving: boolean; start: number; end: number }[] = [];
+      for (const run of runs) {
+        if (mergedRuns.length > 0 && mergedRuns[mergedRuns.length - 1].moving === run.moving) {
+          mergedRuns[mergedRuns.length - 1].end = run.end;
+        } else { mergedRuns.push({ ...run }); }
+      }
+
+      // Step 5: build segments
       type Segment =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       const segments: Segment[] = [];
-      let prevEndIdx = -1;
       const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-      for (const cluster of clusters) {
-        if (cluster.startIdx > prevEndIdx + 1) {
-          // Travel pings strictly between previous stoppage end and this stoppage start
-          const travelPts = points.slice(prevEndIdx + 1, cluster.startIdx);
-          if (travelPts.length >= 1) {
-            const snapPts = travelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-            const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
-            const distanceKm = roadKm ?? totalDistKm(travelPts);
-            const segStart = new Date(travelPts[0].recordedAt).toISOString();
-            segments.push({
-              type: "travelled",
-              startTime: segStart,
-              endTime: new Date(travelPts[travelPts.length - 1].recordedAt).toISOString(),
-              distanceKm: await segKmLock(empId, date, segStart, distanceKm),
-            });
-          }
-        }
-        segments.push({
-          type: "stoppage",
-          startTime: new Date(points[cluster.startIdx].recordedAt).toISOString(),
-          endTime: new Date(points[cluster.endIdx].recordedAt).toISOString(),
-          durationSecs: cluster.durationSecs,
-          lat: cluster.lat,
-          lng: cluster.lng,
-        });
-        prevEndIdx = cluster.endIdx;
-      }
-
-      // Travel segment after last stoppage
-      if (prevEndIdx < points.length - 1) {
-        const tailPts = points.slice(prevEndIdx + 1);
-        if (tailPts.length >= 1) {
-          const snapPts = tailPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-          const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
-          const tailDistKm = roadKm ?? totalDistKm(tailPts);
-          const tailStart = new Date(tailPts[0].recordedAt).toISOString();
+      for (const run of mergedRuns) {
+        const runPts  = points.slice(run.start, run.end + 1);
+        const startTime = new Date(runPts[0].recordedAt).toISOString();
+        const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
+        if (run.moving) {
+          const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+          const distanceKm =
+            (roadsApiKey ? (await directionsKm(snapPts, roadsApiKey)) : null) ??
+            (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
+            totalDistKm(runPts);
           segments.push({
             type: "travelled",
-            startTime: tailStart,
-            endTime: new Date(tailPts[tailPts.length - 1].recordedAt).toISOString(),
-            distanceKm: await segKmLock(empId, date, tailStart, tailDistKm),
+            startTime,
+            endTime,
+            distanceKm: await segKmLock(empId, date, startTime, distanceKm),
           });
+        } else {
+          const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;
+          const lng = runPts.reduce((s: number, p: any) => s + Number(p.longitude), 0) / runPts.length;
+          const durationSecs = (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000;
+          segments.push({ type: "stoppage", startTime, endTime, durationSecs, lat, lng });
         }
       }
 
       const totalKm = segments.filter(s => s.type === "travelled").reduce((acc, s) => acc + (s as any).distanceKm, 0);
-      const stoppageCount = clusters.length;
+      const stoppageCount = segments.filter(s => s.type === "stoppage").length;
 
       res.json({ points, segments, totalKm, stoppageCount, travelledKm: totalKm });
     } catch (e: any) {
