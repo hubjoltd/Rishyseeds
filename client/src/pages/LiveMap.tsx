@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, RefreshCw, Users, Clock, Wifi, WifiOff } from "lucide-react";
+import { MapPin, RefreshCw, Users, Clock, Wifi, WifiOff, Navigation } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,18 +16,22 @@ interface LiveLocation {
   recordedAt: string;
 }
 
-function minutesAgo(dateStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (diff < 1) return "just now";
-  if (diff < 60) return `${diff}m ago`;
-  return `${Math.floor(diff / 60)}h ${diff % 60}m ago`;
+function secsAgo(dateStr: string): string {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m ago`;
 }
 
 function isStale(dateStr: string): boolean {
-  return Date.now() - new Date(dateStr).getTime() > 10 * 60 * 1000; // > 10 min
+  return Date.now() - new Date(dateStr).getTime() > 10 * 60 * 1000;
 }
 
-// Inject pulsing CSS for active live markers
+function isMoving(loc: LiveLocation): boolean {
+  return loc.speed != null && loc.speed > 0.5; // > 1.8 km/h
+}
+
+// Inject pulsing CSS for active/moving live markers
 if (typeof document !== "undefined" && !document.getElementById("livemap-pulse-css")) {
   const s = document.createElement("style");
   s.id = "livemap-pulse-css";
@@ -37,7 +41,13 @@ if (typeof document !== "undefined" && !document.getElementById("livemap-pulse-c
       60%  { box-shadow: 0 0 0 10px rgba(255,255,255,0), 0 2px 8px rgba(0,0,0,0.35); }
       100% { box-shadow: 0 0 0 0 rgba(255,255,255,0), 0 2px 8px rgba(0,0,0,0.35); }
     }
+    @keyframes livemap-move {
+      0%   { box-shadow: 0 0 0 0 rgba(229,57,53,0.6), 0 2px 8px rgba(0,0,0,0.35); }
+      60%  { box-shadow: 0 0 0 14px rgba(229,57,53,0), 0 2px 8px rgba(0,0,0,0.35); }
+      100% { box-shadow: 0 0 0 0 rgba(229,57,53,0), 0 2px 8px rgba(0,0,0,0.35); }
+    }
     .livemap-active-marker { animation: livemap-ping 1.6s ease-out infinite; }
+    .livemap-moving-marker { animation: livemap-move 1s ease-out infinite; }
   `;
   document.head.appendChild(s);
 }
@@ -48,18 +58,29 @@ const COLOURS = [
   "#AD1457", "#4527A0", "#0277BD", "#558B2F", "#4E342E",
 ];
 
+type RefreshMs = 10000 | 30000;
+
 export default function LiveMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<Record<number, any>>({});
   const [selected, setSelected] = useState<LiveLocation | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
+  const [refreshMs, setRefreshMs] = useState<RefreshMs>(10000);
+  const [countdown, setCountdown] = useState(10);
 
-  // Fetch live locations — auto-refresh every 15 s
+  // Fetch live locations — auto-refresh at selected interval
   const { data: locations = [], dataUpdatedAt, refetch, isFetching } = useQuery<LiveLocation[]>({
     queryKey: ["/api/employees/live-locations"],
-    refetchInterval: 15000,
+    refetchInterval: refreshMs,
   });
+
+  // Countdown timer — resets after each successful fetch or interval change
+  useEffect(() => {
+    setCountdown(refreshMs / 1000);
+    const id = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(id);
+  }, [dataUpdatedAt, refreshMs]);
 
   // Load Leaflet dynamically
   useEffect(() => {
@@ -107,17 +128,21 @@ export default function LiveMap() {
       locations.forEach((loc, idx) => {
         const colour = COLOURS[idx % COLOURS.length];
         const stale = isStale(loc.recordedAt);
+        const moving = isMoving(loc);
+        const bg = stale ? "#9e9e9e" : moving ? "#E53935" : colour;
+        const animCls = stale ? "" : moving ? "livemap-moving-marker" : "livemap-active-marker";
+        const inner = moving
+          ? `<span style="transform:rotate(45deg);color:white;font-size:16px;line-height:1;">▲</span>`
+          : `<span style="transform:rotate(45deg);color:white;font-size:13px;font-weight:700">${loc.employeeName.charAt(0).toUpperCase()}</span>`;
         const iconHtml = `
-          <div class="${stale ? "" : "livemap-active-marker"}" style="
-            background:${stale ? "#9e9e9e" : colour};
-            width:36px;height:36px;border-radius:50% 50% 50% 0;
+          <div class="${animCls}" style="
+            background:${bg};
+            width:36px;height:36px;
+            border-radius:${moving ? "4px 50% 50% 50%" : "50% 50% 50% 0"};
             transform:rotate(-45deg);border:3px solid white;
             box-shadow:0 2px 6px rgba(0,0,0,.35);
-            display:flex;align-items:center;justify-content:center;
-          ">
-            <span style="transform:rotate(45deg);color:white;font-size:13px;font-weight:700">
-              ${loc.employeeName.charAt(0).toUpperCase()}
-            </span>
+            display:flex;align-items:center;justify-content:center;">
+            ${inner}
           </div>`;
         const icon = L.divIcon({ html: iconHtml, className: "", iconSize: [36, 36], iconAnchor: [18, 36] });
 
@@ -141,6 +166,7 @@ export default function LiveMap() {
   }, [locations, leafletReady]);
 
   const activeCount = locations.filter(l => !isStale(l.recordedAt)).length;
+  const movingCount = locations.filter(l => isMoving(l)).length;
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] gap-4">
@@ -152,22 +178,45 @@ export default function LiveMap() {
             Live Employee Map
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Real-time GPS locations · auto-refreshes every 15 seconds
+            Real-time GPS · refreshing every {refreshMs / 1000}s
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-sm">
             <Users className="w-3.5 h-3.5" />
-            {activeCount} active · {locations.length} total today
+            {activeCount} active · {locations.length} today
           </Badge>
+          {movingCount > 0 && (
+            <Badge className="gap-1.5 px-3 py-1.5 text-sm bg-red-600 text-white border-0">
+              <Navigation className="w-3.5 h-3.5" />
+              {movingCount} moving
+            </Badge>
+          )}
           {isFetching
             ? <Badge variant="outline" className="gap-1.5 text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-950/20">
                 <RefreshCw className="w-3 h-3 animate-spin" /> Updating…
               </Badge>
             : <Badge variant="outline" className="gap-1.5 text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20">
-                <Wifi className="w-3 h-3" /> Live
+                <Wifi className="w-3 h-3" /> {countdown}s
               </Badge>
           }
+          {/* Refresh interval toggle */}
+          <div className="flex rounded-md border overflow-hidden">
+            <Button
+              size="sm"
+              variant={refreshMs === 10000 ? "default" : "ghost"}
+              className="rounded-none h-8 px-3 text-xs"
+              onClick={() => setRefreshMs(10000)}
+              data-testid="button-refresh-10s"
+            >10s</Button>
+            <Button
+              size="sm"
+              variant={refreshMs === 30000 ? "default" : "ghost"}
+              className="rounded-none h-8 px-3 text-xs border-l"
+              onClick={() => setRefreshMs(30000)}
+              data-testid="button-refresh-30s"
+            >30s</Button>
+          </div>
           <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="button-refresh-map">
             <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
           </Button>
@@ -195,7 +244,9 @@ export default function LiveMap() {
           ) : (
             locations.map((loc, idx) => {
               const stale = isStale(loc.recordedAt);
+              const moving = isMoving(loc);
               const colour = COLOURS[idx % COLOURS.length];
+              const bg = stale ? "#9e9e9e" : moving ? "#E53935" : colour;
               return (
                 <Card
                   key={loc.employeeId}
@@ -211,20 +262,20 @@ export default function LiveMap() {
                   <CardContent className="p-3 flex gap-3 items-start">
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
-                      style={{ background: stale ? "#9e9e9e" : colour }}
+                      style={{ background: bg }}
                     >
-                      {loc.employeeName.charAt(0).toUpperCase()}
+                      {moving ? "▲" : loc.employeeName.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{loc.employeeName}</p>
                       <p className="text-xs text-muted-foreground">{loc.employeeCode}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3 text-muted-foreground" />
-                        <span className={`text-xs ${stale ? "text-orange-500" : "text-green-600"}`}>
-                          {minutesAgo(loc.recordedAt)}
+                        <span className={`text-xs ${stale ? "text-orange-500" : moving ? "text-red-600 font-medium" : "text-green-600"}`}>
+                          {secsAgo(loc.recordedAt)}
                         </span>
-                        {loc.speed != null && loc.speed > 0 && (
-                          <span className="text-xs text-muted-foreground ml-2">
+                        {moving && loc.speed != null && (
+                          <span className="text-xs text-red-600 font-medium ml-1">
                             {(loc.speed * 3.6).toFixed(0)} km/h
                           </span>
                         )}
@@ -235,7 +286,9 @@ export default function LiveMap() {
                     </div>
                     {stale
                       ? <Badge variant="secondary" className="text-[10px] shrink-0">Inactive</Badge>
-                      : <Badge className="text-[10px] bg-green-600 shrink-0">Live</Badge>
+                      : moving
+                        ? <Badge className="text-[10px] bg-red-600 shrink-0">Moving</Badge>
+                        : <Badge className="text-[10px] bg-green-600 shrink-0">Live</Badge>
                     }
                   </CardContent>
                 </Card>
