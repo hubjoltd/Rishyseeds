@@ -4457,17 +4457,21 @@ export async function registerRoutes(
           } else { merged.push({ ...run }); }
         }
 
-        // Compute km (speed × time trapezoidal) and stoppage count
+        // Compute km (haversine between consecutive GPS points — same method as trip playback)
+        // and stoppage count
         let kmToday = 0;
         let stoppageCount = 0;
         for (const run of merged) {
           const rl = locs.slice(run.start, run.end + 1);
           if (run.moving) {
             for (let i = 1; i < rl.length; i++) {
-              const spd  = rl[i].speed     != null ? Number(rl[i].speed)     : 0;
-              const pSpd = rl[i-1].speed   != null ? Number(rl[i-1].speed)   : spd;
               const dtSec = (new Date(rl[i].recordedAt).getTime() - new Date(rl[i-1].recordedAt).getTime()) / 1000;
-              if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) kmToday += ((spd + pSpd) / 2 * dtSec) / 1000;
+              if (dtSec > 0 && dtSec < SIGNAL_GAP_SEC) {
+                kmToday += haversineSummaryM(
+                  Number(rl[i-1].latitude), Number(rl[i-1].longitude),
+                  Number(rl[i].latitude),   Number(rl[i].longitude)
+                ) / 1000;
+              }
             }
           } else { stoppageCount++; }
         }
