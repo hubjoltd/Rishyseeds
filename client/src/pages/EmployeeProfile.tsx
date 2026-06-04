@@ -2182,6 +2182,8 @@ export default function EmployeeProfile() {
   const [liveDate, setLiveDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [speedLimitKm, setSpeedLimitKm] = useState(100);
   const [stoppageMinutes, setStoppageMinutes] = useState(30);
+  const [liveRefreshMs, setLiveRefreshMs] = useState<10000 | 30000>(10000);
+  const [liveCountdown, setLiveCountdown] = useState(10);
   const [sharedMapTypeId, setSharedMapTypeId] = useState("openstreetmap");
   const [highlightedSegment, setHighlightedSegment] = useState<HighlightSegment | null>(null);
 
@@ -2222,6 +2224,14 @@ export default function EmployeeProfile() {
   useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); peakDistanceKm.current = 0; }, [liveDate]);
   useEffect(() => { setPlaybackOsrmKm(null); setPlaybackGapKm(0); }, [playbackDate]);
 
+  // Countdown ticker — resets when interval changes or a fetch completes
+  useEffect(() => {
+    if (activeTab !== "live") return;
+    setLiveCountdown(liveRefreshMs / 1000);
+    const id = setInterval(() => setLiveCountdown(c => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(id);
+  }, [liveRefreshMs, activeTab]);
+
   const { data: locationData, isLoading: locationLoading, refetch: refetchLocations } = useQuery<{
     points: any[];
     segments: Array<
@@ -2238,7 +2248,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId && activeTab === "live",
-    refetchInterval: 5000,
+    refetchInterval: activeTab === "live" ? liveRefreshMs : false,
   });
 
   const { data: playbackLocationData } = useQuery<{
@@ -2264,7 +2274,7 @@ export default function EmployeeProfile() {
       return res.json();
     },
     enabled: !!empId && activeTab === "live",
-    refetchInterval: 10000,
+    refetchInterval: activeTab === "live" ? liveRefreshMs : false,
   });
 
   const { data: playbackCheckins = [] } = useQuery<any[]>({
@@ -2770,7 +2780,22 @@ export default function EmployeeProfile() {
                     className="h-6 text-[11px] flex-1 border-gray-200"
                     data-testid="input-live-date"
                   />
-                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { refetchLocations(); refetchCheckins(); }} data-testid="button-refresh-locations">
+                  {/* 10s / 30s toggle */}
+                  <div className="flex rounded border overflow-hidden shrink-0">
+                    <button
+                      className={`text-[9px] px-1.5 h-6 font-semibold transition-colors ${liveRefreshMs === 10000 ? "bg-primary text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
+                      onClick={() => { setLiveRefreshMs(10000); setLiveCountdown(10); }}
+                      data-testid="button-live-refresh-10s"
+                    >10s</button>
+                    <button
+                      className={`text-[9px] px-1.5 h-6 font-semibold border-l transition-colors ${liveRefreshMs === 30000 ? "bg-primary text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
+                      onClick={() => { setLiveRefreshMs(30000); setLiveCountdown(30); }}
+                      data-testid="button-live-refresh-30s"
+                    >30s</button>
+                  </div>
+                  {/* Countdown badge */}
+                  <span className="text-[9px] font-bold text-green-600 w-4 text-center shrink-0 tabular-nums">{liveCountdown}</span>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { refetchLocations(); refetchCheckins(); setLiveCountdown(liveRefreshMs / 1000); }} data-testid="button-refresh-locations">
                     <RefreshCw className="h-3 w-3" />
                   </Button>
                 </div>
