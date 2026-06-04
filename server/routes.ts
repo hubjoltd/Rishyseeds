@@ -297,28 +297,15 @@ export async function registerRoutes(
         return res.status(200).json({ error: data.status, polyline: null });
       }
 
-      // Decode step-level polylines for full road detail (same as what Google Maps
-      // renders). overview_polyline is a simplified low-detail approximation;
-      // step polylines capture every turn at 1e-5° precision.
-      const allPoints: [number, number][] = [];
-      let distanceM = 0;
-      for (const leg of data.routes[0].legs ?? []) {
-        distanceM += leg.distance?.value ?? 0;
-        for (const step of leg.steps ?? []) {
-          if (step.polyline?.points) {
-            const stepPts = decodePolyline(step.polyline.points);
-            // Avoid duplicate junction points between consecutive steps
-            if (allPoints.length > 0 && stepPts.length > 0) stepPts.shift();
-            allPoints.push(...stepPts);
-          }
-        }
-      }
-      // Fall back to overview_polyline if steps were empty
-      const polyline = allPoints.length >= 2
-        ? allPoints
-        : decodePolyline(data.routes[0].overview_polyline.points);
+      // Decode the overview_polyline into lat/lng pairs
+      const encoded = data.routes[0].overview_polyline.points;
+      const decoded = decodePolyline(encoded);
 
-      res.json({ polyline, distanceM });
+      // Sum distance across all legs
+      let distanceM = 0;
+      for (const leg of data.routes[0].legs ?? []) distanceM += leg.distance?.value ?? 0;
+
+      res.json({ polyline: decoded, distanceM });
     } catch (e: any) {
       res.status(502).json({ error: e.message });
     }
@@ -3134,36 +3121,6 @@ export async function registerRoutes(
         }
         return d * 1.03;
       }
-      // Road distance via Google Directions API — same km calculation Google Maps uses.
-      // Samples up to 25 waypoints, sums legs[].distance.value. Falls back to null.
-      async function googleDirectionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
-        if (pts.length < 2) return null;
-        try {
-          const MAX_WP = 25;
-          let sample = pts;
-          if (pts.length > MAX_WP) {
-            const step = (pts.length - 1) / (MAX_WP - 1);
-            sample = Array.from({ length: MAX_WP }, (_, i) =>
-              pts[Math.min(Math.round(i * step), pts.length - 1)]
-            );
-          }
-          const origin = sample[0];
-          const destination = sample[sample.length - 1];
-          const intermediates = sample.slice(1, -1);
-          const waypointsStr = intermediates.length > 0
-            ? `&waypoints=${intermediates.map((w: any) => `via:${w.lat},${w.lng}`).join("|")}`
-            : "";
-          const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}${waypointsStr}&mode=driving&key=${apiKey}`;
-          const resp = await fetch(url);
-          if (!resp.ok) return null;
-          const data = await resp.json() as any;
-          if (data.status !== "OK" || !data.routes?.[0]) return null;
-          let distM = 0;
-          for (const leg of data.routes[0].legs ?? []) distM += leg.distance?.value ?? 0;
-          return distM / 1000;
-        } catch { return null; }
-      }
-
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
@@ -3228,22 +3185,12 @@ export async function registerRoutes(
           if (travelPts.length >= 1) {
             const fromLat = prevCentroid ? prevCentroid.lat : Number(travelPts[0].latitude);
             const fromLng = prevCentroid ? prevCentroid.lng : Number(travelPts[0].longitude);
+            let distanceKm = 0;
+            distanceKm += haversineM(fromLat, fromLng, Number(travelPts[0].latitude), Number(travelPts[0].longitude)) / 1000;
+            distanceKm += totalDistKm(travelPts);
+            // Bridge last travel ping → stoppage centroid (straight line)
             const lastTp = travelPts[travelPts.length - 1];
-            // Build full waypoint list: prev stoppage centroid → travel pings → next stoppage centroid
-            const dirPts = [
-              { lat: fromLat, lng: fromLng },
-              ...travelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })),
-              { lat: cluster.lat, lng: cluster.lng },
-            ];
-            const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
-            // Google Directions API gives legs[].distance.value — same as Google Maps timeline km.
-            // Falls back to haversine totalDistKm if API key not set or call fails.
-            const roadKm = roadsApiKey ? await googleDirectionsKm(dirPts, roadsApiKey) : null;
-            const distanceKm = roadKm ?? (
-              haversineM(fromLat, fromLng, Number(travelPts[0].latitude), Number(travelPts[0].longitude)) / 1000
-              + totalDistKm(travelPts)
-              + haversineM(Number(lastTp.latitude), Number(lastTp.longitude), cluster.lat, cluster.lng) / 1000
-            );
+            distanceKm += haversineM(Number(lastTp.latitude), Number(lastTp.longitude), cluster.lat, cluster.lng) / 1000;
             gpsSegments.push({
               type: "travelled",
               startTime: new Date(travelPts[0].recordedAt).toISOString(),
@@ -3262,21 +3209,13 @@ export async function registerRoutes(
         if (actualTailPts.length >= 1) {
           const fromLat = prevCentroid ? prevCentroid.lat : Number(actualTailPts[0].latitude);
           const fromLng = prevCentroid ? prevCentroid.lng : Number(actualTailPts[0].longitude);
-          const lastTailPt = actualTailPts[actualTailPts.length - 1];
-          const dirPts = [
-            { lat: fromLat, lng: fromLng },
-            ...actualTailPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })),
-          ];
-          const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
-          const roadKm = roadsApiKey ? await googleDirectionsKm(dirPts, roadsApiKey) : null;
-          const tailDistKm = roadKm ?? (
-            haversineM(fromLat, fromLng, Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000
-            + totalDistKm(actualTailPts)
-          );
+          let tailDistKm = 0;
+          tailDistKm += haversineM(fromLat, fromLng, Number(actualTailPts[0].latitude), Number(actualTailPts[0].longitude)) / 1000;
+          tailDistKm += totalDistKm(actualTailPts);
           gpsSegments.push({
             type: "travelled",
             startTime: new Date(actualTailPts[0].recordedAt).toISOString(),
-            endTime: new Date(lastTailPt.recordedAt).toISOString(),
+            endTime: new Date(actualTailPts[actualTailPts.length - 1].recordedAt).toISOString(),
             distanceKm: tailDistKm,
           });
         }
@@ -4498,39 +4437,33 @@ export async function registerRoutes(
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       }
 
-      // Road distance via Google Directions API — same calculation Google Maps uses.
-      // Samples up to 25 waypoints (Google limit), calls Directions API, and sums
-      // legs[].distance.value. This matches Google Maps timeline km exactly.
-      // Falls back to null on any error (caller falls back to totalDistKm).
-      async function googleDirectionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
+      // Road-snapped distance via Google Maps Roads API.
+      // Sends GPS points to the snapToRoads endpoint which snaps them to the nearest
+      // road, then sums Haversine between consecutive snapped points.
+      // Falls back to null on any error (caller falls back to totalDistKm with 1.03 factor).
+      async function snapToRoadsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
         if (pts.length < 2) return null;
         try {
-          // Sample down to max 25 points (origin + 23 via + destination)
-          const MAX_WP = 25;
+          // Roads API limit: 100 points per request — downsample evenly if needed
           let sample = pts;
-          if (pts.length > MAX_WP) {
-            const step = (pts.length - 1) / (MAX_WP - 1);
-            sample = Array.from({ length: MAX_WP }, (_, i) =>
-              pts[Math.min(Math.round(i * step), pts.length - 1)]
-            );
+          if (pts.length > 100) {
+            const step = (pts.length - 1) / 99;
+            sample = Array.from({ length: 100 }, (_, i) => pts[Math.min(Math.round(i * step), pts.length - 1)]);
           }
-          const origin = sample[0];
-          const destination = sample[sample.length - 1];
-          const intermediates = sample.slice(1, -1);
-          const waypointsStr = intermediates.length > 0
-            ? `&waypoints=${intermediates.map(w => `via:${w.lat},${w.lng}`).join("|")}`
-            : "";
-          const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}${waypointsStr}&mode=driving&key=${apiKey}`;
+          const path = sample.map(p => `${p.lat},${p.lng}`).join("|");
+          const url = `https://roads.googleapis.com/v1/snapToRoads?path=${encodeURIComponent(path)}&interpolate=true&key=${apiKey}`;
           const resp = await fetch(url);
-          if (!resp.ok) { console.warn(`[directions] HTTP ${resp.status}`); return null; }
-          const data = await resp.json() as any;
-          if (data.status !== "OK" || !data.routes?.[0]) {
-            console.warn(`[directions] status=${data.status}`); return null;
+          if (!resp.ok) { console.warn(`[snapToRoads] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { snappedPoints?: { location: { latitude: number; longitude: number } }[] };
+          const snapped = data.snappedPoints;
+          if (!snapped?.length || snapped.length < 2) return null;
+          let d = 0;
+          for (let i = 1; i < snapped.length; i++) {
+            d += haversineM(snapped[i - 1].location.latitude, snapped[i - 1].location.longitude,
+              snapped[i].location.latitude, snapped[i].location.longitude);
           }
-          let distM = 0;
-          for (const leg of data.routes[0].legs ?? []) distM += leg.distance?.value ?? 0;
-          return distM / 1000;
-        } catch (e: any) { console.warn(`[directions] error: ${e.message}`); return null; }
+          return d / 1000;
+        } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
       }
 
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
@@ -4667,9 +4600,7 @@ export async function registerRoutes(
             }
             const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
             const snapPts = travelPts.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-            // Use Google Directions API legs[].distance.value — same km calculation
-            // as Google Maps timeline. Falls back to haversine on error / no key.
-            const roadKm = roadsApiKey ? await googleDirectionsKm(snapPts, roadsApiKey) : null;
+            const roadKm = roadsApiKey ? await snapToRoadsKm(snapPts, roadsApiKey) : null;
             distanceKm += roadKm ?? totalDistKm(travelPts);
             // Bridge last travel ping → stoppage centroid (straight line)
             const lastTp = travelPts[travelPts.length - 1];
