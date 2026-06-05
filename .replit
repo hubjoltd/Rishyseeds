@@ -44,3 +44,4 @@ build = ["npm", "run", "build"]
 [userenv.production]
 
 [userenv.shared]
+VAPID_PUBLIC_KEY = "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw"
