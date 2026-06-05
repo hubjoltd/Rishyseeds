@@ -998,7 +998,10 @@ function LiveMap({
           path: r.coords,
           gapMins: signalGapPairsForSnap[i].gapMins,
         })));
-        const totalGapKm = results.reduce((s, r) => s + r.distanceM / 1000, 0);
+        // Use straight-line haversine for gap km — road distance can overcount
+        // signal-loss periods where the employee may not have followed the routed road.
+        const totalGapKm = signalGapPairsForSnap.reduce((s, g) =>
+          s + haversineKm(g.pair[0][0], g.pair[0][1], g.pair[1][0], g.pair[1][1]), 0);
         if (totalGapKm > 0) onGapKm?.(totalGapKm);
       }
     });
@@ -1891,7 +1894,10 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
           path: r.coords,
           gapMins: pbSignalGapLines[i].gapMins,
         })));
-        const totalGapKm = results.reduce((s, r) => s + r.distanceM / 1000, 0);
+        // Use straight-line haversine for gap km — road distance can overcount
+        // signal-loss periods where the employee may not have followed the routed road.
+        const totalGapKm = pbSignalGapLines.reduce((s, g) =>
+          s + haversineKm(g.path[0][0], g.path[0][1], g.path[1][0], g.path[1][1]), 0);
         if (totalGapKm > 0) onGapKm?.(totalGapKm);
       }
     });
