@@ -696,7 +696,6 @@ function LiveMap({
     for (let i = 0; i < allSegs.length; i++) {
       const seg = allSegs[i];
       if (seg.type !== "travelled") continue;
-      if (((seg as any).distanceKm ?? 0) < 0.05) continue;
 
       const segStart = new Date(seg.startTime).getTime();
       const segEnd   = new Date(seg.endTime).getTime();
@@ -719,6 +718,19 @@ function LiveMap({
         nextStoppage && nextStoppage.lat != null && nextStoppage.lng != null
           ? [Number(nextStoppage.lat), Number(nextStoppage.lng)]
           : null;
+
+      // Skip near-zero-distance segments — but if both surrounding stoppages have
+      // known locations, draw a direct fallback line between them so the map never
+      // shows two stoppage markers with no connecting route.
+      if (((seg as any).distanceKm ?? 0) < 0.05) {
+        if (stopAnchor && endAnchor) {
+          result.push([stopAnchor, endAnchor]);
+          resultTs.push([Math.round(segStart / 1000), Math.round(segEnd / 1000)]);
+          segmentWindows.push({ startTime: seg.startTime, endTime: (seg as any).endTime ?? seg.startTime });
+          subGroupCounts.push(1);
+        }
+        continue;
+      }
 
       // Extend the ping window by up to 2 minutes past the server-computed segEnd.
       // GPS pings at the START of the next stoppage cluster (the "approach" phase) still
