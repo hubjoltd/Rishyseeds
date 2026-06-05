@@ -2522,10 +2522,28 @@ export default function EmployeeProfile() {
 
   const enrichedTimelineEvents = allTimelineEvents;
 
-  // Sum only "travelled" segments using server-provided distances (locked — never decrease)
+  // Sum "travelled" segments (server-computed, locked) + "gap_travel" segments
+  // (synthesised gaps between server segments that contain real GPS movement).
+  // gap_travel km is computed client-side from actual GPS points in the gap window —
+  // the same calculation used when rendering each gap_travel row in the timeline.
+  const _livePointsForTotal = locationData?.points ?? [];
   const enrichedTotalKm = enrichedTimelineEvents.reduce((sum, ev) => {
     if (ev.type === "travelled") {
       return sum + lockedSegKm(empId, liveDate, ev.startTime, (ev as any).distanceKm ?? 0);
+    }
+    if (ev.type === "gap_travel") {
+      const gapStart = new Date(ev.startTime).getTime();
+      const gapEnd   = new Date((ev as any).endTime).getTime();
+      const gapPts   = _livePointsForTotal
+        .filter((p: any) => {
+          const t = new Date(p.recordedAt).getTime();
+          return t >= gapStart && t <= gapEnd && p.latitude && p.longitude;
+        })
+        .map((p: any) => [Number(p.latitude), Number(p.longitude)] as [number, number]);
+      let gapKm = 0;
+      for (let gi = 1; gi < gapPts.length; gi++)
+        gapKm += haversineKm(gapPts[gi - 1][0], gapPts[gi - 1][1], gapPts[gi][0], gapPts[gi][1]);
+      return sum + gapKm;
     }
     return sum;
   }, 0);
