@@ -306,6 +306,50 @@ export async function registerRoutes(
     }
   });
 
+  // Google Roads API — snap GPS points to roads, return road-following polyline + exact distance.
+  // This is the same method TrackOlap uses, which is why it matches Google Maps exactly:
+  // each GPS ping is snapped to the nearest road segment and haversine is summed between them.
+  // Roads API limit: 100 points per request — backend chunks automatically.
+  app.post("/api/snap-to-roads", async (req, res) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: "Google Maps API key not configured" });
+    const { waypoints } = req.body as { waypoints: { lat: number; lng: number }[] };
+    if (!Array.isArray(waypoints) || waypoints.length < 2)
+      return res.status(400).json({ error: "Need at least 2 waypoints" });
+
+    function hM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+      const R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    try {
+      const allSnapped: { lat: number; lng: number }[] = [];
+      const CHUNK = 100;
+      for (let i = 0; i < waypoints.length; i += CHUNK) {
+        const chunk = waypoints.slice(i, i + CHUNK);
+        const path = chunk.map(p => `${p.lat},${p.lng}`).join("|");
+        const url = `https://roads.googleapis.com/v1/snapToRoads?path=${encodeURIComponent(path)}&interpolate=true&key=${apiKey}`;
+        const upstream = await fetch(url);
+        if (!upstream.ok) { console.warn(`[snap-to-roads] HTTP ${upstream.status}`); return res.status(502).json({ error: "Roads API error" }); }
+        const data = await upstream.json() as { snappedPoints?: { location: { latitude: number; longitude: number } }[]; error?: any };
+        if (data.error) { console.warn(`[snap-to-roads] API error`, data.error); return res.status(502).json({ error: data.error?.message ?? "Roads API error" }); }
+        (data.snappedPoints ?? []).forEach(p => allSnapped.push({ lat: p.location.latitude, lng: p.location.longitude }));
+      }
+      if (allSnapped.length < 2) return res.status(200).json({ error: "No snapped points", polyline: null });
+
+      let distanceM = 0;
+      for (let i = 1; i < allSnapped.length; i++)
+        distanceM += hM(allSnapped[i - 1].lat, allSnapped[i - 1].lng, allSnapped[i].lat, allSnapped[i].lng);
+
+      // Return as [[lat,lng],...] — same format as /api/google-directions so frontend is compatible
+      res.json({ polyline: allSnapped.map(p => [p.lat, p.lng]), distanceM });
+    } catch (e: any) {
+      console.error(`[snap-to-roads] error: ${e.message}`);
+      res.status(502).json({ error: e.message });
+    }
+  });
+
   // Google encoded polyline decoder (Algorithms 5-byte precision)
   function decodePolyline(encoded: string): [number, number][] {
     const result: [number, number][] = [];

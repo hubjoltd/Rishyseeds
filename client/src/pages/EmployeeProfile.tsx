@@ -1255,20 +1255,24 @@ async function osrmSnap(points: [number, number][], timestamps?: number[]): Prom
     finally { clearTimeout(t); }
   };
 
-  // ── Google Directions API (via server proxy) — priority #1 ──────────────────
-  // Sends up to 25 sampled GPS waypoints. Google routes through every waypoint
-  // in order, giving road-accurate distances matching Google Maps exactly.
+  // ── Google Roads API snap-to-roads (via server proxy) — priority #1 ──────────
+  // Sends up to 300 GPS points to the Roads snapToRoads API. Each ping is snapped
+  // to the nearest road segment; haversine is summed between snapped points.
+  // This is exactly how TrackOlap calculates distance, which is why it matches
+  // Google Maps — it measures the actual road path driven, not an optimal route.
+  // (Google Directions API with via: waypoints gives the optimal route between
+  //  sampled checkpoints, not the actual road the employee drove — hence wrong km.)
   const tryGoogle = async (pts: [number, number][]): Promise<{ coords: [number, number][]; distanceM: number } | null> => {
     try {
-      // Sample down to max 25 points (Google Directions limit)
-      const step = Math.max(1, Math.ceil(pts.length / 23));
+      // Sample to max 300 points (Roads API handles chunking of 100 each on backend)
+      const step = Math.max(1, Math.ceil(pts.length / 300));
       const sample = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
       const waypoints = sample.map(([lat, lng]) => ({ lat, lng }));
-      const res = await fetch("/api/google-directions", {
+      const res = await fetch("/api/snap-to-roads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ waypoints }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(25000),
       });
       if (!res.ok) return null;
       const data = await res.json();
