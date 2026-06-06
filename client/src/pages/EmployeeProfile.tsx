@@ -2183,12 +2183,8 @@ function PlaybackMap({ trips, date, employeeId, mapTypeId, onMapTypeChange, atte
 
 // Monotonic segment distance lock: once a km value is seen for a segment it can only go up.
 // Persisted in localStorage so it survives page refreshes within the same day.
-function lockedSegKm(empId: number, date: string, startTime: string, rawKm: number): number {
-  const key = `seg_km_${empId}_${date}_${startTime}`;
-  const stored = parseFloat(localStorage.getItem(key) ?? "0") || 0;
-  const locked = Math.max(stored, rawKm);
-  if (locked > stored) localStorage.setItem(key, String(locked));
-  return locked;
+function lockedSegKm(_empId: number, _date: string, _startTime: string, rawKm: number): number {
+  return rawKm;
 }
 
 export default function EmployeeProfile() {
@@ -2236,11 +2232,17 @@ export default function EmployeeProfile() {
   const [osrmSegmentDistances, setOsrmSegmentDistances] = useState<number[]>([]);
   const [playbackOsrmKm, setPlaybackOsrmKm] = useState<number | null>(null);
   const [playbackGapKm, setPlaybackGapKm] = useState<number>(0);
-  // Monotonic peak: distance header never goes down mid-day (segment re-detection can lower the raw value)
-  const peakDistanceKm = useRef<number>(0);
   // Clear stale OSRM distances whenever the date changes (fresh snap will repopulate)
-  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); peakDistanceKm.current = 0; }, [liveDate]);
+  useEffect(() => { setLiveSnappedKm(null); setOsrmSegmentDistances([]); setLiveGapKm(0); }, [liveDate]);
   useEffect(() => { setPlaybackOsrmKm(null); setPlaybackGapKm(0); }, [playbackDate]);
+  // Clear inflated localStorage distance locks left over from before this fix
+  useEffect(() => {
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith("seg_km_") || k.startsWith("peak_km_"))
+        .forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+  }, []);
 
   // Countdown ticker — resets when interval changes or a fetch completes
   useEffect(() => {
@@ -2842,16 +2844,12 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(() => {
-                      const peakKey = `peak_km_${empId}_${liveDate}`;
-                      const stored = parseFloat(localStorage.getItem(peakKey) ?? "0") || 0;
-                      // Use only server totalKm and enriched travelled segments — do NOT add liveGapKm
-                      // because gap km (OSRM estimate for signal-loss periods) can include stoppage
-                      // windows and would inflate the distance counter above the actual travelled km.
-                      const raw = Math.max(locationData?.totalKm ?? 0, enrichedTotalKm);
-                      const peak = Math.max(stored, peakDistanceKm.current, raw);
-                      peakDistanceKm.current = peak;
-                      if (peak > stored) localStorage.setItem(peakKey, String(peak));
-                      return Math.round(peak);
+                      // Prefer OSRM road-snapped km (follows actual roads like Google Maps).
+                      // Fall back to server totalKm (haversine×1.03) while OSRM is still loading.
+                      const displayKm = liveSnappedKm !== null && liveSnappedKm > 0
+                        ? liveSnappedKm
+                        : Math.max(locationData?.totalKm ?? 0, enrichedTotalKm);
+                      return Math.round(displayKm);
                     })()} Km
                   </span>
                   {locationLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400 ml-auto" />}
@@ -2948,7 +2946,10 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
-                      {enrichedTotalKm >= 1 ? `${Math.round(enrichedTotalKm)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
+                      {(() => {
+                        const km = liveSnappedKm !== null && liveSnappedKm > 0 ? liveSnappedKm : enrichedTotalKm;
+                        return km >= 1 ? `${Math.round(km)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
+                      })()}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
                   </div>
@@ -3158,7 +3159,11 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      const distKm: number = lockedSegKm(empId, liveDate, seg.startTime, (seg as any).distanceKm ?? 0);
+                      // Use OSRM road-snapped distance for this segment when available
+                      // (follows the actual road network, matches Google Maps distance).
+                      // Fall back to server haversine km while OSRM is still computing.
+                      const osrmKm = osrmSegmentDistances[travelIdx - 1] ?? null;
+                      const distKm: number = osrmKm !== null && osrmKm > 0 ? osrmKm : ((seg as any).distanceKm ?? 0);
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
