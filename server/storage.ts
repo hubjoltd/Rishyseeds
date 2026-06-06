@@ -39,7 +39,7 @@ import {
   type ExpenseAudit, type InsertExpenseAudit,
   type EmployeeLocation, type InsertEmployeeLocation,
 } from "@shared/schema";
-import { eq, desc, asc, sql, and, or, gte, lte } from "drizzle-orm";
+import { eq, desc, asc, sql, and, or, gte, lte, isNull, isNotNull } from "drizzle-orm";
 
 export interface IStorage {
   // User
@@ -95,6 +95,7 @@ export interface IStorage {
   getAttendanceByEmployee(employeeId: number): Promise<typeof attendance.$inferSelect[]>;
   getAttendanceByEmployeeAndDate(employeeId: number, date: string): Promise<typeof attendance.$inferSelect | undefined>;
   updateAttendance(id: number, updates: Partial<typeof attendance.$inferInsert>): Promise<typeof attendance.$inferSelect | undefined>;
+  getOpenCheckInsForDate(date: string): Promise<typeof attendance.$inferSelect[]>;
 
   // Payroll
   createPayroll(payroll: InsertPayroll): Promise<Payroll>;
@@ -576,6 +577,15 @@ export class DatabaseStorage implements IStorage {
   async updateAttendance(id: number, updates: Partial<typeof attendance.$inferInsert>): Promise<typeof attendance.$inferSelect | undefined> {
     const [updated] = await db.update(attendance).set(updates).where(eq(attendance.id, id)).returning();
     return updated;
+  }
+
+  async getOpenCheckInsForDate(date: string): Promise<typeof attendance.$inferSelect[]> {
+    return await db.select().from(attendance)
+      .where(and(
+        eq(attendance.date, date),
+        isNotNull(attendance.checkIn),
+        isNull(attendance.checkOut)
+      ));
   }
 
   // Payroll

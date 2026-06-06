@@ -2355,6 +2355,14 @@ export async function registerRoutes(
           await storage.updateTrip(stale.id, { status: "submitted", endTime: new Date() });
         }
 
+        // Auto-close yesterday's attendance if not punched out (mandatory 22:00 close)
+        const istNowMs = Date.now() + 5.5 * 60 * 60 * 1000;
+        const yesterdayIST = new Date(istNowMs - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const yesterdayAtt = await storage.getAttendanceByEmployeeAndDate(employeeId, yesterdayIST);
+        if (yesterdayAtt?.checkIn && !yesterdayAtt?.checkOut) {
+          await storage.updateAttendance(yesterdayAtt.id, { checkOut: "22:00" });
+        }
+
         // Only block creation if there's already an active trip started TODAY
         const hasActiveTripToday = empTrips.some((t: any) =>
           isActiveStatus(t) && t.startTime && tripISTDate(t) === todayIST
@@ -4560,6 +4568,40 @@ export async function registerRoutes(
         }
       }
 
+      // ── Bound GPS points to attendance window ─────────────────────────────
+      // Only include pings between punch-in and punch-out (or 22:00 IST if no
+      // punch-out). This prevents overnight GPS pings from a previous un-closed
+      // session from inflating today's distance.
+      if (attRecord?.checkIn) {
+        let windowStartMs: number | null = null;
+        let windowEndMs: number | null = null;
+
+        try {
+          const [hh, mm] = String(attRecord.checkIn).split(":").map(Number);
+          windowStartMs = new Date(`${attRecord.date}T${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00+05:30`).getTime();
+        } catch {}
+
+        if (attRecord.checkOut) {
+          try {
+            const [hh, mm] = String(attRecord.checkOut).split(":").map(Number);
+            windowEndMs = new Date(`${attRecord.date}T${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00+05:30`).getTime();
+          } catch {}
+        } else {
+          // No punch-out: cap GPS data at 22:00 IST; if before 22:00 and today, cap at now
+          const cap2200Ms = new Date(`${attRecord.date}T22:00:00+05:30`).getTime();
+          windowEndMs = Math.min(cap2200Ms, Date.now());
+        }
+
+        if (windowStartMs !== null || windowEndMs !== null) {
+          points = points.filter((p: any) => {
+            const t = new Date(p.recordedAt).getTime();
+            if (windowStartMs !== null && t < windowStartMs) return false;
+            if (windowEndMs !== null && t > windowEndMs) return false;
+            return true;
+          });
+        }
+      }
+
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
       const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
 
@@ -5025,4 +5067,55 @@ async function seedDatabase() {
     await storage.setCompanySetting("da_rate_per_day", "150");
     console.log("Seeded default DA rate: ₹150/day");
   }
+
+  // ── Daily auto punch-out at 22:00 IST ────────────────────────────────────
+  // If an employee hasn't punched out by 22:00 IST, the system auto-closes
+  // their attendance and active trip so GPS data from the next day is clean.
+  async function runAutoPunchOut() {
+    const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const dateStr = istNow.toISOString().slice(0, 10);
+    try {
+      const openRecords = await storage.getOpenCheckInsForDate(dateStr);
+      for (const rec of openRecords) {
+        await storage.updateAttendance(rec.id, { checkOut: "22:00" });
+        // Also auto-end any active trip for this employee
+        const empTrips = await storage.getTripsByEmployee(rec.employeeId);
+        const activeTrip = empTrips.find((t: any) => t.status === "started" || t.status === "in_progress");
+        if (activeTrip) {
+          await storage.updateTrip(activeTrip.id, {
+            status: "submitted",
+            endTime: new Date(`${dateStr}T22:00:00+05:30`),
+          });
+        }
+      }
+      if (openRecords.length > 0) {
+        console.log(`[AutoPunchOut] Auto-closed ${openRecords.length} attendance record(s) at 22:00 IST for ${dateStr}`);
+      }
+    } catch (e: any) {
+      console.error("[AutoPunchOut] Error running auto punch-out:", e.message);
+    }
+  }
+
+  function scheduleAutoPunchOut() {
+    const now = Date.now();
+    const istNow = new Date(now + 5.5 * 60 * 60 * 1000);
+    const todayStr = istNow.toISOString().slice(0, 10);
+    let next2200 = new Date(`${todayStr}T22:00:00+05:30`).getTime();
+    if (next2200 <= now) {
+      // Already past 22:00 IST today — schedule for tomorrow
+      const tomorrowIST = new Date(istNow);
+      tomorrowIST.setDate(tomorrowIST.getDate() + 1);
+      const tomorrowStr = tomorrowIST.toISOString().slice(0, 10);
+      next2200 = new Date(`${tomorrowStr}T22:00:00+05:30`).getTime();
+    }
+    const msUntil = next2200 - now;
+    setTimeout(async () => {
+      await runAutoPunchOut();
+      scheduleAutoPunchOut(); // reschedule for the next day
+    }, msUntil);
+    const minutesUntil = Math.round(msUntil / 60000);
+    console.log(`[AutoPunchOut] Scheduled daily auto punch-out in ${minutesUntil} minutes`);
+  }
+
+  scheduleAutoPunchOut();
 }
