@@ -45,3 +45,4 @@ build = ["npm", "run", "build"]
 
 [userenv.shared]
 VAPID_PUBLIC_KEY = "BMfWv-0gEu0b6DEybeZJEMPcRvTsRB9UxZKZwD4hoStqoQ3gZRNib2RRvs1TSMKST4Kv_t-HnWBZTmU0ln6Jotw"
+GOOGLE_MAPS_API_KEY = "AIzaSyDrWyrcAX2QKmYT4qxByPK7RhO8TC0eUwM"
