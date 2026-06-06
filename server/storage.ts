@@ -275,6 +275,7 @@ export interface IStorage {
   // GPS Segment KM Locks
   getSegmentKmLock(employeeId: number, date: string, segStart: string): Promise<number>;
   setSegmentKmLock(employeeId: number, date: string, segStart: string, maxKm: number): Promise<void>;
+  clearAllSegmentKmLocks(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1415,8 +1416,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setSegmentKmLock(employeeId: number, date: string, segStart: string, maxKm: number): Promise<void> {
-    const existing = await this.getSegmentKmLock(employeeId, date, segStart);
-    if (maxKm <= existing) return;
     const [row] = await db.select({ id: gpsSegmentLocks.id })
       .from(gpsSegmentLocks)
       .where(and(
@@ -1431,6 +1430,10 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.insert(gpsSegmentLocks).values({ employeeId, date, segStart, maxKm: String(maxKm) });
     }
+  }
+
+  async clearAllSegmentKmLocks(): Promise<void> {
+    await db.delete(gpsSegmentLocks);
   }
 }
 

@@ -1,15 +1,10 @@
 
 // ── Segment distance lock (DB-backed) ───────────────────────────────────────
-// Persists the maximum km ever seen for each GPS travel segment so that
-// server restarts or a new stoppage detection run can never reduce a distance
-// that was already committed. Falls back to the computed value on first call.
+// Always stores the latest computed km so that stale inflated values from
+// previous algorithm runs are replaced on the next recalculation.
 async function segKmLock(empId: number, date: string, startTime: string, computedKm: number): Promise<number> {
-  const prev = await storage.getSegmentKmLock(empId, date, startTime);
-  const locked = Math.max(prev, computedKm);
-  if (locked > prev) {
-    await storage.setSegmentKmLock(empId, date, startTime, locked);
-  }
-  return locked;
+  await storage.setSegmentKmLock(empId, date, startTime, computedKm);
+  return computedKm;
 }
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -4788,18 +4783,17 @@ export async function registerRoutes(
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       const segments: Segment[] = [];
-      const roadsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
       for (const run of mergedRuns) {
         const runPts  = points.slice(run.start, run.end + 1);
         const startTime = new Date(runPts[0].recordedAt).toISOString();
         const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
         if (run.moving) {
-          const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-          const distanceKm =
-            (roadsApiKey ? (await directionsKm(snapPts, roadsApiKey)) : null) ??
-            (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
-            totalDistKm(runPts);
+          // Use ping-to-ping haversine (same method as MatchpointGPS / Google Timeline).
+          // The Directions API was previously used here but it computes an optimal road
+          // route, not the actual path taken — causing consistent over-counting vs
+          // reference trackers. Haversine * 1.03 tortuosity matches real-world GPS tracks.
+          const distanceKm = totalDistKm(runPts);
           segments.push({
             type: "travelled",
             startTime,
@@ -5060,6 +5054,10 @@ async function seedDatabase() {
   await seedProductsAndWarehouses();
   await seedRoles();
   await seedEmployees();
+
+  // Clear all previously locked segment distances so stale inflated values
+  // (computed by the old Directions-API method) are replaced on next view.
+  await storage.clearAllSegmentKmLocks();
 
   // Seed default DA rate if not already set
   const daRate = await storage.getCompanySetting("da_rate_per_day");
