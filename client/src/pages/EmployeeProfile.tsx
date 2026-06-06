@@ -2848,11 +2848,10 @@ export default function EmployeeProfile() {
                   <span>Distance</span>
                   <span className="font-bold text-gray-900">
                     {(() => {
-                      // Prefer OSRM road-snapped km (follows actual roads like Google Maps).
-                      // Fall back to server totalKm (haversine×1.03) while OSRM is still loading.
-                      const displayKm = liveSnappedKm !== null && liveSnappedKm > 0
-                        ? liveSnappedKm
-                        : Math.max(locationData?.totalKm ?? 0, enrichedTotalKm);
+                      // Use backend totalKm (filtered haversine — rejects GPS jitter, tower jumps,
+                      // drift < 75m, impossible speeds). snap-to-roads is ONLY for the visual route;
+                      // it over-counts GPS zigzag noise on Indian cellular GPS.
+                      const displayKm = Math.max(locationData?.totalKm ?? 0, enrichedTotalKm);
                       return Math.round(displayKm);
                     })()} Km
                   </span>
@@ -2950,10 +2949,7 @@ export default function EmployeeProfile() {
                 <div className="grid grid-cols-5 border-b divide-x bg-gray-50/60 text-center shrink-0">
                   <div className="py-2 px-1 flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold text-gray-800 leading-tight">
-                      {(() => {
-                        const km = liveSnappedKm !== null && liveSnappedKm > 0 ? liveSnappedKm : enrichedTotalKm;
-                        return km >= 1 ? `${Math.round(km)} km` : km > 0 ? `${(km * 1000).toFixed(0)} m` : "0 km";
-                      })()}
+                      {enrichedTotalKm >= 1 ? `${Math.round(enrichedTotalKm)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase tracking-wide leading-none">Distance</span>
                   </div>
@@ -3163,11 +3159,9 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      // Use OSRM road-snapped distance for this segment when available
-                      // (follows the actual road network, matches Google Maps distance).
-                      // Fall back to server haversine km while OSRM is still computing.
-                      const osrmKm = osrmSegmentDistances[travelIdx - 1] ?? null;
-                      const distKm: number = osrmKm !== null && osrmKm > 0 ? osrmKm : ((seg as any).distanceKm ?? 0);
+                      // Use backend distanceKm — filtered haversine (rejects GPS jitter/drift).
+                      // snap-to-roads is used only for the visual polyline, not for distances.
+                      const distKm: number = (seg as any).distanceKm ?? 0;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       return (
