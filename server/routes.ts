@@ -3302,7 +3302,7 @@ export async function registerRoutes(
           }
           const coords = sample.map((p: any) => `${Number(p.longitude)},${Number(p.latitude)}`).join(';');
           const timestamps = sample.map((p: any) => Math.round(new Date(p.recordedAt).getTime() / 1000)).join(';');
-          const radiuses = sample.map(() => '50').join(';');
+          const radiuses = sample.map(() => '100').join(';');
           const url = `https://router.project-osrm.org/match/v1/driving/${coords}?timestamps=${timestamps}&overview=false&gaps=split&radiuses=${radiuses}`;
           const resp = await fetch(url, { signal: ctrl.signal });
           clearTimeout(timer);
@@ -3375,9 +3375,9 @@ export async function registerRoutes(
             (await osrmMatchKm(runPts)) ??
             (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
             totalDistKm(runPts);
-          // Add estimated distance for signal-loss gaps (like Google Maps "Missing travel · X km")
+          // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDist(runPts);
-          const distanceKm = baseKm + gapDistKm;
+          const distanceKm = baseKm;  // total = map-matched GPS only; gap is info-only
           const transportMode = detectTransportMode(runPts);
           gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode, gapDistKm });
         } else {
@@ -4827,7 +4827,7 @@ export async function registerRoutes(
           }
           const coords = sample.map((p: any) => `${Number(p.longitude)},${Number(p.latitude)}`).join(';');
           const timestamps = sample.map((p: any) => Math.round(new Date(p.recordedAt).getTime() / 1000)).join(';');
-          const radiuses = sample.map(() => '50').join(';');
+          const radiuses = sample.map(() => '100').join(';');
           const url = `https://router.project-osrm.org/match/v1/driving/${coords}?timestamps=${timestamps}&overview=false&gaps=split&radiuses=${radiuses}`;
           const resp = await fetch(url, { signal: ctrl.signal });
           clearTimeout(timer);
@@ -5016,8 +5016,9 @@ export async function registerRoutes(
             (await osrmMatchKmL(runPts)) ??
             (roadsApiKeyL ? (await snapToRoadsKm(snapPts, roadsApiKeyL)) : null) ??
             totalDistKm(runPts);
+          // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDistL(runPts);
-          const distanceKm = baseKmL + gapDistKm;
+          const distanceKm = baseKmL;  // total = map-matched GPS only; gap is info-only
           const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",
