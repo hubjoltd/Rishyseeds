@@ -3248,6 +3248,35 @@ export async function registerRoutes(
         } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
       }
 
+      // OSRM Hidden Markov Model map-matching — primary distance calculator.
+      // Uses the same algorithm as Google Maps Timeline:
+      //  - Filters noise/outlier GPS pings automatically via HMM
+      //  - Returns actual road-following distance (not straight-line)
+      //  - gaps=split handles signal drops as separate matched sub-routes
+      // Falls back to null on any error so caller can try next option.
+      async function osrmMatchKm(rawPts: any[]): Promise<number | null> {
+        if (rawPts.length < 2) return null;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 9000);
+        try {
+          let sample = rawPts;
+          if (sample.length > 100) {
+            const step = (sample.length - 1) / 99;
+            sample = Array.from({ length: 100 }, (_, i) => rawPts[Math.min(Math.round(i * step), rawPts.length - 1)]);
+          }
+          const coords = sample.map((p: any) => `${Number(p.longitude)},${Number(p.latitude)}`).join(';');
+          const timestamps = sample.map((p: any) => Math.round(new Date(p.recordedAt).getTime() / 1000)).join(';');
+          const radiuses = sample.map(() => '50').join(';');
+          const url = `https://router.project-osrm.org/match/v1/driving/${coords}?timestamps=${timestamps}&overview=false&gaps=split&radiuses=${radiuses}`;
+          const resp = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (!resp.ok) { console.warn(`[osrmMatch] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { code: string; matchings?: { distance: number }[] };
+          if (data.code !== 'Ok' || !data.matchings?.length) { console.warn(`[osrmMatch] code=${data.code}`); return null; }
+          return data.matchings.reduce((s, m) => s + m.distance, 0) / 1000;
+        } catch (e: any) { clearTimeout(timer); console.warn(`[osrmMatch] error: ${e.message}`); return null; }
+      }
+
       // Step 1: sort chronologically and tag each ping moving/stationary
       const sorted = [...points].sort((a: any, b: any) =>
         new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
@@ -3301,11 +3330,13 @@ export async function registerRoutes(
         const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
         if (run.moving) {
           const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-          // Use snapToRoads (follows actual GPS path on roads) → haversine fallback.
-          // Directions API was removed: it returns the shortest driving route, NOT the actual
-          // path taken — causing systematic under-counting, especially for bus journeys where
-          // the bus route can be 15–30% longer than the optimal driving path.
+          // Distance chain — most accurate first:
+          // 1. OSRM match/v1 HMM: same algorithm as Google Maps Timeline, filters noise pings,
+          //    follows actual road geometry, returns real road distance in metres.
+          // 2. Google Roads snapToRoads: snaps points to nearest road, good fallback.
+          // 3. Haversine × 1.03: last resort when both APIs are unavailable.
           const distanceKm =
+            (await osrmMatchKm(runPts)) ??
             (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
             totalDistKm(runPts);
           const transportMode = detectTransportMode(runPts);
@@ -4710,6 +4741,31 @@ export async function registerRoutes(
         } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
       }
 
+      // OSRM HMM map-matching — same algorithm as Google Maps Timeline.
+      // Filters noise pings via HMM, returns actual road-following distance.
+      async function osrmMatchKmL(rawPts: any[]): Promise<number | null> {
+        if (rawPts.length < 2) return null;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 9000);
+        try {
+          let sample = rawPts;
+          if (sample.length > 100) {
+            const step = (sample.length - 1) / 99;
+            sample = Array.from({ length: 100 }, (_, i) => rawPts[Math.min(Math.round(i * step), rawPts.length - 1)]);
+          }
+          const coords = sample.map((p: any) => `${Number(p.longitude)},${Number(p.latitude)}`).join(';');
+          const timestamps = sample.map((p: any) => Math.round(new Date(p.recordedAt).getTime() / 1000)).join(';');
+          const radiuses = sample.map(() => '50').join(';');
+          const url = `https://router.project-osrm.org/match/v1/driving/${coords}?timestamps=${timestamps}&overview=false&gaps=split&radiuses=${radiuses}`;
+          const resp = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (!resp.ok) { console.warn(`[osrmMatchL] HTTP ${resp.status}`); return null; }
+          const data = await resp.json() as { code: string; matchings?: { distance: number }[] };
+          if (data.code !== 'Ok' || !data.matchings?.length) { console.warn(`[osrmMatchL] code=${data.code}`); return null; }
+          return data.matchings.reduce((s, m) => s + m.distance, 0) / 1000;
+        } catch (e: any) { clearTimeout(timer); console.warn(`[osrmMatchL] error: ${e.message}`); return null; }
+      }
+
       // Ping-to-ping haversine — same for all GPS types (satellite, WiFi, cellular).
       // Matches TrackOlap calculation method: no centroid binning, no tortuosity.
       // Signal-drop guard: cellular GPS pings every 2–7 min naturally; 5 min was too short.
@@ -4878,11 +4934,14 @@ export async function registerRoutes(
         const startTime = new Date(runPts[0].recordedAt).toISOString();
         const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
         if (run.moving) {
-          // Use snapToRoads (follows actual GPS path on roads) → haversine × 1.08 fallback.
-          // SnapToRoads gives the most accurate road-distance for the actual path traveled.
-          // 1.08 tortuosity (vs 1.03 before) better approximates Indian urban road curves.
+          // Distance chain — most accurate first:
+          // 1. OSRM match/v1 HMM: same algorithm as Google Maps Timeline, filters noise pings,
+          //    follows actual road geometry, returns real road distance in metres.
+          // 2. Google Roads snapToRoads: snaps points to nearest road, good fallback.
+          // 3. Haversine × 1.03: last resort when both APIs are unavailable.
           const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
           const distanceKm =
+            (await osrmMatchKmL(runPts)) ??
             (roadsApiKeyL ? (await snapToRoadsKm(snapPts, roadsApiKeyL)) : null) ??
             totalDistKm(runPts);
           const transportMode = detectTransportModeL(runPts);
