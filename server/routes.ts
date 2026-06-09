@@ -3169,7 +3169,7 @@ export async function registerRoutes(
         return d * 1.03;
       }
       type GpsSeg =
-        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string }
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string; gapDistKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       // ── Transport mode detection from GPS speed data ──────────────────────
@@ -3246,6 +3246,42 @@ export async function registerRoutes(
           }
           return d / 1000;
         } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
+      }
+
+      // ── Signal-gap distance estimator ─────────────────────────────────────
+      // For every gap > 5 min within a travel segment, estimates the missing km
+      // via OSRM route between the last GPS point before the gap and the first
+      // point after — exactly how Google Maps shows "Missing travel · X km".
+      async function computeGapDist(pts: any[]): Promise<number> {
+        const GAP_SEC   = 5 * 60; // 5 min gap = signal loss (matches frontend threshold)
+        const GAP_MIN_M = 100;    // ignore micro-gaps < 100 m
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const dtSec = (new Date(pts[i].recordedAt).getTime() -
+                         new Date(pts[i - 1].recordedAt).getTime()) / 1000;
+          if (dtSec < GAP_SEC) continue;
+          const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude),
+                                    Number(pts[i].latitude),   Number(pts[i].longitude));
+          if (distM < GAP_MIN_M) continue;
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 6000);
+          try {
+            const p1 = `${Number(pts[i-1].longitude)},${Number(pts[i-1].latitude)}`;
+            const p2 = `${Number(pts[i].longitude)},${Number(pts[i].latitude)}`;
+            const url = `https://router.project-osrm.org/route/v1/driving/${p1};${p2}?overview=false`;
+            const resp = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (resp.ok) {
+              const data = await resp.json() as { code: string; routes?: { distance: number }[] };
+              if (data.code === 'Ok' && data.routes?.length) {
+                total += data.routes[0].distance / 1000;
+                continue;
+              }
+            }
+          } catch { clearTimeout(timer); }
+          total += (distM / 1000) * 1.1; // fallback: straight-line × 1.1
+        }
+        return total;
       }
 
       // OSRM Hidden Markov Model map-matching — primary distance calculator.
@@ -3335,12 +3371,15 @@ export async function registerRoutes(
           //    follows actual road geometry, returns real road distance in metres.
           // 2. Google Roads snapToRoads: snaps points to nearest road, good fallback.
           // 3. Haversine × 1.03: last resort when both APIs are unavailable.
-          const distanceKm =
+          const baseKm =
             (await osrmMatchKm(runPts)) ??
             (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
             totalDistKm(runPts);
+          // Add estimated distance for signal-loss gaps (like Google Maps "Missing travel · X km")
+          const gapDistKm = await computeGapDist(runPts);
+          const distanceKm = baseKm + gapDistKm;
           const transportMode = detectTransportMode(runPts);
-          gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode });
+          gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode, gapDistKm });
         } else {
           const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;
           const lng = runPts.reduce((s: number, p: any) => s + Number(p.longitude), 0) / runPts.length;
@@ -4741,6 +4780,39 @@ export async function registerRoutes(
         } catch (e: any) { console.warn(`[snapToRoads] error: ${e.message}`); return null; }
       }
 
+      // Signal-gap distance estimator — same logic as trip endpoint.
+      async function computeGapDistL(pts: any[]): Promise<number> {
+        const GAP_SEC   = 5 * 60;
+        const GAP_MIN_M = 100;
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const dtSec = (new Date(pts[i].recordedAt).getTime() -
+                         new Date(pts[i - 1].recordedAt).getTime()) / 1000;
+          if (dtSec < GAP_SEC) continue;
+          const distM = haversineM(Number(pts[i-1].latitude), Number(pts[i-1].longitude),
+                                    Number(pts[i].latitude),   Number(pts[i].longitude));
+          if (distM < GAP_MIN_M) continue;
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 6000);
+          try {
+            const p1 = `${Number(pts[i-1].longitude)},${Number(pts[i-1].latitude)}`;
+            const p2 = `${Number(pts[i].longitude)},${Number(pts[i].latitude)}`;
+            const url = `https://router.project-osrm.org/route/v1/driving/${p1};${p2}?overview=false`;
+            const resp = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (resp.ok) {
+              const data = await resp.json() as { code: string; routes?: { distance: number }[] };
+              if (data.code === 'Ok' && data.routes?.length) {
+                total += data.routes[0].distance / 1000;
+                continue;
+              }
+            }
+          } catch { clearTimeout(timer); }
+          total += (distM / 1000) * 1.1;
+        }
+        return total;
+      }
+
       // OSRM HMM map-matching — same algorithm as Google Maps Timeline.
       // Filters noise pings via HMM, returns actual road-following distance.
       async function osrmMatchKmL(rawPts: any[]): Promise<number | null> {
@@ -4923,7 +4995,7 @@ export async function registerRoutes(
 
       // Step 5: build segments
       type Segment =
-        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string }
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string; gapDistKm: number }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       const segments: Segment[] = [];
@@ -4940,10 +5012,12 @@ export async function registerRoutes(
           // 2. Google Roads snapToRoads: snaps points to nearest road, good fallback.
           // 3. Haversine × 1.03: last resort when both APIs are unavailable.
           const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
-          const distanceKm =
+          const baseKmL =
             (await osrmMatchKmL(runPts)) ??
             (roadsApiKeyL ? (await snapToRoadsKm(snapPts, roadsApiKeyL)) : null) ??
             totalDistKm(runPts);
+          const gapDistKm = await computeGapDistL(runPts);
+          const distanceKm = baseKmL + gapDistKm;
           const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",
@@ -4951,6 +5025,7 @@ export async function registerRoutes(
             endTime,
             distanceKm: await segKmLock(empId, date, startTime, distanceKm),
             transportMode,
+            gapDistKm,
           });
         } else {
           const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;

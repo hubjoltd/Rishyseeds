@@ -194,6 +194,7 @@ interface LiveMapSegment {
   lat?: number;
   lng?: number;
   transportMode?: string;
+  gapDistKm?: number;
 }
 
 function TransportModeIcon({ mode, className }: { mode?: string; className?: string }) {
@@ -2545,7 +2546,7 @@ export default function EmployeeProfile() {
   }));
 
   type GpsSegment =
-    | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode?: string }
+    | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode?: string; gapDistKm?: number }
     | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
   type PunchEvent = { type: "punch_in" | "punch_out"; startTime: string; location: string | null; lat: number | null; lng: number | null };
   type TimelineEvent = GpsSegment | VisitStoppage | PunchEvent;
@@ -3249,9 +3250,8 @@ export default function EmployeeProfile() {
                       /* ── TRAVELLED (from GPS segments — server computed) ── */
                       const endT = new Date((seg as any).endTime);
                       travelIdx++;
-                      // Use backend distanceKm — filtered haversine (rejects GPS jitter/drift).
-                      // snap-to-roads is used only for the visual polyline, not for distances.
                       const distKm: number = (seg as any).distanceKm ?? 0;
+                      const gapKmT: number = (seg as any).gapDistKm ?? 0;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
                       const tMode: string | undefined = (seg as any).transportMode;
@@ -3270,6 +3270,11 @@ export default function EmployeeProfile() {
                               {dur(formatDuration(startT, endT))}
                             </div>
                             {timeRow(startT, endT)}
+                            {gapKmT > 0.05 && (
+                              <p className="text-[10px] text-red-500 font-medium mt-0.5 leading-tight">
+                                📵 {gapKmT < 1 ? `${(gapKmT * 1000).toFixed(0)} m` : `${gapKmT.toFixed(1)} km`} missed (signal gap)
+                              </p>
+                            )}
                           </div>
                         </div>
                       );
@@ -3428,6 +3433,7 @@ export default function EmployeeProfile() {
                         }
                         const pbMode: string | undefined = (seg as any).transportMode;
                         const pbDistKm: number = seg.distanceKm ?? 0;
+                        const pbGapKm: number = (seg as any).gapDistKm ?? 0;
                         const pbDistLabel = pbDistKm < 1 ? pbDistKm.toFixed(1) : pbDistKm.toFixed(2);
                         return (
                           <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50">
@@ -3441,6 +3447,11 @@ export default function EmployeeProfile() {
                                 <p className="text-[11px] font-semibold text-orange-700">{transportModeLabel(pbMode)} ({pbDistLabel} km)</p>
                               </div>
                               <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
+                              {pbGapKm > 0.05 && (
+                                <p className="text-[10px] text-red-500 font-medium mt-0.5 leading-tight">
+                                  📵 {pbGapKm < 1 ? `${(pbGapKm * 1000).toFixed(0)} m` : `${pbGapKm.toFixed(1)} km`} missed (signal gap)
+                                </p>
+                              )}
                             </div>
                           </div>
                         );
