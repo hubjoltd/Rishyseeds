@@ -3188,10 +3188,12 @@ export async function registerRoutes(
           .map((p: any) => p.speed != null ? Number(p.speed) * 3.6 : null)
           .filter((s): s is number => s !== null && s > 0);
         const maxKmh = dopplerSpeeds.length > 0 ? Math.max(...dopplerSpeeds) : avgKmh;
-        if (maxKmh > 80 || avgKmh > 60) return "train";
-        if (avgKmh <= 5) return "walking";
-        if (avgKmh <= 18 && maxKmh <= 30) return "cycling";
-        if (avgKmh <= 45 && maxKmh <= 70) return "bike";
+        // Indian train speeds: express 100-160 km/h, avg incl halts > 85 km/h
+        // Cars/bikes in India rarely sustain >85 km/h average over a full segment
+        if (avgKmh > 85 || (maxKmh > 130 && avgKmh > 65)) return "train";
+        if (avgKmh < 5) return "walking";
+        // Motorcycle: typically max 80-100 km/h; avg 25-60 km/h on highways
+        if (avgKmh <= 55 && maxKmh <= 100) return "bike";
         return "car";
       }
 
@@ -4986,10 +4988,9 @@ export async function registerRoutes(
           .map((p: any) => p.speed != null ? Number(p.speed) * 3.6 : null)
           .filter((s): s is number => s !== null && s > 0);
         const maxKmh = dopplerSpeeds.length > 0 ? Math.max(...dopplerSpeeds) : avgKmh;
-        if (maxKmh > 80 || avgKmh > 60) return "train";
-        if (avgKmh <= 5) return "walking";
-        if (avgKmh <= 18 && maxKmh <= 30) return "cycling";
-        if (avgKmh <= 45 && maxKmh <= 70) return "bike";
+        if (avgKmh > 85 || (maxKmh > 130 && avgKmh > 65)) return "train";
+        if (avgKmh < 5) return "walking";
+        if (avgKmh <= 55 && maxKmh <= 100) return "bike";
         return "car";
       }
 

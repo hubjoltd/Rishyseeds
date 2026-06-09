@@ -202,7 +202,6 @@ function TransportModeIcon({ mode, className }: { mode?: string; className?: str
   switch (mode) {
     case "train":    return <Train className={cls} />;
     case "walking":  return <PersonStanding className={cls} />;
-    case "cycling":  return <Bike className={cls} />;
     case "bike":     return <Bike className={cls} />;
     case "car":      return <Car className={cls} />;
     default:         return <Car className={cls} />;
@@ -213,7 +212,6 @@ function transportModeLabel(mode?: string): string {
   switch (mode) {
     case "train":    return "Train";
     case "walking":  return "Walking";
-    case "cycling":  return "Cycling";
     case "bike":     return "Bike";
     case "car":      return "Car / Bus";
     default:         return "Travelled";
@@ -224,7 +222,6 @@ function transportModeDotColor(mode?: string): string {
   switch (mode) {
     case "train":    return "bg-blue-600";
     case "walking":  return "bg-green-500";
-    case "cycling":  return "bg-teal-500";
     case "bike":     return "bg-orange-500";
     case "car":      return "bg-orange-500";
     default:         return "bg-orange-500";
@@ -546,10 +543,10 @@ function LiveMapInner({
           bike:    `<path d="M19 7c0-1.1-.9-2-2-2h-3l2 4h-2l-2-4H7C5.34 5 4 6.34 4 8v4H2v1c0 1.1.9 2 2 2h1c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h1v-4c0-2.21-1.79-4-4-4h-1zM8 17c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm10 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>`,
         };
         const modeColor: Record<string, string> = {
-          car: "#7c3aed", train: "#1d4ed8", walking: "#15803d", cycling: "#0d9488", bike: "#ea580c",
+          car: "#7c3aed", train: "#1d4ed8", walking: "#15803d", bike: "#ea580c",
         };
         const modeLabel: Record<string, string> = {
-          car: "Car / Bus", train: "Train", walking: "Walking", cycling: "Cycling", bike: "Bike",
+          car: "Car / Bus", train: "Train", walking: "Walking", bike: "Bike",
         };
 
         // Returns positions at evenly-spaced fractions along a polyline
@@ -3455,8 +3452,8 @@ export default function EmployeeProfile() {
                         return (
                           <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50">
                             <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className={`w-7 h-7 rounded-full border flex items-center justify-center ${pbMode === "train" ? "bg-blue-100 border-blue-300" : pbMode === "walking" ? "bg-green-100 border-green-300" : pbMode === "cycling" ? "bg-teal-100 border-teal-300" : "bg-orange-100 border-orange-300"}`}>
-                                <TransportModeIcon mode={pbMode} className={`w-3.5 h-3.5 ${pbMode === "train" ? "text-blue-600" : pbMode === "walking" ? "text-green-600" : pbMode === "cycling" ? "text-teal-600" : "text-orange-600"}`} />
+                              <div className={`w-7 h-7 rounded-full border flex items-center justify-center ${pbMode === "train" ? "bg-blue-100 border-blue-300" : pbMode === "walking" ? "bg-green-100 border-green-300" : "bg-orange-100 border-orange-300"}`}>
+                                <TransportModeIcon mode={pbMode} className={`w-3.5 h-3.5 ${pbMode === "train" ? "text-blue-600" : pbMode === "walking" ? "text-green-600" : "text-orange-600"}`} />
                               </div>
                             </div>
                             <div className="flex-1 min-w-0 pt-0.5">
