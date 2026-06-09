@@ -532,54 +532,79 @@ function LiveMapInner({
         })() : null
       )}
 
-      {/* Transport mode pill badges — midpoint of each travel segment (like Google Maps) */}
+      {/* Transport mode circular icon badges on route — Google Maps Timeline style */}
       {(() => {
         const travelSegs = segments.filter(s => s.type === "travelled");
         if (travelSegs.length === 0) return null;
 
-        const modeConfig: Record<string, { emoji: string; color: string; label: string }> = {
-          train:   { emoji: "🚆", color: "#1d4ed8", label: "Train"    },
-          walking: { emoji: "🚶", color: "#16a34a", label: "Walking"  },
-          cycling: { emoji: "🚴", color: "#0d9488", label: "Cycling"  },
-          bike:    { emoji: "🏍", color: "#ea580c", label: "Bike"     },
-          car:     { emoji: "🚌", color: "#7c3aed", label: "Car / Bus"},
+        // SVG icon paths (Material Design 24×24, white fill)
+        const modeSvg: Record<string, string> = {
+          car:     `<path d="M17.5 5H7.5L5 9H2v2h1.5l1 7h1V17h13v1h1l1-7H21V9h-3L17.5 5zm-10 1h9l1.5 3H6L7.5 6zM17 15H7l-.75-4h11.5L17 15zm-8.5-1c.83 0 1.5-.67 1.5-1.5S9.33 11 8.5 11 7 11.67 7 12.5 7.67 14 8.5 14zm7 0c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5-1.5.67-1.5 1.5.67 1.5 1.5 1.5z"/>`,
+          train:   `<path d="M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h12v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-6H6V6h5v5zm5.5 6c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6h-5V6h5v5z"/>`,
+          walking: `<path d="M13.49 5.48c.98 0 1.77-.79 1.77-1.77s-.79-1.77-1.77-1.77-1.77.79-1.77 1.77.79 1.77 1.77 1.77zm-3.01 13.95l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 7 1.4z"/>`,
+          cycling: `<path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5.1 2.1V9c-1.5 0-2.7-.6-3.6-1.5l-1.9-1.9c-.5-.4-1-.6-1.6-.6s-1.1.2-1.4.6L7.8 8.4c-.4.4-.6.9-.6 1.4 0 .6.2 1.1.6 1.4L11 14v5h2v-6.2l-2.2-3.3zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/>`,
+          bike:    `<path d="M19 7c0-1.1-.9-2-2-2h-3l2 4h-2l-2-4H7C5.34 5 4 6.34 4 8v4H2v1c0 1.1.9 2 2 2h1c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h1v-4c0-2.21-1.79-4-4-4h-1zM8 17c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm10 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>`,
+        };
+        const modeColor: Record<string, string> = {
+          car: "#7c3aed", train: "#1d4ed8", walking: "#15803d", cycling: "#0d9488", bike: "#ea580c",
+        };
+        const modeLabel: Record<string, string> = {
+          car: "Car / Bus", train: "Train", walking: "Walking", cycling: "Cycling", bike: "Bike",
         };
 
-        const polylineMidpoint = (pts: [number, number][]): [number, number] | null => {
-          if (!pts || pts.length === 0) return null;
-          return pts[Math.floor(pts.length / 2)];
+        // Returns positions at evenly-spaced fractions along a polyline
+        const routePositions = (pts: [number, number][], fracs: number[]): ([number, number] | null)[] =>
+          fracs.map(f => pts[Math.max(0, Math.min(pts.length - 1, Math.round(f * (pts.length - 1))))]);
+
+        const makeModeIcon = (mode: string, color: string, label: string, distKm?: number) => {
+          const svg = modeSvg[mode] ?? modeSvg.car;
+          const distStr = distKm != null ? `<div style="font-size:9px;font-weight:700;margin-top:2px;letter-spacing:.3px;">${distKm < 1 ? `${(distKm*1000).toFixed(0)}m` : `${distKm.toFixed(1)}km`}</div>` : "";
+          const html = `<div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-50%);pointer-events:none;"><div style="width:38px;height:38px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="20" height="20" fill="white" xmlns="http://www.w3.org/2000/svg">${svg}</svg></div>${distStr ? `<div style="background:${color};color:white;border-radius:8px;padding:1px 5px;margin-top:2px;white-space:nowrap;font-family:sans-serif;font-size:9px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}${distKm != null ? ' · ' + (distKm < 1 ? `${(distKm*1000).toFixed(0)}m` : `${distKm.toFixed(1)}km`) : ''}</div>` : ''}`;
+          return L.divIcon({ html, className: "", iconSize: [0, 0], iconAnchor: [0, 0] });
         };
 
         // Use snapped polylines when available; fall back to raw GPS points
         const polylines = snappedSegments.some(s => s.length > 1) ? snappedSegments : travelSegmentsPoints;
 
-        return polylines.map((seg, i) => {
-          if (seg.length < 2) return null;
-          const window = travelSegmentWindows[i];
-          if (!window) return null;
+        const markers: JSX.Element[] = [];
 
-          // Find server segment whose time range contains this sub-group's midpoint
-          const winMidMs = (new Date(window.startTime).getTime() + new Date(window.endTime).getTime()) / 2;
+        polylines.forEach((seg, i) => {
+          if (seg.length < 2) return;
+          const win = travelSegmentWindows[i];
+          if (!win) return;
+
+          const winMidMs = (new Date(win.startTime).getTime() + new Date(win.endTime).getTime()) / 2;
           const serverSeg = travelSegs.find(s =>
             new Date(s.startTime).getTime() <= winMidMs + 90_000 &&
             new Date(s.endTime).getTime()   >= winMidMs - 90_000
           );
-          const mode = (serverSeg as any)?.transportMode ?? "car";
+          const mode  = (serverSeg as any)?.transportMode ?? "car";
           const distKm: number | undefined = (serverSeg as any)?.distanceKm;
-          const cfg = modeConfig[mode] ?? modeConfig.car;
-          const mid = polylineMidpoint(seg);
-          if (!mid) return null;
+          const color = modeColor[mode] ?? modeColor.car;
+          const label = modeLabel[mode] ?? modeLabel.car;
 
-          const distLabel = distKm != null
-            ? ` · ${distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(1)} km`
-            : "";
-          const pillHtml = `<div style="background:${cfg.color};color:white;border:2.5px solid white;border-radius:20px;padding:4px 10px 4px 7px;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.45);font-family:sans-serif;line-height:1.2;transform:translate(-50%,-50%);cursor:default;">${cfg.emoji} ${cfg.label}${distLabel}</div>`;
-          const icon = L.divIcon({ html: pillHtml, className: "", iconSize: [0, 0], iconAnchor: [0, 0] });
+          // Place icons along the route:
+          // short segments (< 3 km) → 1 icon at midpoint
+          // longer segments           → 3 icons at 20%, 50%, 80%
+          const fracs = (distKm ?? 0) >= 3 ? [0.2, 0.5, 0.8] : [0.5];
+          const positions = routePositions(seg, fracs);
 
-          return (
-            <Marker key={`mode-pill-${i}`} position={mid} icon={icon} zIndexOffset={50} />
-          );
+          positions.forEach((pos, pi) => {
+            if (!pos) return;
+            // Only show distance label on the middle icon
+            const showDist = fracs.length === 1 || pi === Math.floor(fracs.length / 2);
+            markers.push(
+              <Marker
+                key={`mode-icon-${i}-${pi}`}
+                position={pos}
+                icon={makeModeIcon(mode, color, label, showDist ? distKm : undefined)}
+                zIndexOffset={50}
+              />
+            );
+          });
         });
+
+        return markers;
       })()}
 
       {/* Fallback dashed route — only when no GPS points recorded at all */}
