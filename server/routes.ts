@@ -3169,8 +3169,31 @@ export async function registerRoutes(
         return d * 1.03;
       }
       type GpsSeg =
-        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
+
+      // ── Transport mode detection from GPS speed data ──────────────────────
+      // Uses avg and peak speed to classify the movement type.
+      // Train: peak > 80 km/h or avg > 60 km/h
+      // Walking: avg ≤ 5 km/h
+      // Cycling: avg 5–18 km/h, max ≤ 30 km/h
+      // Bike (two-wheeler): avg 15–65 km/h, max ≤ 80 km/h
+      // Car/Bus: avg > 25 km/h or max > 60 km/h (hard to distinguish without transit data)
+      function detectTransportMode(runPts: typeof points): string {
+        const durationSec = (new Date(runPts[runPts.length - 1].recordedAt).getTime() - new Date(runPts[0].recordedAt).getTime()) / 1000;
+        if (durationSec <= 0) return "car";
+        const distKm = totalDistKm(runPts);
+        const avgKmh = (distKm / durationSec) * 3600;
+        const dopplerSpeeds = runPts
+          .map((p: any) => p.speed != null ? Number(p.speed) * 3.6 : null)
+          .filter((s): s is number => s !== null && s > 0);
+        const maxKmh = dopplerSpeeds.length > 0 ? Math.max(...dopplerSpeeds) : avgKmh;
+        if (maxKmh > 80 || avgKmh > 60) return "train";
+        if (avgKmh <= 5) return "walking";
+        if (avgKmh <= 18 && maxKmh <= 30) return "cycling";
+        if (avgKmh <= 45 && maxKmh <= 70) return "bike";
+        return "car";
+      }
 
       // ── Trackolap-style: speed-based movement classification ──────────────
       // Primary signal : GPS Doppler speed >= 5 km/h (1.39 m/s) → moving
@@ -3278,11 +3301,15 @@ export async function registerRoutes(
         const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
         if (run.moving) {
           const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+          // Use snapToRoads (follows actual GPS path on roads) → haversine fallback.
+          // Directions API was removed: it returns the shortest driving route, NOT the actual
+          // path taken — causing systematic under-counting, especially for bus journeys where
+          // the bus route can be 15–30% longer than the optimal driving path.
           const distanceKm =
-            (roadsApiKey ? (await directionsKm(snapPts, roadsApiKey)) : null) ??
             (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
             totalDistKm(runPts);
-          gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm });
+          const transportMode = detectTransportMode(runPts);
+          gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode });
         } else {
           const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;
           const lng = runPts.reduce((s: number, p: any) => s + Number(p.longitude), 0) / runPts.length;

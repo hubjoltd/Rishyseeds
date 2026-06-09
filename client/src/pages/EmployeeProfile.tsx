@@ -60,6 +60,11 @@ import {
   Smartphone,
   Wifi as WifiIcon,
   CircleDot,
+  Bus,
+  Car,
+  Train,
+  Bike,
+  PersonStanding,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -188,6 +193,41 @@ interface LiveMapSegment {
   durationSecs?: number;
   lat?: number;
   lng?: number;
+  transportMode?: string;
+}
+
+function TransportModeIcon({ mode, className }: { mode?: string; className?: string }) {
+  const cls = className ?? "w-2.5 h-2.5 text-white";
+  switch (mode) {
+    case "train":    return <Train className={cls} />;
+    case "walking":  return <PersonStanding className={cls} />;
+    case "cycling":  return <Bike className={cls} />;
+    case "bike":     return <Bike className={cls} />;
+    case "car":      return <Car className={cls} />;
+    default:         return <Car className={cls} />;
+  }
+}
+
+function transportModeLabel(mode?: string): string {
+  switch (mode) {
+    case "train":    return "Train";
+    case "walking":  return "Walking";
+    case "cycling":  return "Cycling";
+    case "bike":     return "Bike";
+    case "car":      return "Car / Bus";
+    default:         return "Travelled";
+  }
+}
+
+function transportModeDotColor(mode?: string): string {
+  switch (mode) {
+    case "train":    return "bg-blue-600";
+    case "walking":  return "bg-green-500";
+    case "cycling":  return "bg-teal-500";
+    case "bike":     return "bg-orange-500";
+    case "car":      return "bg-orange-500";
+    default:         return "bg-orange-500";
+  }
 }
 
 interface VisitStop { lat: number; lng: number; customerName: string; locationName: string | null; durationStr: string }
@@ -2455,7 +2495,7 @@ export default function EmployeeProfile() {
   }));
 
   type GpsSegment =
-    | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+    | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode?: string }
     | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
   type PunchEvent = { type: "punch_in" | "punch_out"; startTime: string; location: string | null; lat: number | null; lng: number | null };
   type TimelineEvent = GpsSegment | VisitStoppage | PunchEvent;
@@ -3164,16 +3204,19 @@ export default function EmployeeProfile() {
                       const distKm: number = (seg as any).distanceKm ?? 0;
                       const distLabel = distKm === 0 ? "0" : distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(2);
                       const hiTr = highlightedSegment?.startTime === seg.startTime && highlightedSegment?.type === "travelled";
+                      const tMode: string | undefined = (seg as any).transportMode;
+                      const dotColor = transportModeDotColor(tMode);
+                      const modeLabel = transportModeLabel(tMode);
                       return (
                         <div
                           key={idx}
                           className={`relative flex items-start pl-[40px] pr-3 py-[7px] cursor-pointer transition-colors ${hiTr ? "bg-blue-50 ring-1 ring-blue-300 ring-inset rounded" : "hover:bg-orange-50/40"}`}
                           onClick={() => handleTimelineClick({ type: "travelled", startTime: seg.startTime, endTime: (seg as any).endTime })}
                         >
-                          {dot("bg-orange-500", <Navigation className="w-2.5 h-2.5 text-white" />)}
+                          {dot(dotColor, <TransportModeIcon mode={tMode} />)}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline">
-                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">Travelled ({distLabel} Km)</p>
+                            <div className="flex items-baseline gap-1">
+                              <p className="text-[11px] font-semibold text-orange-700 leading-tight">{modeLabel} ({distLabel} Km)</p>
                               {dur(formatDuration(startT, endT))}
                             </div>
                             {timeRow(startT, endT)}
@@ -3333,16 +3376,19 @@ export default function EmployeeProfile() {
                             </div>
                           );
                         }
+                        const pbMode: string | undefined = (seg as any).transportMode;
+                        const pbDistKm: number = seg.distanceKm ?? 0;
+                        const pbDistLabel = pbDistKm < 1 ? pbDistKm.toFixed(1) : pbDistKm.toFixed(2);
                         return (
                           <div key={idx} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50/50">
                             <div className="relative z-10 shrink-0 w-9 flex justify-center pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-300 flex items-center justify-center">
-                                <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                              <div className={`w-7 h-7 rounded-full border flex items-center justify-center ${pbMode === "train" ? "bg-blue-100 border-blue-300" : pbMode === "walking" ? "bg-green-100 border-green-300" : pbMode === "cycling" ? "bg-teal-100 border-teal-300" : "bg-orange-100 border-orange-300"}`}>
+                                <TransportModeIcon mode={pbMode} className={`w-3.5 h-3.5 ${pbMode === "train" ? "text-blue-600" : pbMode === "walking" ? "text-green-600" : pbMode === "cycling" ? "text-teal-600" : "text-orange-600"}`} />
                               </div>
                             </div>
                             <div className="flex-1 min-w-0 pt-0.5">
                               <div className="flex items-baseline justify-between gap-1">
-                                <p className="text-[11px] font-semibold text-orange-700">Travelled ({Math.round(seg.distanceKm ?? 0)} km)</p>
+                                <p className="text-[11px] font-semibold text-orange-700">{transportModeLabel(pbMode)} ({pbDistLabel} km)</p>
                               </div>
                               <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
                             </div>
