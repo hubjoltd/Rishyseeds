@@ -583,25 +583,17 @@ function LiveMapInner({
           const color = modeColor[mode] ?? modeColor.car;
           const label = modeLabel[mode] ?? modeLabel.car;
 
-          // Place icons along the route:
-          // short segments (< 3 km) → 1 icon at midpoint
-          // longer segments           → 3 icons at 20%, 50%, 80%
-          const fracs = (distKm ?? 0) >= 3 ? [0.2, 0.5, 0.8] : [0.5];
-          const positions = routePositions(seg, fracs);
-
-          positions.forEach((pos, pi) => {
-            if (!pos) return;
-            // Only show distance label on the middle icon
-            const showDist = fracs.length === 1 || pi === Math.floor(fracs.length / 2);
-            markers.push(
-              <Marker
-                key={`mode-icon-${i}-${pi}`}
-                position={pos}
-                icon={makeModeIcon(mode, color, label, showDist ? distKm : undefined)}
-                zIndexOffset={50}
-              />
-            );
-          });
+          // 1 icon per segment at midpoint — keeps map clean (no clutter)
+          const midPos = routePositions(seg, [0.5])[0];
+          if (!midPos) return;
+          markers.push(
+            <Marker
+              key={`mode-icon-${i}`}
+              position={midPos}
+              icon={makeModeIcon(mode, color, label, distKm)}
+              zIndexOffset={50}
+            />
+          );
         });
 
         return markers;
