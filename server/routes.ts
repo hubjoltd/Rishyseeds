@@ -4848,28 +4848,50 @@ export async function registerRoutes(
         } else { mergedRuns.push({ ...run }); }
       }
 
+      // ── Transport mode detection (same logic as trip endpoint) ─────────────
+      function detectTransportModeL(runPts: typeof points): string {
+        const durationSec = (new Date(runPts[runPts.length - 1].recordedAt).getTime() - new Date(runPts[0].recordedAt).getTime()) / 1000;
+        if (durationSec <= 0) return "car";
+        const distKm = totalDistKm(runPts);
+        const avgKmh = (distKm / durationSec) * 3600;
+        const dopplerSpeeds = runPts
+          .map((p: any) => p.speed != null ? Number(p.speed) * 3.6 : null)
+          .filter((s): s is number => s !== null && s > 0);
+        const maxKmh = dopplerSpeeds.length > 0 ? Math.max(...dopplerSpeeds) : avgKmh;
+        if (maxKmh > 80 || avgKmh > 60) return "train";
+        if (avgKmh <= 5) return "walking";
+        if (avgKmh <= 18 && maxKmh <= 30) return "cycling";
+        if (avgKmh <= 45 && maxKmh <= 70) return "bike";
+        return "car";
+      }
+
       // Step 5: build segments
       type Segment =
-        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number }
+        | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string }
         | { type: "stoppage"; startTime: string; endTime: string; durationSecs: number; lat: number; lng: number };
 
       const segments: Segment[] = [];
+      const roadsApiKeyL = process.env.GOOGLE_MAPS_API_KEY;
 
       for (const run of mergedRuns) {
         const runPts  = points.slice(run.start, run.end + 1);
         const startTime = new Date(runPts[0].recordedAt).toISOString();
         const endTime   = new Date(runPts[runPts.length - 1].recordedAt).toISOString();
         if (run.moving) {
-          // Use ping-to-ping haversine (same method as MatchpointGPS / Google Timeline).
-          // The Directions API was previously used here but it computes an optimal road
-          // route, not the actual path taken — causing consistent over-counting vs
-          // reference trackers. Haversine * 1.03 tortuosity matches real-world GPS tracks.
-          const distanceKm = totalDistKm(runPts);
+          // Use snapToRoads (follows actual GPS path on roads) → haversine × 1.08 fallback.
+          // SnapToRoads gives the most accurate road-distance for the actual path traveled.
+          // 1.08 tortuosity (vs 1.03 before) better approximates Indian urban road curves.
+          const snapPts = runPts.map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
+          const distanceKm =
+            (roadsApiKeyL ? (await snapToRoadsKm(snapPts, roadsApiKeyL)) : null) ??
+            totalDistKm(runPts);
+          const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",
             startTime,
             endTime,
             distanceKm: await segKmLock(empId, date, startTime, distanceKm),
+            transportMode,
           });
         } else {
           const lat = runPts.reduce((s: number, p: any) => s + Number(p.latitude),  0) / runPts.length;

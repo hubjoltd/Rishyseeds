@@ -531,6 +531,56 @@ function LiveMapInner({
         })() : null
       )}
 
+      {/* Transport mode pill badges — midpoint of each travel segment (like Google Maps) */}
+      {(() => {
+        const travelSegs = segments.filter(s => s.type === "travelled");
+        if (travelSegs.length === 0) return null;
+
+        const modeConfig: Record<string, { emoji: string; color: string; label: string }> = {
+          train:   { emoji: "🚆", color: "#1d4ed8", label: "Train"    },
+          walking: { emoji: "🚶", color: "#16a34a", label: "Walking"  },
+          cycling: { emoji: "🚴", color: "#0d9488", label: "Cycling"  },
+          bike:    { emoji: "🏍", color: "#ea580c", label: "Bike"     },
+          car:     { emoji: "🚌", color: "#7c3aed", label: "Car / Bus"},
+        };
+
+        const polylineMidpoint = (pts: [number, number][]): [number, number] | null => {
+          if (!pts || pts.length === 0) return null;
+          return pts[Math.floor(pts.length / 2)];
+        };
+
+        // Use snapped polylines when available; fall back to raw GPS points
+        const polylines = snappedSegments.some(s => s.length > 1) ? snappedSegments : travelSegmentsPoints;
+
+        return polylines.map((seg, i) => {
+          if (seg.length < 2) return null;
+          const window = travelSegmentWindows[i];
+          if (!window) return null;
+
+          // Find server segment whose time range contains this sub-group's midpoint
+          const winMidMs = (new Date(window.startTime).getTime() + new Date(window.endTime).getTime()) / 2;
+          const serverSeg = travelSegs.find(s =>
+            new Date(s.startTime).getTime() <= winMidMs + 90_000 &&
+            new Date(s.endTime).getTime()   >= winMidMs - 90_000
+          );
+          const mode = (serverSeg as any)?.transportMode ?? "car";
+          const distKm: number | undefined = (serverSeg as any)?.distanceKm;
+          const cfg = modeConfig[mode] ?? modeConfig.car;
+          const mid = polylineMidpoint(seg);
+          if (!mid) return null;
+
+          const distLabel = distKm != null
+            ? ` · ${distKm < 1 ? distKm.toFixed(1) : distKm.toFixed(1)} km`
+            : "";
+          const pillHtml = `<div style="background:${cfg.color};color:white;border:2.5px solid white;border-radius:20px;padding:4px 10px 4px 7px;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.45);font-family:sans-serif;line-height:1.2;transform:translate(-50%,-50%);cursor:default;">${cfg.emoji} ${cfg.label}${distLabel}</div>`;
+          const icon = L.divIcon({ html: pillHtml, className: "", iconSize: [0, 0], iconAnchor: [0, 0] });
+
+          return (
+            <Marker key={`mode-pill-${i}`} position={mid} icon={icon} zIndexOffset={50} />
+          );
+        });
+      })()}
+
       {/* Fallback dashed route — only when no GPS points recorded at all */}
       {travelSegmentsPoints.every(s => s.length <= 1) && gpsPoints.length <= 1 && waypointLine.length > 1 && <>
         <Polyline positions={waypointLine} pathOptions={{ color: "#ffffff", weight: 10, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
