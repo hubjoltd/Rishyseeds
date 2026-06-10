@@ -3255,8 +3255,8 @@ export async function registerRoutes(
       // via OSRM route between the last GPS point before the gap and the first
       // point after — exactly how Google Maps shows "Missing travel · X km".
       async function computeGapDist(pts: any[]): Promise<number> {
-        const GAP_SEC   = 5 * 60; // 5 min gap = signal loss (matches frontend threshold)
-        const GAP_MIN_M = 100;    // ignore micro-gaps < 100 m
+        const GAP_SEC   = 10 * 60; // 10 min — genuine signal blackout (not brief urban blip)
+        const GAP_MIN_M = 500;     // min 500 m displacement — employee clearly moved during gap
         let total = 0;
         for (let i = 1; i < pts.length; i++) {
           const dtSec = (new Date(pts[i].recordedAt).getTime() -
@@ -3379,7 +3379,7 @@ export async function registerRoutes(
             totalDistKm(runPts);
           // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDist(runPts);
-          const distanceKm = baseKm;  // total = map-matched GPS only; gap is info-only
+          const distanceKm = baseKm + gapDistKm;  // gap km added for genuine signal blackouts (>10 min, >500 m)
           const transportMode = detectTransportMode(runPts);
           gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode, gapDistKm });
         } else {
@@ -4784,8 +4784,8 @@ export async function registerRoutes(
 
       // Signal-gap distance estimator — same logic as trip endpoint.
       async function computeGapDistL(pts: any[]): Promise<number> {
-        const GAP_SEC   = 5 * 60;
-        const GAP_MIN_M = 100;
+        const GAP_SEC   = 10 * 60; // 10 min — genuine signal blackout (not brief urban blip)
+        const GAP_MIN_M = 500;     // min 500 m displacement — employee clearly moved during gap
         let total = 0;
         for (let i = 1; i < pts.length; i++) {
           const dtSec = (new Date(pts[i].recordedAt).getTime() -
@@ -5019,7 +5019,7 @@ export async function registerRoutes(
             totalDistKm(runPts);
           // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDistL(runPts);
-          const distanceKm = baseKmL;  // total = map-matched GPS only; gap is info-only
+          const distanceKm = baseKmL + gapDistKm;  // gap km added for genuine signal blackouts (>10 min, >500 m)
           const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",
