@@ -3056,7 +3056,7 @@ export async function registerRoutes(
       // 200 m radius: balances GPS drift containment with short-trip detection.
       // At 80–90 m accuracy, random-walk drift stays within 200 m for ~5–6 pings (~3 min).
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
+      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min — traffic lights / brief pauses are NOT stoppages
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
         const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -3083,11 +3083,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 75;   // 75m min — filters 50m GPS drift while counting real road movement
+      const MIN_DIST_M     = 30;   // 30m min — WiFi GPS drift is ~20m, reject only sub-30m jitter
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
-      const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
+      const MIN_MOVE_MS    = 0.5;  // 1.8 km/h min implied speed — only reject stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 75;   // rural cellular GPS: accept up to 75 m accuracy (rejects noisiest pings)
+      const MAX_ACCURACY_M = 200;  // WiFi GPS in urban India: accept up to 200m accuracy
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
 
@@ -3198,11 +3198,11 @@ export async function registerRoutes(
       }
 
       // ── Trackolap-style: speed-based movement classification ──────────────
-      // Primary signal : GPS Doppler speed >= 5 km/h (1.39 m/s) → moving
+      // Primary signal : GPS Doppler speed >= 3 km/h (0.83 m/s) → moving
       // Fallback        : implied speed from consecutive ping distance/time
       // Distance method : Google Directions API (actual road navigation km)
       //                   → snapToRoads → haversine (each a fallback)
-      const MOVING_SPEED_MS = 1.39;  // 5 km/h
+      const MOVING_SPEED_MS = 0.83;  // 3 km/h — catches slow urban traffic / WiFi GPS
 
       // Google Directions API — same distance Google Maps navigation shows.
       async function directionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
@@ -4741,7 +4741,7 @@ export async function registerRoutes(
       }
 
       const STOPPAGE_RADIUS_M = 250;    // wider radius absorbs 83 m accuracy network-GPS drift
-      const STOPPAGE_MIN_SECS = 2 * 60; // 2 min minimum to call it a stoppage
+      const STOPPAGE_MIN_SECS = 5 * 60; // 5 min — traffic lights / brief pauses are NOT stoppages
 
       function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000;
@@ -4848,11 +4848,11 @@ export async function registerRoutes(
       const CELLULAR_GAP_SEC = 600; // 10 minutes — cellular GPS realistic gap threshold
       const MAX_SPEED_MS   = 55.6; // 200 km/h — reject GPS glitches with Doppler
       const MAX_NOSPEED_MS = 33.3; // 120 km/h — reject tower-switching jumps
-      const MIN_DIST_M     = 75;   // 75m min — filters 50m GPS drift while counting real road movement
+      const MIN_DIST_M     = 30;   // 30m min — WiFi GPS drift is ~20m, reject only sub-30m jitter
       const MIN_DIST_SPEED_M = 20; // 20m min for Doppler pings — rejects jitter that reports non-zero speed
-      const MIN_MOVE_MS    = 2.0;  // 7.2 km/h min implied speed — rejects near-stationary drift
+      const MIN_MOVE_MS    = 0.5;  // 1.8 km/h min implied speed — only reject stationary drift
       const MIN_SPEED_MS   = 0.5;  // 1.8 km/h minimum Doppler speed
-      const MAX_ACCURACY_M = 75;   // rural cellular GPS: accept up to 75 m accuracy (rejects noisiest pings)
+      const MAX_ACCURACY_M = 200;  // WiFi GPS in urban India: accept up to 200m accuracy
       function totalDistKm(pts: typeof points): number {
         if (pts.length < 2) return 0;
         let d = 0, last = 0;
@@ -4914,7 +4914,7 @@ export async function registerRoutes(
       // Fallback        : implied speed from consecutive ping distance/time
       // Distance method : Google Directions API (actual road navigation km)
       //                   → snapToRoads → haversine (each a fallback)
-      const MOVING_SPEED_MS = 1.39; // 5 km/h
+      const MOVING_SPEED_MS = 0.83; // 3 km/h — catches slow urban traffic for WiFi/cellular GPS
 
       // Google Directions API — same distance Google Maps navigation shows.
       async function directionsKm(pts: { lat: number; lng: number }[], apiKey: string): Promise<number | null> {
