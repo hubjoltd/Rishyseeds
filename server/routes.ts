@@ -4005,6 +4005,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/expenses/employee/:employeeDbId", async (req: any, res) => {
+    try {
+      const employeeDbId = Number(req.params.employeeDbId);
+      const all = await storage.getExpensesByEmployee(employeeDbId);
+      res.json(all);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to fetch expenses" });
+    }
+  });
+
   app.get("/api/expenses/:id", async (req: any, res) => {
     try {
       const expense = await storage.getExpense(Number(req.params.id));

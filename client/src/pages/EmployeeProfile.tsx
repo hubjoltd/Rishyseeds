@@ -65,7 +65,17 @@ import {
   Train,
   Bike,
   PersonStanding,
+  Eye,
+  X,
+  ImageOff,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { format, formatDistanceToNow } from "date-fns";
 
 interface TripWithVisits extends Trip {
@@ -2461,15 +2471,16 @@ export default function EmployeeProfile() {
   });
 
   const { data: allExpenses = [], isLoading: expensesLoading } = useQuery<any[]>({
-    queryKey: ["/api/expenses", "employee", empId],
+    queryKey: ["/api/expenses/employee", empId],
     queryFn: async () => {
-      const res = await fetch(`/api/expenses`, { headers: authHeaders() });
+      const res = await fetch(`/api/expenses/employee/${empId}`, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed");
-      const all = await res.json();
-      return all.filter((e: any) => e.employeeDbId === empId);
+      return res.json();
     },
     enabled: !!empId && activeTab === "expense",
   });
+
+  const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
 
   // Signal lost stats for the Live tab summary panel
   // Uses same segment-coverage filter: gaps inside a known segment are sparse travel pings, not lost signal.
@@ -3772,18 +3783,17 @@ export default function EmployeeProfile() {
                         <TableHead>Title</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Work Location</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Claimed</TableHead>
                         <TableHead>Approved</TableHead>
-                        <TableHead>Comment</TableHead>
+                        <TableHead className="w-16">View</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {allExpenses.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
+                          <TableCell colSpan={9} className="text-center text-muted-foreground py-10">
                             <BanknoteIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
                             No expenses found for this employee
                           </TableCell>
@@ -3792,10 +3802,9 @@ export default function EmployeeProfile() {
                         allExpenses.map((exp) => (
                           <TableRow key={exp.id} data-testid={`row-expense-${exp.id}`}>
                             <TableCell className="text-primary font-medium text-sm font-mono">{exp.expenseCode}</TableCell>
-                            <TableCell className="text-sm max-w-[200px] truncate">{exp.title || "-"}</TableCell>
+                            <TableCell className="text-sm max-w-[180px] truncate">{exp.title || "-"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{exp.type || "-"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{exp.expenseCategory || exp.category || "-"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{exp.workLocation || "-"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {exp.expenseDate ? format(new Date(exp.expenseDate), "dd MMM yyyy") : "-"}
                             </TableCell>
@@ -3811,7 +3820,17 @@ export default function EmployeeProfile() {
                             <TableCell className="text-sm">
                               {exp.status === "approved" ? `₹${Number(exp.approvedAmount || exp.amount || 0).toLocaleString()}` : "-"}
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{exp.adminComment || "-"}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                data-testid={`btn-view-expense-${exp.id}`}
+                                onClick={() => setSelectedExpense(exp)}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
@@ -3823,6 +3842,225 @@ export default function EmployeeProfile() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Expense Detail Modal */}
+            <Dialog open={!!selectedExpense} onOpenChange={(open) => { if (!open) setSelectedExpense(null); }}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <span className="font-mono text-primary">{selectedExpense?.expenseCode}</span>
+                    <Badge
+                      variant={selectedExpense?.status === "approved" ? "default" : selectedExpense?.status === "rejected" ? "destructive" : "secondary"}
+                      className="text-xs capitalize ml-1"
+                    >
+                      {selectedExpense?.status}
+                    </Badge>
+                  </DialogTitle>
+                </DialogHeader>
+
+                {selectedExpense && (
+                  <div className="space-y-4 text-sm">
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Title</p>
+                        <p className="font-medium">{selectedExpense.title || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Date</p>
+                        <p className="font-medium">{selectedExpense.expenseDate ? format(new Date(selectedExpense.expenseDate), "dd MMM yyyy") : "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Type</p>
+                        <p>{selectedExpense.type || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Category</p>
+                        <p>{selectedExpense.expenseCategory || selectedExpense.category || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Work Location</p>
+                        <p>{selectedExpense.workLocation || "-"}</p>
+                      </div>
+                      {selectedExpense.modeOfTravel && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-0.5">Mode of Travel</p>
+                          <p>{selectedExpense.modeOfTravel}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Travel / Odometer section */}
+                    {(selectedExpense.startingOdometer || selectedExpense.endOdometer || selectedExpense.totalDistance) && (
+                      <>
+                        <Separator />
+                        <div>
+                          <p className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Gauge className="h-4 w-4 text-primary" /> Odometer / Travel</p>
+                          <div className="grid grid-cols-3 gap-3 mb-3">
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                              <p className="text-xs text-muted-foreground mb-0.5">Start Reading</p>
+                              <p className="text-lg font-bold">{selectedExpense.startingOdometer ? Number(selectedExpense.startingOdometer).toLocaleString() : "-"}</p>
+                              <p className="text-xs text-muted-foreground">km</p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                              <p className="text-xs text-muted-foreground mb-0.5">End Reading</p>
+                              <p className="text-lg font-bold">{selectedExpense.endOdometer ? Number(selectedExpense.endOdometer).toLocaleString() : "-"}</p>
+                              <p className="text-xs text-muted-foreground">km</p>
+                            </div>
+                            <div className="bg-primary/10 rounded-lg p-3 text-center">
+                              <p className="text-xs text-muted-foreground mb-0.5">Distance</p>
+                              <p className="text-lg font-bold text-primary">{selectedExpense.totalDistance ? Number(selectedExpense.totalDistance).toLocaleString() : "-"}</p>
+                              <p className="text-xs text-muted-foreground">km</p>
+                            </div>
+                          </div>
+                          {/* Odometer photos */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1.5">Starting Odometer Photo</p>
+                              {selectedExpense.startingOdometerPhoto ? (
+                                <a href={selectedExpense.startingOdometerPhoto} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={selectedExpense.startingOdometerPhoto}
+                                    alt="Starting odometer"
+                                    className="w-full h-36 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                                    }}
+                                  />
+                                  <div className="hidden w-full h-36 rounded-lg border bg-muted flex items-center justify-center">
+                                    <ImageOff className="h-6 w-6 text-muted-foreground" />
+                                  </div>
+                                </a>
+                              ) : (
+                                <div className="w-full h-36 rounded-lg border bg-muted flex items-center justify-center">
+                                  <p className="text-xs text-muted-foreground">No photo</p>
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1.5">Ending Odometer Photo</p>
+                              {selectedExpense.endOdometerPhoto ? (
+                                <a href={selectedExpense.endOdometerPhoto} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={selectedExpense.endOdometerPhoto}
+                                    alt="Ending odometer"
+                                    className="w-full h-36 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                                    }}
+                                  />
+                                  <div className="hidden w-full h-36 rounded-lg border bg-muted flex items-center justify-center">
+                                    <ImageOff className="h-6 w-6 text-muted-foreground" />
+                                  </div>
+                                </a>
+                              ) : (
+                                <div className="w-full h-36 rounded-lg border bg-muted flex items-center justify-center">
+                                  <p className="text-xs text-muted-foreground">No photo</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {(selectedExpense.amountPerKm || selectedExpense.totalTravelAmount) && (
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                              {selectedExpense.amountPerKm && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground mb-0.5">Rate per km</p>
+                                  <p className="font-medium">₹{Number(selectedExpense.amountPerKm).toLocaleString()}</p>
+                                </div>
+                              )}
+                              {selectedExpense.totalTravelAmount && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground mb-0.5">Travel Amount</p>
+                                  <p className="font-medium">₹{Number(selectedExpense.totalTravelAmount).toLocaleString()}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Bills / ticket photo */}
+                    {selectedExpense.billsTicketPhoto && (
+                      <>
+                        <Separator />
+                        <div>
+                          <p className="font-semibold text-sm mb-2 flex items-center gap-1.5"><FileText className="h-4 w-4 text-primary" /> Bills / Ticket</p>
+                          <a href={selectedExpense.billsTicketPhoto} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={selectedExpense.billsTicketPhoto}
+                              alt="Bill or ticket"
+                              className="w-full max-h-48 object-contain rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          </a>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Other fare breakdown */}
+                    {(selectedExpense.busFare || selectedExpense.trainAirFare || selectedExpense.hotelFare ||
+                      selectedExpense.daAmount || selectedExpense.conveyanceFare || selectedExpense.postageFare || selectedExpense.otherFare) && (
+                      <>
+                        <Separator />
+                        <div>
+                          <p className="font-semibold text-sm mb-2">Expense Breakdown</p>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            {selectedExpense.busFare && <div className="flex justify-between"><span className="text-muted-foreground">Bus Fare</span><span>₹{Number(selectedExpense.busFare).toLocaleString()}</span></div>}
+                            {selectedExpense.trainAirFare && <div className="flex justify-between"><span className="text-muted-foreground">Train/Air</span><span>₹{Number(selectedExpense.trainAirFare).toLocaleString()}</span></div>}
+                            {selectedExpense.hotelFare && <div className="flex justify-between"><span className="text-muted-foreground">Hotel</span><span>₹{Number(selectedExpense.hotelFare).toLocaleString()}</span></div>}
+                            {selectedExpense.daAmount && <div className="flex justify-between"><span className="text-muted-foreground">DA ({selectedExpense.daDays} days)</span><span>₹{Number(selectedExpense.daAmount).toLocaleString()}</span></div>}
+                            {selectedExpense.conveyanceFare && <div className="flex justify-between"><span className="text-muted-foreground">Conveyance</span><span>₹{Number(selectedExpense.conveyanceFare).toLocaleString()}</span></div>}
+                            {selectedExpense.postageFare && <div className="flex justify-between"><span className="text-muted-foreground">Postage</span><span>₹{Number(selectedExpense.postageFare).toLocaleString()}</span></div>}
+                            {selectedExpense.otherFare && <div className="flex justify-between"><span className="text-muted-foreground">Other</span><span>₹{Number(selectedExpense.otherFare).toLocaleString()}</span></div>}
+                          </div>
+                          {selectedExpense.otherRemarks && <p className="text-xs text-muted-foreground mt-1">{selectedExpense.otherRemarks}</p>}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Amounts */}
+                    <Separator />
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-muted/40 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-0.5">Claimed</p>
+                        <p className="text-base font-bold">₹{Number(selectedExpense.amount || 0).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-muted/40 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-0.5">Approved</p>
+                        <p className="text-base font-bold">
+                          {selectedExpense.status === "approved" ? `₹${Number(selectedExpense.approvedAmount || selectedExpense.amount || 0).toLocaleString()}` : "-"}
+                        </p>
+                      </div>
+                      <div className="bg-primary/10 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-0.5">Final Amount</p>
+                        <p className="text-base font-bold text-primary">
+                          {selectedExpense.finalAmount ? `₹${Number(selectedExpense.finalAmount).toLocaleString()}` : "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Admin comment */}
+                    {selectedExpense.adminComment && (
+                      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                        <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-0.5">Admin Comment</p>
+                        <p className="text-sm">{selectedExpense.adminComment}</p>
+                      </div>
+                    )}
+
+                    {/* Description */}
+                    {selectedExpense.description && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Description</p>
+                        <p className="text-sm">{selectedExpense.description}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         )}
 
