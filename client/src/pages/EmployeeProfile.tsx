@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl, CircleMarker } from "react-leaflet";
 import L from "leaflet";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import type { Employee, Trip, TripVisit } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getAuthToken } from "@/lib/queryClient";
+import { getAuthToken, apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
   MapPin,
@@ -68,6 +69,8 @@ import {
   Eye,
   X,
   ImageOff,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -2481,6 +2484,47 @@ export default function EmployeeProfile() {
   });
 
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
+  const [showApproveInput, setShowApproveInput] = useState(false);
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [approveAmount, setApproveAmount] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
+  const { toast } = useToast();
+
+  function closeExpenseModal() {
+    setSelectedExpense(null);
+    setShowApproveInput(false);
+    setShowRejectInput(false);
+    setApproveAmount("");
+    setRejectReason("");
+  }
+
+  const approveMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest("PATCH", `/api/expenses/${id}/approve`, {
+        approvedAmount: approveAmount || selectedExpense?.amount,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses/employee", empId] });
+      setSelectedExpense((prev: any) => prev ? { ...prev, status: "approved", approvedAmount: data?.approvedAmount ?? approveAmount ?? prev.amount, finalAmount: data?.finalAmount ?? approveAmount ?? prev.amount } : null);
+      setShowApproveInput(false);
+      setApproveAmount("");
+      toast({ title: "Expense Approved" });
+    },
+    onError: () => toast({ title: "Failed to approve", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest("PATCH", `/api/expenses/${id}/reject`, { reason: rejectReason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses/employee", empId] });
+      setSelectedExpense((prev: any) => prev ? { ...prev, status: "rejected", adminComment: rejectReason } : null);
+      setShowRejectInput(false);
+      setRejectReason("");
+      toast({ title: "Expense Rejected" });
+    },
+    onError: () => toast({ title: "Failed to reject", variant: "destructive" }),
+  });
 
   // Signal lost stats for the Live tab summary panel
   // Uses same segment-coverage filter: gaps inside a known segment are sparse travel pings, not lost signal.
@@ -3844,7 +3888,7 @@ export default function EmployeeProfile() {
             </Card>
 
             {/* Expense Detail Modal */}
-            <Dialog open={!!selectedExpense} onOpenChange={(open) => { if (!open) setSelectedExpense(null); }}>
+            <Dialog open={!!selectedExpense} onOpenChange={(open) => { if (!open) closeExpenseModal(); }}>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
@@ -4055,6 +4099,89 @@ export default function EmployeeProfile() {
                       <div>
                         <p className="text-xs text-muted-foreground mb-0.5">Description</p>
                         <p className="text-sm">{selectedExpense.description}</p>
+                      </div>
+                    )}
+
+                    {/* Approve / Reject Actions */}
+                    {selectedExpense.status === "pending" && (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Admin Action</p>
+                          <div className="flex gap-2 flex-wrap">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              data-testid="btn-approve-expense"
+                              onClick={() => { setShowApproveInput(v => !v); setShowRejectInput(false); }}
+                            >
+                              <CheckCircle className="h-3.5 w-3.5 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              data-testid="btn-reject-expense"
+                              onClick={() => { setShowRejectInput(v => !v); setShowApproveInput(false); }}
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1" /> Reject
+                            </Button>
+                          </div>
+
+                          {showApproveInput && (
+                            <div className="flex gap-2 items-center flex-wrap bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                              <Input
+                                className="max-w-[180px] h-8 text-sm"
+                                placeholder={`Approved amount (₹${Number(selectedExpense.amount || 0).toLocaleString()})`}
+                                type="number"
+                                value={approveAmount}
+                                onChange={e => setApproveAmount(e.target.value)}
+                                data-testid="input-approved-amount"
+                              />
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={approveMutation.isPending}
+                                onClick={() => approveMutation.mutate(selectedExpense.id)}
+                                data-testid="btn-confirm-approve"
+                              >
+                                {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm Approve"}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setShowApproveInput(false)}>Cancel</Button>
+                            </div>
+                          )}
+
+                          {showRejectInput && (
+                            <div className="flex gap-2 items-center flex-wrap bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                              <Input
+                                className="max-w-xs h-8 text-sm"
+                                placeholder="Rejection reason..."
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                data-testid="input-reject-reason"
+                              />
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={!rejectReason.trim() || rejectMutation.isPending}
+                                onClick={() => rejectMutation.mutate(selectedExpense.id)}
+                                data-testid="btn-confirm-reject"
+                              >
+                                {rejectMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm Reject"}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setShowRejectInput(false)}>Cancel</Button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Re-open approved/rejected expenses */}
+                    {(selectedExpense.status === "approved" || selectedExpense.status === "rejected") && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                        {selectedExpense.status === "approved" ? "Approved" : "Rejected"}
+                        {selectedExpense.statusUpdatedBy && ` by ${selectedExpense.statusUpdatedBy}`}
+                        {selectedExpense.statusUpdatedOn && ` on ${format(new Date(selectedExpense.statusUpdatedOn), "dd MMM yyyy")}`}
                       </div>
                     )}
                   </div>
