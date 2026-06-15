@@ -3166,7 +3166,7 @@ export async function registerRoutes(
             }
           }
         }
-        return d * 1.03;
+        return d;
       }
       type GpsSeg =
         | { type: "travelled"; startTime: string; endTime: string; distanceKm: number; transportMode: string; gapDistKm: number }
@@ -3379,7 +3379,7 @@ export async function registerRoutes(
             totalDistKm(runPts);
           // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDist(runPts);
-          const distanceKm = baseKm + gapDistKm;  // gap km added for genuine signal blackouts (>10 min, >500 m)
+          const distanceKm = baseKm;
           const transportMode = detectTransportMode(runPts);
           gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode, gapDistKm });
         } else {
@@ -4916,7 +4916,7 @@ export async function registerRoutes(
             }
           }
         }
-        return d * 1.03;
+        return d;
       }
 
       // ── Trackolap-style: speed-based movement classification ──────────────
@@ -5029,7 +5029,7 @@ export async function registerRoutes(
             totalDistKm(runPts);
           // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
           const gapDistKm = await computeGapDistL(runPts);
-          const distanceKm = baseKmL + gapDistKm;  // gap km added for genuine signal blackouts (>10 min, >500 m)
+          const distanceKm = baseKmL;
           const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",
