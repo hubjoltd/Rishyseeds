@@ -292,13 +292,22 @@ export async function registerRoutes(
         return res.status(200).json({ error: data.status, polyline: null });
       }
 
-      // Decode the overview_polyline into lat/lng pairs
-      const encoded = data.routes[0].overview_polyline.points;
-      const decoded = decodePolyline(encoded);
-
-      // Sum distance across all legs
+      // Decode every step's detailed polyline and concatenate — this gives the full
+      // turn-by-turn road geometry, NOT the simplified overview_polyline which cuts
+      // corners and misses turns (making the route look inaccurate on the map).
+      const allPoints: [number, number][] = [];
       let distanceM = 0;
-      for (const leg of data.routes[0].legs ?? []) distanceM += leg.distance?.value ?? 0;
+      for (const leg of data.routes[0].legs ?? []) {
+        distanceM += leg.distance?.value ?? 0;
+        for (const step of leg.steps ?? []) {
+          const pts = decodePolyline(step.polyline?.points ?? "");
+          // Avoid duplicating the join point between steps
+          if (allPoints.length > 0 && pts.length > 0) pts.shift();
+          allPoints.push(...pts);
+        }
+      }
+      // Fallback to overview_polyline if steps gave nothing (e.g. very short single-step route)
+      const decoded = allPoints.length > 1 ? allPoints : decodePolyline(data.routes[0].overview_polyline?.points ?? "");
 
       res.json({ polyline: decoded, distanceM });
     } catch (e: any) {
