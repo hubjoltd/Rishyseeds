@@ -51,6 +51,12 @@ npm run build     # Build for production
 npm run db:push   # Push schema changes to database
 ```
 
+## Setup notes (imported project)
+- Runs via the "Start application" workflow (`npm run dev`), bound to Replit's built-in PostgreSQL (`DATABASE_URL`/`PG*` env vars) and `SESSION_SECRET`, both already provisioned.
+- Schema was pushed with `npm run db:push`. On first boot the server self-seeds demo data (products, warehouses, roles, employees) and a default admin login: `admin` / `admin123` — change this before any real use.
+- `production_export.sql` in the repo root looks like a dump from a prior deployment; it was NOT imported since it wasn't requested — ask if you want that data restored instead of the seeded demo data.
+- `VITE_GOOGLE_MAPS_API_KEY` (see `.env.example`) is not set; map features will be limited until it's provided.
+
 ## Deployment
 - Target: Autoscale
 - Build: `npm run build`
