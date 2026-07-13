@@ -3256,6 +3256,9 @@ export default function EmployeeProfile() {
                               <p className="text-[10px] font-semibold text-gray-700 leading-tight mt-0.5">
                                 🛣️ Total travelled: {enrichedTotalKm >= 1 ? `${enrichedTotalKm.toFixed(1)} km` : enrichedTotalKm > 0 ? `${(enrichedTotalKm * 1000).toFixed(0)} m` : "0 km"}
                               </p>
+                              <p className="text-[10px] font-semibold text-gray-700 leading-tight mt-0.5">
+                                ⏱️ Total hrs travelled: {summaryTravelSecs > 0 ? fmtSecs(summaryTravelSecs) : "0m"}
+                              </p>
                               {seg.location
                                 ? <p className="text-[10px] text-gray-500 leading-snug mt-0.5 line-clamp-2">{seg.location}</p>
                                 : (seg.lat && seg.lng ? <StoppageAddress lat={seg.lat!} lng={seg.lng!} /> : null)
