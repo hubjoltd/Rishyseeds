@@ -580,7 +580,7 @@ function LiveMapInner({
 
         polylines.forEach((seg, i) => {
           if (seg.length < 2) return;
-          const win = travelSegmentWindows[i];
+          const win = travelSegmentWindows?.[i];
           if (!win) return;
 
           const winMidMs = (new Date(win.startTime).getTime() + new Date(win.endTime).getTime()) / 2;
@@ -804,7 +804,7 @@ function LiveMap({
   const travelSegmentsData = useMemo(() => {
     const allSegs = segments ?? [];
     const hasMeaningfulTravel = allSegs.some(s => s.type === "travelled" && ((s as any).distanceKm ?? 0) >= 0.05);
-    if (!hasMeaningfulTravel) return { points: [gpsPoints], timestamps: [[]], subGroupCounts: [1] };
+    if (!hasMeaningfulTravel) return { points: [gpsPoints], timestamps: [[]], subGroupCounts: [1], segmentWindows: [] };
 
     const result: [number, number][][] = [];
     const resultTs: number[][] = [];
