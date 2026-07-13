@@ -3386,9 +3386,13 @@ export async function registerRoutes(
             (await osrmMatchKm(runPts)) ??
             (roadsApiKey ? (await snapToRoadsKm(snapPts, roadsApiKey)) : null) ??
             totalDistKm(runPts);
-          // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
+          // Signal-gap distance is a real estimate of travel that happened while GPS pings
+          // dropped out (tunnel, poor signal, background app throttling). It is added into
+          // the segment/total distance so Live & Playback km match the odometer-based
+          // expense total instead of silently under-counting; it's still surfaced
+          // separately in the UI (via gapDistKm) so users can see how much was estimated.
           const gapDistKm = await computeGapDist(runPts);
-          const distanceKm = baseKm;
+          const distanceKm = baseKm + gapDistKm;
           const transportMode = detectTransportMode(runPts);
           gpsSegments.push({ type: "travelled", startTime, endTime, distanceKm, transportMode, gapDistKm });
         } else {
@@ -5036,9 +5040,13 @@ export async function registerRoutes(
             (await osrmMatchKmL(runPts)) ??
             (roadsApiKeyL ? (await snapToRoadsKm(snapPts, roadsApiKeyL)) : null) ??
             totalDistKm(runPts);
-          // Gap km shown in timeline UI only — NOT added to total (matches Google Maps / MatchpointGPS behaviour)
+          // Signal-gap distance is a real estimate of travel that happened while GPS pings
+          // dropped out (tunnel, poor signal, background app throttling). It is added into
+          // the segment/total distance so Live & Playback km match the odometer-based
+          // expense total instead of silently under-counting; it's still surfaced
+          // separately in the UI (via gapDistKm) so users can see how much was estimated.
           const gapDistKm = await computeGapDistL(runPts);
-          const distanceKm = baseKmL;
+          const distanceKm = baseKmL + gapDistKm;
           const transportMode = detectTransportModeL(runPts);
           segments.push({
             type: "travelled",

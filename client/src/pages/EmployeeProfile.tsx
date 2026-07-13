@@ -3341,7 +3341,7 @@ export default function EmployeeProfile() {
                             {timeRow(startT, endT)}
                             {gapKmT > 0.05 && (
                               <p className="text-[10px] text-red-500 font-medium mt-0.5 leading-tight">
-                                📵 {gapKmT < 1 ? `${(gapKmT * 1000).toFixed(0)} m` : `${gapKmT.toFixed(1)} km`} missed (signal gap)
+                                📵 {gapKmT < 1 ? `${(gapKmT * 1000).toFixed(0)} m` : `${gapKmT.toFixed(1)} km`} estimated during signal gap (included above)
                               </p>
                             )}
                           </div>
@@ -3518,7 +3518,7 @@ export default function EmployeeProfile() {
                               <p className="text-[10px] text-gray-500 font-mono">{fmtT(seg.startTime)}–{fmtT(seg.endTime)}</p>
                               {pbGapKm > 0.05 && (
                                 <p className="text-[10px] text-red-500 font-medium mt-0.5 leading-tight">
-                                  📵 {pbGapKm < 1 ? `${(pbGapKm * 1000).toFixed(0)} m` : `${pbGapKm.toFixed(1)} km`} missed (signal gap)
+                                  📵 {pbGapKm < 1 ? `${(pbGapKm * 1000).toFixed(0)} m` : `${pbGapKm.toFixed(1)} km`} estimated during signal gap (included above)
                                 </p>
                               )}
                             </div>
